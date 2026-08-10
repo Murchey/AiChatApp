@@ -103,8 +103,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               ),
               CupertinoListTile(
                 title: const Text('昵称'),
-                trailing: SizedBox(
-                  width: 180,
+                trailing: Expanded(
                   child: CupertinoTextField(
                     controller: _nicknameController,
                     textAlign: TextAlign.right,
@@ -112,6 +111,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       fontSize: 16,
                       color: context.textPrimaryColor,
                     ),
+                    decoration: null,
+                    padding: EdgeInsets.zero,
                   ),
                 ),
               ),

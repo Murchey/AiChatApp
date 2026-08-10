@@ -2,6 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'config/theme.dart';
 import 'config/routes.dart';
+import 'providers/api_provider.dart';
+import 'providers/chat_settings_provider.dart';
 import 'providers/settings_provider.dart';
 
 class AiChatApp extends StatefulWidget {
@@ -16,6 +18,8 @@ class _AiChatAppState extends State<AiChatApp> {
   void initState() {
     super.initState();
     context.read<SettingsProvider>().init();
+    context.read<ApiProvider>().init();
+    context.read<ChatSettingsProvider>().init();
   }
 
   @override

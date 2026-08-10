@@ -5,6 +5,7 @@ import '../config/routes.dart';
 import '../config/theme.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
+import '../widgets/alphabet_index_bar.dart';
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -17,10 +18,15 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final CupertinoTabController _tabController = CupertinoTabController();
 
+  // 通讯录字母导航状态
+  final Map<String, GlobalKey> _sectionKeys = {};
+  bool _showCharIndexTooltip = false;
+  String _currentCharTooltipLetter = '';
+
   @override
   void initState() {
     super.initState();
-    context.read<ChatProvider>().loadConversations();
+    context.read<ChatProvider>().init();
     context.read<CharacterProvider>().loadCharacters();
   }
 
@@ -28,6 +34,40 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// 滚动到指定分组标题（对齐顶部）
+  void _scrollToSection(String letter) {
+    final key = _sectionKeys[letter];
+    if (key?.currentContext == null) return;
+    Scrollable.ensureVisible(
+      key!.currentContext!,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+      alignment: 0.0,
+    );
+  }
+
+  /// 无数据字母就近滚动到下一个有数据的分组
+  void _scrollToNearest(String letter, Set<String> availableLetters) {
+    if (availableLetters.contains(letter)) {
+      _scrollToSection(letter);
+      return;
+    }
+    final letters = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
+    final index = letters.indexOf(letter);
+    for (int i = index + 1; i < letters.length; i++) {
+      if (availableLetters.contains(letters[i])) {
+        _scrollToSection(letters[i]);
+        return;
+      }
+    }
+    for (int i = index - 1; i >= 0; i--) {
+      if (availableLetters.contains(letters[i])) {
+        _scrollToSection(letters[i]);
+        return;
+      }
+    }
   }
 
   @override
@@ -71,48 +111,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildChatList() {
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('AiChat'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () {},
-          child: const Icon(CupertinoIcons.search),
-        ),
+      navigationBar: const CupertinoNavigationBar(
+        middle: Text('AiChat'),
       ),
       child: Consumer<ChatProvider>(
         builder: (context, chatProvider, _) {
           if (chatProvider.conversations.isEmpty) {
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    CupertinoIcons.chat_bubble,
-                    size: 80,
-                    color: CupertinoColors.systemGrey4,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '暂无会话',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '去"通讯录"找一个AI角色开始聊天吧',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: context.textSecondaryColor.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  CupertinoButton.filled(
-                    onPressed: () => _tabController.index = 1,
-                    child: const Text('打开通讯录'),
-                  ),
-                ],
+              child: Text(
+                '暂无会话',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: context.textSecondaryColor,
+                ),
               ),
             );
           }
@@ -129,6 +140,10 @@ class _HomeScreenState extends State<HomeScreen> {
               itemBuilder: (context, index) {
                 final conversation = chatProvider.conversations[index];
                 return CupertinoListTile(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   leading: _buildCircleAvatar(
                     context,
                     conversation.characterName,
@@ -137,13 +152,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: Text(
                     conversation.characterName,
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 17,
                       fontWeight: FontWeight.w500,
                       color: context.textPrimaryColor,
                     ),
                   ),
                   subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 2),
+                    padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       conversation.lastMessage.isEmpty
                           ? '开始对话...'
@@ -210,111 +225,170 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // 按拼音首字母分组排序（类似手机通讯录）
           final groups = provider.sortedCharactersGrouped;
-          return Container(
-            color: context.listBgColor,
-            child: ListView(
-              children: [
-                for (final group in groups) ...[
-                  _buildSectionHeader(context, group.key),
-                  for (final character in group.value)
-                    CupertinoListTile(
-                      leading: _buildCircleAvatar(
-                        context,
-                        character.name,
-                        character.avatar,
-                      ),
-                      title: Text(
-                        character.name,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: context.textPrimaryColor,
+          final availableLetters = groups.map((g) => g.key).toSet();
+          for (final group in groups) {
+            _sectionKeys.putIfAbsent(group.key, () => GlobalKey());
+          }
+
+          return Stack(
+            children: [
+              // 主列表（普通 ListView 一次性构建，GlobalKey 定位有效）
+              Container(
+                color: context.listBgColor,
+                child: ListView(
+                  padding: const EdgeInsets.only(right: 28),
+                  children: [
+                    for (final group in groups) ...[
+                      // 字母标题
+                      Container(
+                        key: _sectionKeys[group.key],
+                        width: double.infinity,
+                        color: context.scaffoldColor,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
                         ),
-                      ),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          character.description,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          group.key,
                           style: TextStyle(
                             fontSize: 14,
+                            fontWeight: FontWeight.w600,
                             color: context.textSecondaryColor,
                           ),
                         ),
                       ),
-                      trailing: Icon(
-                        CupertinoIcons.chevron_right,
-                        size: 16,
-                        color: context.textSecondaryColor,
+                      for (final character in group.value)
+                        CupertinoListTile(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          leading: _buildCircleAvatar(
+                            context,
+                            character.name,
+                            character.avatar,
+                          ),
+                          title: Text(
+                            character.name,
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w500,
+                              color: context.textPrimaryColor,
+                            ),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              character.description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                height: 1.4,
+                                color: context.textSecondaryColor,
+                              ),
+                            ),
+                          ),
+                          trailing: Icon(
+                            CupertinoIcons.chevron_right,
+                            size: 16,
+                            color: context.textSecondaryColor,
+                          ),
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              AppRoutes.characterDetail,
+                              arguments: character.id,
+                            );
+                          },
+                        ),
+                      Container(
+                        height: 0.5,
+                        margin: const EdgeInsets.only(left: 76),
+                        color: context.separatorColor,
                       ),
-                      onTap: () {
-                        Navigator.pushNamed(
-                          context,
-                          AppRoutes.characterDetail,
-                          arguments: character.id,
-                        );
-                      },
+                    ],
+                  ],
+                ),
+              ),
+              // 右侧字母索引栏
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: AlphabetIndexBar(
+                  availableLetters: availableLetters,
+                  onLetterChanged: (letter) {
+                    setState(() {
+                      _showCharIndexTooltip = true;
+                      _currentCharTooltipLetter = letter;
+                    });
+                    _scrollToNearest(letter, availableLetters);
+                  },
+                  onDragEnd: () {
+                    setState(() {
+                      _showCharIndexTooltip = false;
+                    });
+                  },
+                ),
+              ),
+              // 字母提示气泡
+              if (_showCharIndexTooltip)
+                Positioned(
+                  right: 48,
+                  top: MediaQuery.of(context).size.height / 2 - 32,
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: context.accentColor,
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  Container(
-                    height: 0.5,
-                    margin: const EdgeInsets.only(left: 72),
-                    color: context.separatorColor,
+                    alignment: Alignment.center,
+                    child: Text(
+                      _currentCharTooltipLetter,
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                        color: CupertinoColors.white,
+                      ),
+                    ),
                   ),
-                ],
-              ],
-            ),
+                ),
+            ],
           );
         },
       ),
     );
   }
 
-  Widget _buildSectionHeader(BuildContext context, String letter) {
-    return Container(
-      width: double.infinity,
-      color: context.scaffoldColor,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Text(
-        letter,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: context.textSecondaryColor,
-        ),
-      ),
-    );
-  }
-
   Widget _buildCircleAvatar(BuildContext context, String name, String avatar) {
-    if (avatar.isNotEmpty) {
+    // 未设置头像时显示默认用户图标
+    if (avatar.isEmpty) {
       return Container(
-        width: 52,
-        height: 52,
+        width: 60,
+        height: 60,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: context.accentColor.withValues(alpha: 0.15),
-          image: DecorationImage(
-            image: MemoryImage(base64Decode(avatar)),
-            fit: BoxFit.cover,
-          ),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          CupertinoIcons.person_fill,
+          size: 30,
+          color: context.accentColor,
         ),
       );
     }
     return Container(
-      width: 52,
-      height: 52,
+      width: 60,
+      height: 60,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: context.accentColor.withValues(alpha: 0.15),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        name.isNotEmpty ? name[0] : '?',
-        style: TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.bold,
-          color: context.accentColor,
+        image: DecorationImage(
+          image: MemoryImage(base64Decode(avatar)),
+          fit: BoxFit.cover,
         ),
       ),
     );

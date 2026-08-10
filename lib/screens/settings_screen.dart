@@ -13,6 +13,43 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _showCustomPicker = false;
 
+  String _themeLabel(AppThemeMode mode) {
+    switch (mode) {
+      case AppThemeMode.light:
+        return '浅色';
+      case AppThemeMode.dark:
+        return '深色';
+      case AppThemeMode.system:
+        return '跟随系统';
+    }
+  }
+
+  /// 弹出深浅色选择（下拉选项框）
+  void _showThemePicker(BuildContext context, SettingsProvider settings) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('选择外观模式'),
+        actions: [
+          for (final mode in AppThemeMode.values)
+            CupertinoActionSheetAction(
+              isDefaultAction: settings.themeMode == mode,
+              onPressed: () {
+                settings.setThemeMode(mode);
+                Navigator.pop(ctx);
+              },
+              child: Text(_themeLabel(mode)),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
@@ -26,40 +63,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
           CupertinoListSection.insetGrouped(
             header: const Text('外观'),
             children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+              CupertinoListTile(
+                title: const Text('深色模式'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _themeLabel(settings.themeMode),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      CupertinoIcons.chevron_down,
+                      size: 14,
+                      color: context.textSecondaryColor,
+                    ),
+                  ],
                 ),
-                child: CupertinoSegmentedControl<AppThemeMode>(
-                  groupValue: settings.themeMode,
-                  onValueChanged: (value) {
-                    settings.setThemeMode(value);
-                  },
-                  children: const {
-                    AppThemeMode.system: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      child: Text('跟随系统'),
-                    ),
-                    AppThemeMode.light: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      child: Text('浅色'),
-                    ),
-                    AppThemeMode.dark: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      child: Text('深色'),
-                    ),
-                  },
-                ),
+                onTap: () => _showThemePicker(context, settings),
               ),
             ],
           ),
@@ -154,7 +178,7 @@ class _PresetColorDot extends StatelessWidget {
   }
 }
 
-/// 自定义调色盘：H/S/V 三滑块 + 实时预览
+/// 自定义调色盘：颜色网格 + HEX 输入 + HSV 滑块
 class _CustomColorPicker extends StatefulWidget {
   final Color initialColor;
   final ValueChanged<Color> onChanged;
@@ -170,11 +194,51 @@ class _CustomColorPicker extends StatefulWidget {
 
 class _CustomColorPickerState extends State<_CustomColorPicker> {
   late HSVColor _hsv;
+  late TextEditingController _hexController;
+
+  // 预设颜色网格（色相 × 亮度）
+  static const _colorGrid = [
+    [Color(0xFFF44336), Color(0xFFE91E63), Color(0xFF9C27B0), Color(0xFF673AB7)],
+    [Color(0xFF3F51B5), Color(0xFF2196F3), Color(0xFF03A9F4), Color(0xFF00BCD4)],
+    [Color(0xFF009688), Color(0xFF4CAF50), Color(0xFF8BC34A), Color(0xFFCDDC39)],
+    [Color(0xFFFFEB3B), Color(0xFFFFC107), Color(0xFFFF9800), Color(0xFFFF5722)],
+    [Color(0xFF795548), Color(0xFF9E9E9E), Color(0xFF607D8B), Color(0xFF000000)],
+    [Color(0xFFFFFFFF), Color(0xFFF5F5F5), Color(0xFFE0E0E0), Color(0xFFBDBDBD)],
+  ];
 
   @override
   void initState() {
     super.initState();
     _hsv = HSVColor.fromColor(widget.initialColor);
+    _hexController = TextEditingController(text: _colorToHex(widget.initialColor));
+  }
+
+  @override
+  void dispose() {
+    _hexController.dispose();
+    super.dispose();
+  }
+
+  String _colorToHex(Color color) {
+    return '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase().padLeft(6, '0')}';
+  }
+
+  Color? _hexToColor(String hex) {
+    hex = hex.replaceAll('#', '');
+    if (hex.length == 6) {
+      try {
+        return Color(int.parse('FF$hex', radix: 16));
+      } catch (_) {
+        return null;
+      }
+    } else if (hex.length == 8) {
+      try {
+        return Color(int.parse(hex, radix: 16));
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
   }
 
   void _update({double? hue, double? saturation, double? value}) {
@@ -186,7 +250,17 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
         value ?? _hsv.value,
       );
     });
-    widget.onChanged(_hsv.toColor());
+    final newColor = _hsv.toColor();
+    _hexController.text = _colorToHex(newColor);
+    widget.onChanged(newColor);
+  }
+
+  void _updateFromColor(Color color) {
+    setState(() {
+      _hsv = HSVColor.fromColor(color);
+    });
+    _hexController.text = _colorToHex(color);
+    widget.onChanged(color);
   }
 
   @override
@@ -197,7 +271,10 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 预览 + 当前色值
+          // 颜色网格快速选择
+          _buildColorGrid(),
+          const SizedBox(height: 12),
+          // 预览 + HEX 输入
           Row(
             children: [
               Container(
@@ -210,29 +287,49 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                '#${current.toARGB32().toRadixString(16).substring(2).toUpperCase().padLeft(6, '0')}',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: context.textSecondaryColor,
+              Expanded(
+                child: CupertinoTextField(
+                  controller: _hexController,
+                  placeholder: '#000000',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: context.textPrimaryColor,
+                  ),
+                  decoration: BoxDecoration(
+                    color: context.fieldBgColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  onSubmitted: (value) {
+                    final color = _hexToColor(value);
+                    if (color != null) {
+                      _updateFromColor(color);
+                    } else {
+                      _hexController.text = _colorToHex(current);
+                    }
+                  },
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+          // HSV 滑块
           _buildSlider(
             label: '色相',
             value: _hsv.hue / 360,
+            activeColor: HSVColor.fromAHSV(1, _hsv.hue, 1, 1).toColor(),
             onChanged: (v) => _update(hue: v * 360),
           ),
           _buildSlider(
             label: '饱和度',
             value: _hsv.saturation,
+            activeColor: HSVColor.fromAHSV(1, _hsv.hue, 1, _hsv.value).toColor(),
             onChanged: (v) => _update(saturation: v),
           ),
           _buildSlider(
             label: '亮度',
             value: _hsv.value,
+            activeColor: HSVColor.fromAHSV(1, _hsv.hue, _hsv.saturation, 1).toColor(),
             onChanged: (v) => _update(value: v),
           ),
         ],
@@ -240,9 +337,45 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
     );
   }
 
+  Widget _buildColorGrid() {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.separatorColor),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: _colorGrid.map((row) {
+          return Row(
+            children: row.map((color) {
+              final isSelected = color.toARGB32() == _hsv.toColor().toARGB32();
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => _updateFromColor(color),
+                  child: Container(
+                    height: 36,
+                    color: color,
+                    child: isSelected
+                        ? const Icon(
+                            CupertinoIcons.check_mark,
+                            size: 16,
+                            color: CupertinoColors.white,
+                          )
+                        : null,
+                  ),
+                ),
+              );
+            }).toList(),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildSlider({
     required String label,
     required double value,
+    required Color activeColor,
     required ValueChanged<double> onChanged,
   }) {
     return Row(
@@ -260,6 +393,7 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
         Expanded(
           child: CupertinoSlider(
             value: value.clamp(0.0, 1.0),
+            activeColor: activeColor,
             onChanged: onChanged,
           ),
         ),

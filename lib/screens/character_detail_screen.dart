@@ -1,21 +1,70 @@
+import 'dart:convert';
 import 'package:flutter/cupertino.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
+import '../models/character.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import 'character_prompt_screen.dart';
 
-class CharacterDetailScreen extends StatelessWidget {
+class CharacterDetailScreen extends StatefulWidget {
   final String characterId;
 
   const CharacterDetailScreen({super.key, required this.characterId});
 
   @override
+  State<CharacterDetailScreen> createState() => _CharacterDetailScreenState();
+}
+
+class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
+  /// 点击头像选择图片（相册 / 拍照）
+  Future<void> _pickAvatar(Character character) async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 500,
+      maxHeight: 500,
+      imageQuality: 85,
+    );
+    if (file == null || !mounted) return;
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+    await context
+        .read<CharacterProvider>()
+        .updateAvatar(character.id, base64Encode(bytes));
+  }
+
+  /// 头像选择弹窗
+  void _showAvatarMenu(Character character) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('设置角色头像'),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _pickAvatar(character);
+            },
+            child: const Text('从相册选择'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Consumer2<CharacterProvider, ChatProvider>(
       builder: (context, characterProvider, chatProvider, _) {
-        final character = characterProvider.getCharacterById(characterId);
+        final character = characterProvider.getCharacterById(widget.characterId);
 
         if (character == null) {
           return CupertinoPageScaffold(
@@ -35,58 +84,64 @@ class CharacterDetailScreen extends StatelessWidget {
           ),
           child: Column(
             children: [
-              // 角色资料卡头部
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      context.accentColor,
-                      context.accentColor.withValues(alpha: 0.85),
-                    ],
+              // 角色资料卡头部（头像可点击设置）
+              GestureDetector(
+                onTap: () => _showAvatarMenu(character),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        context.accentColor,
+                        context.accentColor.withValues(alpha: 0.85),
+                      ],
+                    ),
                   ),
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 84,
-                      height: 84,
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.white.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        character.name.isNotEmpty ? character.name[0] : '?',
+                  child: Column(
+                    children: [
+                      _buildAvatar(character),
+                      const SizedBox(height: 12),
+                      Text(
+                        character.name,
                         style: const TextStyle(
-                          fontSize: 36,
+                          fontSize: 22,
                           fontWeight: FontWeight.bold,
                           color: CupertinoColors.white,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      character.name,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: CupertinoColors.white,
+                      const SizedBox(height: 6),
+                      Text(
+                        character.personality,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: CupertinoColors.white.withValues(alpha: 0.9),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      character.personality,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: CupertinoColors.white.withValues(alpha: 0.9),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            CupertinoIcons.photo,
+                            size: 12,
+                            color: CupertinoColors.white,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '点击更换头像',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: CupertinoColors.white.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               // 资料信息
@@ -103,32 +158,6 @@ class CharacterDetailScreen extends StatelessWidget {
                       _sectionTitle(context, '开场白'),
                       _infoCard(context, character.greeting),
                       const SizedBox(height: 16),
-                    ],
-                    if (character.tags.isNotEmpty) ...[
-                      _sectionTitle(context, '标签'),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: character.tags.map((tag) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 7,
-                            ),
-                            decoration: BoxDecoration(
-                              color: context.accentColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Text(
-                              tag,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: context.accentColor,
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
                     ],
                   ],
                 ),
@@ -207,6 +236,45 @@ class CharacterDetailScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  /// 角色头像：已设置显示图片，未设置显示默认用户图标
+  Widget _buildAvatar(Character character) {
+    if (character.avatar.isNotEmpty) {
+      return Container(
+        width: 84,
+        height: 84,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: CupertinoColors.white.withValues(alpha: 0.5),
+            width: 2,
+          ),
+          image: DecorationImage(
+            image: MemoryImage(base64Decode(character.avatar)),
+            fit: BoxFit.cover,
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: 84,
+      height: 84,
+      decoration: BoxDecoration(
+        color: CupertinoColors.white.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: CupertinoColors.white.withValues(alpha: 0.5),
+          width: 2,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: const Icon(
+        CupertinoIcons.person_fill,
+        size: 44,
+        color: CupertinoColors.white,
+      ),
     );
   }
 

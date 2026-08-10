@@ -131,6 +131,15 @@ class CharacterProvider extends ChangeNotifier {
     await _persistCharacters();
   }
 
+  /// 更新角色头像并持久化
+  Future<void> updateAvatar(String id, String avatarBase64) async {
+    final index = _characters.indexWhere((c) => c.id == id);
+    if (index == -1) return;
+    _characters[index] = _characters[index].copyWithAvatar(avatarBase64);
+    notifyListeners();
+    await _persistCharacters();
+  }
+
   Future<void> _persistCharacters() async {
     final prefs = await SharedPreferences.getInstance();
     final map = <String, dynamic>{

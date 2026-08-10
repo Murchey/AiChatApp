@@ -13,11 +13,11 @@ class AppColors {
   static const textSecondaryLight = Color(0xFF8A8A8E);
   static const fieldBgLight = Color(0xFFEDEDED); // 输入框背景
 
-  // 暗色模式
-  static const scaffoldDark = Color(0xFF111111);
-  static const navBarDark = Color(0xFF171717);
-  static const listBgDark = Color(0xFF171717);
-  static const chatBgDark = Color(0xFF000000); // 聊天纯色背景（黑）
+  // 暗色模式（统一使用 #181818）
+  static const scaffoldDark = Color(0xFF181818);
+  static const navBarDark = Color(0xFF181818);
+  static const listBgDark = Color(0xFF222222);
+  static const chatBgDark = Color(0xFF181818);
   static const bubbleSelfDark = Color(0xFF056162); // 自己气泡（深绿）
   static const bubbleOtherDark = Color(0xFF262626);
   static const textPrimaryDark = Color(0xFFF0F0F0);

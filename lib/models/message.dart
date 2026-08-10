@@ -10,6 +10,9 @@ class Message {
   final MessageSender sender;
   final DateTime createdAt;
   final bool isRead;
+  // 引用消息内容（可选）
+  final String quoteContent;
+  final String quoteSender;
 
   Message({
     required this.id,
@@ -19,6 +22,8 @@ class Message {
     required this.sender,
     DateTime? createdAt,
     this.isRead = false,
+    this.quoteContent = '',
+    this.quoteSender = '',
   }) : createdAt = createdAt ?? DateTime.now();
 
   bool get isFromUser => sender == MessageSender.user;
@@ -38,6 +43,8 @@ class Message {
       ),
       createdAt: DateTime.parse(json['created_at'] as String),
       isRead: json['is_read'] as bool? ?? false,
+      quoteContent: json['quote_content'] as String? ?? '',
+      quoteSender: json['quote_sender'] as String? ?? '',
     );
   }
 
@@ -50,6 +57,8 @@ class Message {
       'sender': sender.name,
       'created_at': createdAt.toIso8601String(),
       'is_read': isRead,
+      'quote_content': quoteContent,
+      'quote_sender': quoteSender,
     };
   }
 }

@@ -57,4 +57,17 @@ class Character {
       tags: tags,
     );
   }
+
+  Character copyWithAvatar(String newAvatar) {
+    return Character(
+      id: id,
+      name: name,
+      avatar: newAvatar,
+      description: description,
+      personality: personality,
+      greeting: greeting,
+      systemPrompt: systemPrompt,
+      tags: tags,
+    );
+  }
 }

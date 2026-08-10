@@ -1,44 +1,16 @@
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
-import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/user.dart';
+import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
+import 'api_settings_screen.dart';
 import 'profile_edit_screen.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
-
-  void _editApiKey(BuildContext context, AuthProvider auth) {
-    final controller = TextEditingController(text: auth.apiKey);
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('设置 API Key'),
-        content: CupertinoTextField(
-          controller: controller,
-          placeholder: '输入你的 API Key',
-          autofocus: true,
-        ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () async {
-              await auth.setApiKey(controller.text);
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +21,7 @@ class ProfileScreen extends StatelessWidget {
       child: Consumer<AuthProvider>(
         builder: (context, auth, _) {
           final user = auth.user;
+          final api = context.watch<ApiProvider>();
           return ListView(
             children: [
               // 资料卡（微信个人页样式：方形头像靠左）
@@ -139,11 +112,11 @@ class ProfileScreen extends StatelessWidget {
                       CupertinoIcons.lock,
                       color: context.accentColor,
                     ),
-                    title: const Text('设置 API Key'),
+                    title: const Text('API 设置'),
                     subtitle: Text(
-                      auth.apiKey.isEmpty
-                          ? '未设置'
-                          : '已设置 (${auth.apiKey.length} 字符)',
+                      api.models.isEmpty
+                          ? '未配置模型'
+                          : '已配置 ${api.models.length} 个模型',
                       style: TextStyle(
                         fontSize: 12,
                         color: context.textSecondaryColor,
@@ -154,55 +127,16 @@ class ProfileScreen extends StatelessWidget {
                       size: 16,
                       color: context.textSecondaryColor,
                     ),
-                    onTap: () => _editApiKey(context, auth),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => const ApiSettingsScreen(),
+                        ),
+                      );
+                    },
                   ),
                 ],
-              ),
-              const SizedBox(height: 24),
-              // 退出登录
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: CupertinoButton(
-                  color: CupertinoColors.systemRed,
-                  borderRadius: BorderRadius.circular(12),
-                  child: const Text(
-                    '退出登录',
-                    style: TextStyle(
-                      color: CupertinoColors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  onPressed: () {
-                    showCupertinoDialog(
-                      context: context,
-                      builder: (ctx) => CupertinoAlertDialog(
-                        title: const Text('确认退出？'),
-                        content: const Text('退出后需要重新设置昵称和 API Key'),
-                        actions: [
-                          CupertinoDialogAction(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('取消'),
-                          ),
-                          CupertinoDialogAction(
-                            isDestructiveAction: true,
-                            onPressed: () async {
-                              await auth.logout();
-                              if (ctx.mounted) {
-                                Navigator.pop(ctx);
-                                Navigator.pushNamedAndRemoveUntil(
-                                  context,
-                                  AppRoutes.splash,
-                                  (route) => false,
-                                );
-                              }
-                            },
-                            child: const Text('退出'),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
               ),
               const SizedBox(height: 32),
             ],
