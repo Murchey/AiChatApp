@@ -9,7 +9,6 @@ class Character {
   final String personality;
   final String greeting;
   final String systemPrompt;
-  final String customPersona; // 自定义角色人设（主动消息系统使用）
   final String userRelationship; // 用户与角色的关系
   final List<String> tags;
 
@@ -24,7 +23,6 @@ class Character {
     this.personality = '',
     this.greeting = '',
     this.systemPrompt = '',
-    this.customPersona = '',
     this.userRelationship = '',
     this.tags = const [],
   });
@@ -44,7 +42,6 @@ class Character {
       personality: json['personality'] as String? ?? '',
       greeting: json['greeting'] as String? ?? '',
       systemPrompt: json['system_prompt'] as String? ?? '',
-      customPersona: json['custom_persona'] as String? ?? '',
       userRelationship: json['user_relationship'] as String? ?? '',
       tags: (json['tags'] as List<dynamic>?)?.cast<String>() ?? [],
     );
@@ -62,7 +59,6 @@ class Character {
       'personality': personality,
       'greeting': greeting,
       'system_prompt': systemPrompt,
-      'custom_persona': customPersona,
       'user_relationship': userRelationship,
       'tags': tags,
     };
@@ -78,7 +74,6 @@ class Character {
     String? personality,
     String? greeting,
     String? systemPrompt,
-    String? customPersona,
     String? userRelationship,
     List<String>? tags,
   }) {
@@ -93,7 +88,6 @@ class Character {
       personality: personality ?? this.personality,
       greeting: greeting ?? this.greeting,
       systemPrompt: systemPrompt ?? this.systemPrompt,
-      customPersona: customPersona ?? this.customPersona,
       userRelationship: userRelationship ?? this.userRelationship,
       tags: tags ?? this.tags,
     );

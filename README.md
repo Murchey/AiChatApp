@@ -91,8 +91,6 @@ CharactersImport/
 | `description` | 角色简介 | 可选 |
 | `personality` | 性格特征 | 可选 |
 | `greeting` | 开场白 | 可选 |
-| `system_prompt` | 角色提示词（存在时优先于 `Prompt.txt`） | 可选 |
-| `custom_persona` | 自定义人设 | 可选 |
 | `user_relationship` | 与用户的关系 | 可选 |
 | `tags` | 标签数组，如 `["鸣潮","电子幽灵"]` | 可选 |
 | `avatar` | 内嵌头像（base64 字符串，存在时优先于图片文件） | 可选 |

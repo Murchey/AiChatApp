@@ -100,14 +100,12 @@ class CharacterPackService {
       }
     }
 
-    // 提示词：优先 Profile.json 中的 system_prompt，其次 Prompt.txt
-    var systemPrompt = str('system_prompt');
-    if (systemPrompt.isEmpty) {
-      for (final f in files) {
-        if (f.name.split('/').last.toLowerCase() == 'prompt.txt') {
-          systemPrompt = _decodeUtf8(f.content).trim();
-          break;
-        }
+    // 提示词：仅从 Prompt.txt 读取（Profile.json 不再支持 system_prompt 键）
+    var systemPrompt = '';
+    for (final f in files) {
+      if (f.name.split('/').last.toLowerCase() == 'prompt.txt') {
+        systemPrompt = _decodeUtf8(f.content).trim();
+        break;
       }
     }
 
@@ -122,7 +120,6 @@ class CharacterPackService {
       personality: str('personality'),
       greeting: str('greeting'),
       systemPrompt: systemPrompt,
-      customPersona: str('custom_persona'),
       userRelationship: str('user_relationship'),
       tags: (data['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
@@ -144,8 +141,6 @@ class CharacterPackService {
         'description': c.description,
         'personality': c.personality,
         'greeting': c.greeting,
-        'system_prompt': c.systemPrompt,
-        'custom_persona': c.customPersona,
         'user_relationship': c.userRelationship,
         'tags': c.tags,
       };

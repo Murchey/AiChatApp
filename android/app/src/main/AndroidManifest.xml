@@ -4,7 +4,7 @@
     <!-- 安装 APK 需要（Android 8.0+） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
-        android:label="ai_chat"
+        android:label="AiChat"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

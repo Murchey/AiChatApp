@@ -73,8 +73,6 @@ class CharacterProvider extends ChangeNotifier {
             personality: custom['personality'] as String? ?? c.personality,
             greeting: custom['greeting'] as String? ?? c.greeting,
             systemPrompt: custom['system_prompt'] as String? ?? c.systemPrompt,
-            customPersona:
-                custom['custom_persona'] as String? ?? c.customPersona,
             userRelationship:
                 custom['user_relationship'] as String? ?? c.userRelationship,
             tags:
@@ -164,14 +162,13 @@ class CharacterProvider extends ChangeNotifier {
     await _persistCharacters();
   }
 
-  /// 更新角色资料信息（昵称/备注/个性签名/定位地区/人设/关系）并持久化
+  /// 更新角色资料信息（昵称/备注/个性签名/定位地区/关系）并持久化
   Future<void> updateCharacterInfo(
     String id, {
     String? name,
     String? remark,
     String? signature,
     String? region,
-    String? customPersona,
     String? userRelationship,
   }) async {
     final index = _characters.indexWhere((c) => c.id == id);
@@ -181,7 +178,6 @@ class CharacterProvider extends ChangeNotifier {
       remark: remark,
       signature: signature,
       region: region,
-      customPersona: customPersona,
       userRelationship: userRelationship,
     );
     notifyListeners();

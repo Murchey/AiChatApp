@@ -60,13 +60,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   /// 保存角色资料字段，并同步备注/昵称变更到会话显示名（首页列表实时更新）。
-  /// 人设与关系等文本输入会做防注入清理与长度限制。
+  /// 文本输入会做防注入清理与长度限制。
   Future<void> _saveField({
     String? name,
     String? remark,
     String? signature,
     String? region,
-    String? customPersona,
     String? userRelationship,
   }) async {
     final charProvider = context.read<CharacterProvider>();
@@ -78,9 +77,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       remark: remark,
       signature: signature,
       region: region,
-      customPersona: customPersona == null
-          ? null
-          : PromptBuilder.sanitize(customPersona),
       userRelationship: userRelationship == null
           ? null
           : PromptBuilder.sanitize(userRelationship),

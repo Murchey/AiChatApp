@@ -903,7 +903,6 @@ class _ChatScreenState extends State<ChatScreen> {
         model: model,
         characterName: characterName,
         characterSystemPrompt: character?.systemPrompt ?? '',
-        customPersona: character?.customPersona ?? '',
         userRelationship: character?.userRelationship ?? '',
         userNickname:
             context.read<AuthProvider>().user?.nickname ?? '用户',

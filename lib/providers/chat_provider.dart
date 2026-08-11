@@ -144,7 +144,6 @@ class ChatProvider extends ChangeNotifier {
     required ApiModel model,
     required String characterName,
     required String characterSystemPrompt,
-    required String customPersona,
     required String userRelationship,
     required String userNickname,
     bool replyToUser = false,
@@ -167,7 +166,6 @@ class ChatProvider extends ChangeNotifier {
     final prompt = PromptBuilder.buildSystemPrompt(
       baseSystemPrompt: characterSystemPrompt,
       characterName: characterName,
-      customPersona: customPersona,
       userNickname: userNickname,
       userRelationship: userRelationship,
       currentTime: DateTime.now(),
