@@ -199,15 +199,6 @@ class ChatProvider extends ChangeNotifier {
     double compressThreshold = 0.7,
     String? imagePath, // 非空时以"图片消息"发给模型（OpenAI 视觉格式）
   }) async {
-    // 会话压缩：开启压缩且模型上下文已知时，先检查历史长度是否达到阈值
-    if (enableCompression && compressModel != null && contextLength > 0) {
-      await _maybeCompressConversation(
-        conversationId: conversationId,
-        compressModel: compressModel,
-        contextLength: contextLength,
-        threshold: compressThreshold,
-      );
-    }
     final prompt = PromptBuilder.buildSystemPrompt(
       baseSystemPrompt: characterSystemPrompt,
       characterName: characterName,
@@ -216,11 +207,24 @@ class ChatProvider extends ChangeNotifier {
       currentTime: DateTime.now(),
       replyToUser: replyToUser,
     );
-    try {
-      final outputInstruction = PromptBuilder.buildOutputInstruction(
-        characterName: characterName,
-        replyToUser: replyToUser,
+    final outputInstruction = PromptBuilder.buildOutputInstruction(
+      characterName: characterName,
+      replyToUser: replyToUser,
+    );
+    // 会话压缩：开启压缩且模型上下文已知时，先检查历史长度是否达到阈值。
+    // 预算同时计入系统提示词与格式指令占用的 token——
+    // 系统提示词越长，压缩越早触发，避免「提示词 + 历史」超过模型上下文上限
+    if (enableCompression && compressModel != null && contextLength > 0) {
+      await _maybeCompressConversation(
+        conversationId: conversationId,
+        compressModel: compressModel,
+        contextLength: contextLength,
+        threshold: compressThreshold,
+        systemPromptTokens:
+            _estimateTextTokens(prompt) + _estimateTextTokens(outputInstruction),
       );
+    }
+    try {
       final history = historyMessages ??
           _buildHistory(conversationId, contextCount);
       // 图片消息走 OpenAI 兼容视觉格式，让角色"看到"图片后回复
@@ -348,12 +352,15 @@ class ChatProvider extends ChangeNotifier {
 
   /// 会话压缩：当会话历史估算 token 达到模型上下文的 [threshold] 时，
   /// 将更早的消息交给压缩模型生成摘要，替换为一条摘要消息并持久化。
+  /// [systemPromptTokens] 为系统提示词 + 格式指令占用的 token，
+  /// 计入压缩预算（长系统提示词时更早触发压缩）。
   /// 压缩失败（网络/API 异常）时静默跳过，不影响本次回复。
   Future<void> _maybeCompressConversation({
     required String conversationId,
     required ApiModel compressModel,
     required int contextLength,
     required double threshold,
+    int systemPromptTokens = 0,
   }) async {
     final messages = _messagesMap[conversationId] ?? [];
     if (messages.isEmpty) return;
@@ -361,7 +368,9 @@ class ChatProvider extends ChangeNotifier {
         messages.where((m) => m.type == MessageType.text).toList();
     if (textMessages.length <= kKeepRecentMessages) return;
 
-    if (_estimateTokens(textMessages) < contextLength * threshold) {
+    // 历史 + 系统提示词一起判断是否达到压缩阈值
+    if (_estimateTokens(textMessages) + systemPromptTokens <
+        contextLength * threshold) {
       return;
     }
 
@@ -410,14 +419,18 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// 粗略估算一段文本的 token 数（中文约 1 字符/token，混合按 1.2 估算）
+  static int _estimateTextTokens(String text) =>
+      (text.length / _tokensPerChar).ceil();
+
   /// 粗略估算文本消息的 token 数
   static int _estimateTokens(List<Message> messages) {
-    var chars = 0;
+    var total = 0;
     for (final m in messages) {
       if (m.type != MessageType.text) continue;
-      chars += m.content.length;
+      total += _estimateTextTokens(m.content);
     }
-    return (chars / _tokensPerChar).ceil();
+    return total;
   }
 
   /// 估算某会话当前全部消息占用的 token 数（用于「聊天设置」中展示上下文使用程度）

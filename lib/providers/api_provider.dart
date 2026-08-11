@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import '../services/llm_service.dart';
 
 /// API 模型配置
 class ApiModel {
@@ -86,6 +87,32 @@ class ApiProvider extends ChangeNotifier {
         _models = list
             .map((e) => ApiModel.fromJson(e as Map<String, dynamic>))
             .toList();
+        // 自动迁移：修正已保存模型
+        // 1. deepseek-chat / deepseek-reasoner 已于 2026-07-24 下线，统一改为 deepseek-v4-flash
+        // 2. 仍是默认 8000 的模型，用本地注册表里已知的上下文长度修正（低版本保存的新模型
+        //    如 deepseek-v4-flash 也能自动获得准确值）
+        var migrated = false;
+        for (var i = 0; i < _models.length; i++) {
+          final m = _models[i];
+          var modelName = m.modelName.trim();
+          if (modelName == 'deepseek-chat' || modelName == 'deepseek-reasoner') {
+            modelName = 'deepseek-v4-flash';
+          }
+          var contextLength = m.contextLength;
+          if (contextLength == 8000) {
+            final local = LLMService.localContextLength(modelName);
+            if (local != null) contextLength = local;
+          }
+          if (modelName != m.modelName.trim() ||
+              contextLength != m.contextLength) {
+            _models[i] = m.copyWith(
+              modelName: modelName,
+              contextLength: contextLength,
+            );
+            migrated = true;
+          }
+        }
+        if (migrated) await _persist();
       } catch (_) {
         _models = [];
       }

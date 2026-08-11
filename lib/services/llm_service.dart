@@ -72,7 +72,7 @@ class LLMService {
           {'role': 'user', 'content': outputInstruction.trim()},
       ],
       temperature: 0.9,
-      maxTokens: 512,
+      maxTokens: 1024,
     );
     debugPrint('[LLMService] 模型原始响应: $raw');
     final result = parseMessages(raw);
@@ -120,7 +120,7 @@ class LLMService {
         },
       ],
       temperature: 0.9,
-      maxTokens: 512,
+      maxTokens: 1024,
     );
     debugPrint('[LLMService] 模型原始响应: $raw');
     final result = parseMessages(raw);
@@ -169,6 +169,33 @@ class LLMService {
     base = base.replaceAll(RegExp(r'/+$'), '');
     final url = base.endsWith('/chat/completions') ? base : '$base/chat/completions';
 
+    // 部分模型（快速/推理模型）偶发返回 HTTP 200 但 content 为空，
+    // 重发一次请求让模型重新生成，显著降低"API 返回内容为空"的出现频率。
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final content = await _requestOnce(
+        url: url,
+        model: model,
+        messages: messages,
+        temperature: temperature,
+        maxTokens: maxTokens,
+        jsonMode: jsonMode,
+      );
+      if (content.trim().isNotEmpty) return content;
+      debugPrint('[LLMService] 第 ${attempt + 1} 次响应 content 为空，自动重试');
+    }
+    throw const LLMException('API 返回内容为空，已自动重试一次仍无结果，请稍后重试或检查模型设置');
+  }
+
+  /// 发起一次对话补全请求，返回响应中的 content（可能为空字符串）。
+  /// 非 200 状态码或网络异常时抛出 [LLMException]。
+  static Future<String> _requestOnce({
+    required String url,
+    required ApiModel model,
+    required List<Map<String, Object>> messages,
+    required double temperature,
+    required int maxTokens,
+    required bool jsonMode,
+  }) async {
     final client = HttpClient();
     try {
       final request = await client
@@ -190,7 +217,12 @@ class LLMService {
 
       final response =
           await request.close().timeout(const Duration(seconds: 60));
-      final body = await response.transform(utf8.decoder).join();
+      // 响应头到达后，正文读取同样设置超时，
+      // 避免网关慢速传输时界面一直卡在"正在输入"
+      final body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(body) as Map<String, dynamic>;
@@ -201,11 +233,7 @@ class LLMService {
         final message =
             (choices.first as Map<String, dynamic>)['message']
                 as Map<String, dynamic>?;
-        final content = message?['content'] as String? ?? '';
-        if (content.trim().isEmpty) {
-          throw const LLMException('API 返回内容为空，请重新点击对话完成按钮');
-        }
-        return content;
+        return message?['content'] as String? ?? '';
       }
 
       // 非 200：尽量解析官方错误信息 {"error":{"message":...}}
@@ -288,13 +316,18 @@ class LLMService {
 
   /// 自动检测模型的上下文长度（token）。
   ///
-  /// 1. 优先请求 `GET {base}/models`，从服务商返回中解析上下文字段
-  ///   （如 OpenRouter 的 `context_length`、部分供应商的 `context_window` /
-  ///   `max_model_len` / `max_tokens`）；
-  /// 2. 接口不提供或未实现时，按模型名启发式返回常见值；
-  /// 3. 两者都无法确定时返回 null，由调用方保留原值。
+  /// 采用「本地注册表优先 + API 探测兜底」的混合策略：
+  /// 1. 本地硬编码注册表精确匹配模型名（即时、离线可用，主流模型无需联网）；
+  /// 2. 未命中时按模型名家族启发式返回常见值；
+  /// 3. 仍未命中才请求 `GET {base}/models` 探测（如 OpenRouter 的
+  ///    `context_length`、部分供应商的 `context_window` / `max_model_len` /
+  ///    `max_tokens`），接口不提供则返回 null，由调用方保留原值。
   static Future<int?> detectContextLength(ApiModel model) async {
-    // 1. 请求 GET /models
+    // 1. 本地注册表（精确匹配 + 家族启发式），离线可用、无需请求
+    final local = localContextLength(model.modelName);
+    if (local != null) return local;
+
+    // 2. 请求 GET /models 探测（仅注册表未命中的模型）
     var base = model.baseUrl.trim().isNotEmpty
         ? model.baseUrl.trim()
         : defaultBaseUrl;
@@ -321,16 +354,14 @@ class LLMService {
         final found = _parseContextFromModelsResponse(body, model.modelName);
         if (found != null) return found;
       } else {
-        debugPrint('[LLMService] /models 返回 HTTP ${response.statusCode}，改用启发式');
+        debugPrint('[LLMService] /models 返回 HTTP ${response.statusCode}，无法确定上下文长度');
       }
     } catch (e) {
-      debugPrint('[LLMService] 请求 /models 失败: $e，改用启发式');
+      debugPrint('[LLMService] 请求 /models 失败: $e，无法确定上下文长度');
     } finally {
       client.close(force: true);
     }
-
-    // 2. 模型名启发式
-    return _heuristicContextLength(model.modelName);
+    return null;
   }
 
   /// 从 GET /models 的响应中解析与 [modelName] 匹配的模型上下文长度。
@@ -393,22 +424,119 @@ class LLMService {
     return null;
   }
 
-  /// 常见模型上下文长度的启发式表（按模型名子串匹配，靠前的优先）
+  /// 本地硬编码模型上下文注册表（精确模型名 → 上下文长度 token）。
+  ///
+  /// 采用「API 探测 + 本地注册表」混合策略：本地注册表优先（即时、离线可用），
+  /// 覆盖主流与常见第三方模型；未命中的模型再走 /models 接口探测与家族启发式。
+  static const Map<String, int> _exactModelContexts = {
+    // OpenAI
+    'gpt-4o': 128000,
+    'gpt-4o-mini': 128000,
+    'gpt-4.1': 1047576,
+    'gpt-4.1-mini': 1047576,
+    'gpt-4.1-nano': 1047576,
+    'gpt-4-turbo': 128000,
+    'gpt-4': 8192,
+    'gpt-3.5-turbo': 16385,
+    'o1': 200000,
+    'o1-mini': 128000,
+    'o3': 200000,
+    'o3-mini': 200000,
+    'o4-mini': 200000,
+    // Anthropic Claude
+    'claude-opus-4': 200000,
+    'claude-sonnet-4': 200000,
+    'claude-3-7-sonnet': 200000,
+    'claude-3-5-sonnet': 200000,
+    'claude-3-opus': 200000,
+    'claude-3-haiku': 200000,
+    // Google Gemini
+    'gemini-2.5-pro': 1048576,
+    'gemini-2.5-flash': 1048576,
+    'gemini-2.5-flash-lite': 1048576,
+    'gemini-3-flash-preview': 1048576,
+    'gemini-2.0-flash': 1048576,
+    'gemini-1.5-pro': 2097152,
+    'gemini-1.5-flash': 1048576,
+    // DeepSeek（deepseek-chat / deepseek-reasoner 已于 2026-07-24 下线，统一为 V4 系列）
+    'deepseek-v4-flash': 1048576,
+    'deepseek-v4-pro': 1048576,
+    // 旧模型名仍路由到 V4-Flash（非思考/思考模式），保留以兼容老配置
+    'deepseek-chat': 1048576,
+    'deepseek-reasoner': 1048576,
+    // 小米 MiMo
+    'mimo-v2.5-pro': 1048576,
+    'mimo-v2.5-omni': 1048576,
+    'mimo-v2-flash': 57344,
+    // xAI Grok
+    'grok-4.5': 500000,
+    'grok-4.20-reasoning': 2097152,
+    'grok-4.20-non-reasoning': 2097152,
+    'grok-4-1-fast-reasoning': 2097152,
+    'grok-4-1-fast-non-reasoning': 2097152,
+    // 通义千问
+    'qwen-max': 32768,
+    'qwen-plus': 131072,
+    'qwen-turbo': 131072,
+    'qwen-long': 10000000,
+    'qwen-vl-max': 32768,
+    // Kimi / Moonshot
+    'moonshot-v1-8k': 8192,
+    'moonshot-v1-32k': 32768,
+    'moonshot-v1-128k': 128000,
+    'kimi-k2': 128000,
+    // 智谱 GLM
+    'glm-4': 128000,
+    'glm-4-plus': 128000,
+    'glm-4-flash': 128000,
+    'glm-4-long': 1000000,
+    // 豆包
+    'doubao-pro': 65536,
+    'doubao-lite': 65536,
+    // MiniMax
+    'minimax-m2.7': 204800,
+    'minimax-m2.7-highspeed': 204800,
+    'minimax-m2.5': 204800,
+    'minimax-m2.1': 204800,
+    'minimax-m1': 1048576,
+    'minimax-text-01': 1048576,
+    'minimax-abab6.5': 24576,
+    // 硅基流动 SiliconCloud（模型名为「组织/模型」格式）
+    'qwen/qwen2.5-72b-instruct': 131072,
+    'qwen/qwen3-8b': 131072,
+    'deepseek-ai/deepseek-v3': 131072,
+    'deepseek-ai/deepseek-r1': 131072,
+    'thudm/glm-4-9b-0414': 131072,
+    // 开源系
+    'llama-3.1-405b': 128000,
+    'llama-3.1-70b': 128000,
+    'llama-3.3-70b': 128000,
+    'mistral-large': 128000,
+    'mistral-medium': 32768,
+    'yi-large': 32768,
+  };
+
+  /// 常见模型上下文长度的家族启发式表（按模型名子串匹配，靠前的优先）。
+  /// 仅作为注册表精确匹配未命中时的兜底。
   static const List<(String, int)> _contextHeuristics = [
     ('gemini', 1048576),
     ('claude', 200000),
-    ('deepseek', 65536),
+    ('deepseek', 1048576),
+    ('grok', 500000),
+    ('mimo', 1048576),
     ('gpt-4o', 128000),
     ('gpt-4-turbo', 128000),
     ('gpt-4', 8192),
     ('gpt-3.5', 16385),
+    ('o3', 200000),
+    ('o1', 200000),
     ('glm', 128000),
     ('moonshot', 128000),
     ('kimi', 128000),
     ('qwen-long', 10000000),
     ('qwen', 32768),
     ('doubao', 65536),
-    ('minimax', 24576),
+    ('minimax', 204800),
     ('mistral', 32768),
     ('llama', 32768),
     ('yi-', 32768),
@@ -417,6 +545,16 @@ class LLMService {
     ('spark', 8192),
     ('ernie', 8192),
   ];
+
+  /// 纯本地（不联网）按模型名查询上下文长度：
+  /// 先精确匹配注册表，未命中再用家族启发式兜底。未命中返回 null。
+  static int? localContextLength(String modelName) {
+    final name = modelName.trim().toLowerCase();
+    if (name.isEmpty) return null;
+    final exact = _exactModelContexts[name];
+    if (exact != null) return exact;
+    return _heuristicContextLength(name);
+  }
 
   static int? _heuristicContextLength(String modelName) {
     final name = modelName.toLowerCase();

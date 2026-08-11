@@ -47,6 +47,7 @@ class _ChatScreenState extends State<ChatScreen>
   final Set<String> _selectedIds = {}; // 多选模式下选中的消息 id
   ChatProvider? _chatProvider; // 生命周期内复用（dispose 中仍需访问）
   int _lastRenderedCount = -1; // 已渲染消息条数（用于新消息自动滚底）
+  bool _keyboardVisible = false; // 软键盘是否弹出（用于键盘弹出时保持列表滚底）
 
   @override
   void initState() {
@@ -104,6 +105,19 @@ class _ChatScreenState extends State<ChatScreen>
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
     }
+  }
+
+  /// 键盘弹出动画期间视口持续缩小：分几次跟随滚动到底部，
+  /// 确保键盘动画结束后列表仍停留在新的最底部
+  void _scrollToBottomWhileKeyboardShows() {
+    void follow() {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => follow());
+    Future.delayed(const Duration(milliseconds: 120), follow);
+    Future.delayed(const Duration(milliseconds: 300), follow);
   }
 
   /// 打开聊天设置（模型/上下文条数）
@@ -1024,6 +1038,21 @@ class _ChatScreenState extends State<ChatScreen>
             .getCharacterById(conversation.characterId)
         : null;
     final displayName = character?.displayName ?? widget.characterName;
+
+    // 软键盘弹出瞬间：若此前列表已在最底部，则跟随键盘动画持续滚底，
+    // 避免最新消息被键盘遮挡（若用户已上滑阅读旧消息则不打扰）
+    final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+    if (keyboardVisible && !_keyboardVisible) {
+      _keyboardVisible = true;
+      if (_scrollController.hasClients) {
+        final position = _scrollController.position;
+        if (position.pixels >= position.maxScrollExtent - 1) {
+          _scrollToBottomWhileKeyboardShows();
+        }
+      }
+    } else if (!keyboardVisible && _keyboardVisible) {
+      _keyboardVisible = false;
+    }
 
     // 对号按钮可用性：上一条消息是用户发送时才可点（角色还没回复）
     final lastMessage = chatProvider.getMessages(widget.conversationId).lastOrNull;

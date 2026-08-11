@@ -4,12 +4,28 @@ import '../config/theme.dart';
 import '../providers/api_provider.dart';
 import '../services/llm_service.dart';
 
+/// 快捷预设：从提供商预设进入添加模型页面时自动预填的信息
+class ModelPreset {
+  final String displayName; // 展示名称
+  final String modelName; // 模型名称（API 调用使用）
+  final String baseUrl; // API 请求地址
+
+  const ModelPreset({
+    required this.displayName,
+    required this.modelName,
+    required this.baseUrl,
+  });
+}
+
 /// 模型编辑二级页面（添加 / 编辑模型）
 class ModelEditScreen extends StatefulWidget {
   /// 传入模型则为编辑模式，为 null 则为添加模式
   final ApiModel? model;
 
-  const ModelEditScreen({super.key, this.model});
+  /// 快捷预设（添加模式）：自动预填展示名称 / 模型名称 / API 地址
+  final ModelPreset? preset;
+
+  const ModelEditScreen({super.key, this.model, this.preset});
 
   @override
   State<ModelEditScreen> createState() => _ModelEditScreenState();
@@ -28,12 +44,13 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   @override
   void initState() {
     super.initState();
+    // 优先取编辑模型的值，其次取快捷预设的预填值（添加模式）
     _displayController =
-        TextEditingController(text: widget.model?.displayName ?? '');
+        TextEditingController(text: widget.model?.displayName ?? widget.preset?.displayName ?? '');
     _modelNameController =
-        TextEditingController(text: widget.model?.modelName ?? '');
+        TextEditingController(text: widget.model?.modelName ?? widget.preset?.modelName ?? '');
     _baseUrlController =
-        TextEditingController(text: widget.model?.baseUrl ?? '');
+        TextEditingController(text: widget.model?.baseUrl ?? widget.preset?.baseUrl ?? '');
     _apiKeyController =
         TextEditingController(text: widget.model?.apiKey ?? '');
     _contextController = TextEditingController(
@@ -74,7 +91,17 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       return;
     }
     // 上下文长度：解析失败用默认 8000，限制在 1000~1000000 之间
-    final parsedContext = int.tryParse(_contextController.text.trim()) ?? 8000;
+    var contextText = _contextController.text.trim();
+    // 未手动修改（仍是默认 8000）时，自动用本地注册表里的已知值填充：
+    // 主流模型（deepseek-v4-flash/gpt-4o 等）无需联网即可得到准确的上下文长度
+    if (contextText.isEmpty || contextText == '8000') {
+      final local = LLMService.localContextLength(modelName);
+      if (local != null) {
+        contextText = local.toString();
+        _contextController.text = contextText;
+      }
+    }
+    final parsedContext = int.tryParse(contextText) ?? 8000;
     final contextLength = parsedContext.clamp(1000, 1000000);
     if (_isEdit) {
       await api.updateModel(widget.model!.copyWith(
@@ -94,25 +121,6 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       );
     }
     if (mounted) Navigator.pop(context);
-  }
-
-  /// 一键填入 DeepSeek 官方配置（仅填充空白字段）
-  void _applyDeepSeekPreset() {
-    setState(() {
-      if (_displayController.text.trim().isEmpty) {
-        _displayController.text = 'DeepSeek Chat';
-      }
-      if (_modelNameController.text.trim().isEmpty) {
-        _modelNameController.text = 'deepseek-chat';
-      }
-      if (_baseUrlController.text.trim().isEmpty) {
-        _baseUrlController.text = 'https://api.deepseek.com';
-      }
-      // 上下文长度仍是默认值 8000 时，填入官方 64K 上下文
-      if (_contextController.text.trim() == '8000') {
-        _contextController.text = '65536';
-      }
-    });
   }
 
   /// 自动检测模型上下文长度：请求 /models 接口，失败时按模型名启发式估算；
@@ -195,45 +203,6 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       child: ListView(
         children: [
           const SizedBox(height: 12),
-          // DeepSeek 官方一键预设
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('快捷预设'),
-            children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.sparkles,
-                  color: context.accentColor,
-                ),
-                title: Text(
-                  'DeepSeek 官方配置',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: context.textPrimaryColor,
-                  ),
-                ),
-                subtitle: Text(
-                  '自动填入官方接口地址与 deepseek-chat 模型，仅需补充 API Key',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 14,
-                  color: context.textSecondaryColor,
-                ),
-                onTap: _applyDeepSeekPreset,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
             decoration: BoxDecoration(
@@ -250,7 +219,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
               _buildField(
                 controller: _modelNameController,
                 label: '模型名称',
-                placeholder: 'API 调用使用，如 deepseek-chat / deepseek-reasoner',
+                placeholder: 'API 调用使用，如 deepseek-v4-flash / gpt-4o',
               ),
               _buildField(
                 controller: _contextController,

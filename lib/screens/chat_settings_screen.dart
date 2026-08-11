@@ -12,6 +12,19 @@ const int kMaxContextCount = 999;
 /// 滑条最大值：kMaxContextCount 时为有限条数，此值表示【无限制】
 const int kUnlimitedSliderValue = kMaxContextCount + 1;
 
+/// 将上下文长度格式化为易读形式：128000 → 128K、1047576 → 1M
+String _formatContextLength(int length) {
+  if (length >= 1000000) {
+    final m = length / 1000000;
+    return m == m.roundToDouble() ? '${m.round()}M' : '${m.toStringAsFixed(1)}M';
+  }
+  if (length >= 1000) {
+    final k = length / 1000;
+    return k == k.roundToDouble() ? '${k.round()}K' : '${k.toStringAsFixed(1)}K';
+  }
+  return '$length';
+}
+
 /// 聊天设置页面 - 上下文条数、自动压缩、使用的模型
 class ChatSettingsScreen extends StatelessWidget {
   const ChatSettingsScreen({super.key, this.conversationId});
@@ -478,7 +491,7 @@ class ChatSettingsScreen extends StatelessWidget {
                       ),
                     ),
                     subtitle: Text(
-                      model.modelName,
+                      '${model.modelName}（${_formatContextLength(model.contextLength)}）',
                       style: TextStyle(
                         fontSize: 12,
                         color: context.textSecondaryColor,
