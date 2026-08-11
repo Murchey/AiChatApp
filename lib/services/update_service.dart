@@ -5,10 +5,18 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// GitHub 仓库信息：发布 Release 并附带 APK 后即可自动检查更新
+/// Gitee 仓库信息（国内下载源，更新时优先选择）
+const String kGiteeOwner = 'Murchey';
+const String kGiteeRepo = 'AiChatApp';
+const String kGiteeRepoUrl = 'https://gitee.com/Murchey/AiChatApp';
+
+/// GitHub 仓库信息（备用下载源）
 const String kGitHubOwner = 'Murchey';
 const String kGitHubRepo = 'AiChatApp';
 const String kGitHubRepoUrl = 'https://github.com/Murchey/AiChatApp';
+
+/// Release 资产命名标准：AiChat-V1.0.0.apk
+String kApkAssetName(String version) => 'AiChat-V$version.apk';
 
 /// 内置的 GitHub 加速代理源（与学习项目 Example 保持一致）
 const List<String> kProxySources = [
@@ -17,68 +25,115 @@ const List<String> kProxySources = [
   'https://cdn.gh-proxy.org/',
 ];
 
-/// 更新信息
+/// 更新信息（分别携带 Gitee / GitHub 两个下载源的直链）
 class UpdateInfo {
   final String latestVersion;
   final String releaseNotes;
-  final String downloadUrl;
+  final String giteeDownloadUrl; // 空串 = Gitee 源不可用
+  final String githubDownloadUrl; // 空串 = GitHub 源不可用
 
   const UpdateInfo({
     required this.latestVersion,
     required this.releaseNotes,
-    required this.downloadUrl,
+    this.giteeDownloadUrl = '',
+    this.githubDownloadUrl = '',
   });
 }
 
 /// 应用自动更新服务：
-/// 1. 检查 GitHub 最新 Release 版本（[checkForUpdate]）
+/// 1. 检查最新 Release 版本（Gitee 优先，GitHub 备用，见 [checkForUpdate]）
 /// 2. 下载新版 APK 到应用外部文件目录（[downloadApk]，带进度回调）
 /// 3. 通过原生 FileProvider 触发系统安装（[installApk]）
 class UpdateService {
   static const MethodChannel _channel = MethodChannel('com.aichat.ai_chat/files');
 
-  /// 检查 GitHub 最新 Release 是否有新版本，无更新/失败返回 null。
-  /// [proxyUrl] 非空时通过加速代理前缀访问 GitHub API。
+  /// 检查最新 Release 是否有新版本，无更新/失败返回 null。
+  ///
+  /// 检测顺序：Gitee（国内直连，首选）→ GitHub（备用，可通过 [proxyUrl] 加速）。
+  /// 两个源都返回各自 Release 的 APK 直链，由更新弹窗的"下载源"选项卡选择。
   static Future<UpdateInfo?> checkForUpdate({String proxyUrl = ''}) async {
     try {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version; // 例如 1.0.0
 
-      var apiUrl =
-          'https://api.github.com/repos/$kGitHubOwner/$kGitHubRepo/releases/latest';
-      if (proxyUrl.isNotEmpty) apiUrl = '$proxyUrl$apiUrl';
-      final uri = Uri.parse(apiUrl);
+      // 1. Gitee 最新 Release（无需代理）
+      final gitee = await _fetchRelease(
+        apiUrl: 'https://gitee.com/api/v5/repos/$kGiteeOwner/$kGiteeRepo/releases/latest',
+        downloadPrefix: '$kGiteeRepoUrl/releases/download',
+        proxyUrl: '',
+      );
+      // 2. GitHub 最新 Release（可选代理加速）
+      final github = await _fetchRelease(
+        apiUrl: 'https://api.github.com/repos/$kGitHubOwner/$kGitHubRepo/releases/latest',
+        downloadPrefix: '$kGitHubRepoUrl/releases/download',
+        proxyUrl: proxyUrl,
+      );
+
+      if (gitee == null && github == null) return null;
+
+      final latestVersion = gitee?.version ?? github!.version;
+      final releaseNotes =
+          (gitee?.notes.isNotEmpty ?? false) ? gitee!.notes : (github?.notes ?? '');
+
+      if (!_isNewerVersion(latestVersion, currentVersion)) return null;
+      return UpdateInfo(
+        latestVersion: latestVersion,
+        releaseNotes: releaseNotes,
+        giteeDownloadUrl: gitee?.downloadUrl ?? '',
+        githubDownloadUrl: github?.downloadUrl ?? '',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 请求单个源的最新 Release，解析出版本号、更新说明与 APK 直链。
+  /// 失败（网络/非 200/无 tag）返回 null。
+  static Future<({String version, String notes, String downloadUrl})?> _fetchRelease({
+    required String apiUrl,
+    required String downloadPrefix,
+    required String proxyUrl,
+  }) async {
+    try {
+      var url = apiUrl;
+      if (proxyUrl.isNotEmpty) url = '$proxyUrl$url';
       final resp = await http
-          .get(uri, headers: {'Accept': 'application/vnd.github.v3+json'})
+          .get(Uri.parse(url), headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 10));
       if (resp.statusCode != 200) return null;
 
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
       final tagName = (json['tag_name'] as String?) ?? '';
       if (tagName.isEmpty) return null;
-      final latestVersion = tagName.replaceFirst(RegExp(r'^[vV]'), '');
-      final releaseNotes = (json['body'] as String?) ?? '';
+      final version = tagName.replaceFirst(RegExp(r'^[vV]'), '');
+      final notes = (json['body'] as String?) ?? '';
+      final expectedName = kApkAssetName(version);
 
-      // 优先取 Release 资产里的 APK 直链；无资产时按 GitHub 下载地址规则拼接
+      // 优先取符合命名标准（AiChat-V1.0.0.apk）的资产，其次任意 .apk 资产
       String? downloadUrl;
       final assets = json['assets'] as List? ?? [];
       for (final asset in assets) {
         final a = asset as Map<String, dynamic>;
         final name = a['name']?.toString() ?? '';
-        if (name.endsWith('.apk')) {
+        if (name.toLowerCase() == expectedName.toLowerCase()) {
           downloadUrl = a['browser_download_url']?.toString();
           break;
         }
       }
-      downloadUrl ??=
-          'https://github.com/$kGitHubOwner/$kGitHubRepo/releases/download/$tagName/app.apk';
+      if (downloadUrl == null) {
+        for (final asset in assets) {
+          final a = asset as Map<String, dynamic>;
+          final name = a['name']?.toString() ?? '';
+          if (name.toLowerCase().endsWith('.apk')) {
+            downloadUrl = a['browser_download_url']?.toString();
+            break;
+          }
+        }
+      }
+      // 无资产时按命名标准拼接直链
+      downloadUrl ??= '$downloadPrefix/$tagName/$expectedName';
 
-      if (!_isNewerVersion(latestVersion, currentVersion)) return null;
-      return UpdateInfo(
-        latestVersion: latestVersion,
-        releaseNotes: releaseNotes,
-        downloadUrl: downloadUrl,
-      );
+      return (version: version, notes: notes, downloadUrl: downloadUrl);
     } catch (_) {
       return null;
     }
@@ -97,7 +152,7 @@ class UpdateService {
       final dir = await getExternalStorageDirectory();
       final updatesDir = Directory('${dir?.path}/updates');
       if (!updatesDir.existsSync()) updatesDir.createSync(recursive: true);
-      final file = File('${updatesDir.path}/app-v$version.apk');
+      final file = File('${updatesDir.path}/${kApkAssetName(version)}');
 
       // 已存在完整文件则跳过下载
       if (file.existsSync() && file.lengthSync() > 0) return file.path;

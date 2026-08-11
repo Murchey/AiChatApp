@@ -370,7 +370,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('启动时自动检测更新'),
                 subtitle: Text(
                   settings.autoCheckUpdate
-                      ? '已启用，启动时自动检测 GitHub 新版本'
+                      ? '已启用，启动时自动检测新版本'
                       : '已关闭',
                   style: TextStyle(
                     fontSize: 12,
@@ -383,7 +383,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               CupertinoListTile(
-                title: const Text('更新代理地址'),
+                title: const Text('GitHub 加速地址'),
                 subtitle: Text(
                   _proxyDisplayText(settings.updateProxyUrl),
                   maxLines: 1,

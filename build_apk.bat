@@ -8,7 +8,7 @@ rem  AiChat 本地打包脚本
 rem  用法：
 rem    build_apk.bat              -> 构建 debug APK
 rem    build_apk.bat release      -> 构建 release APK
-rem  产物：dist\ai_chat_v<版本号>_<debug|release>.apk
+rem  产物：dist\AiChat-V<版本号>.apk（发布 Release 时按此命名上传）
 rem ============================================================
 
 set MODE=debug
@@ -47,7 +47,7 @@ set OUT_DIR=dist
 if not exist %OUT_DIR% mkdir %OUT_DIR%
 
 set SRC=build\app\outputs\flutter-apk\app-%MODE%.apk
-set DST=%OUT_DIR%\ai_chat_v%VERSION%_%MODE%.apk
+set DST=%OUT_DIR%\AiChat-V%VERSION%.apk
 if not exist "%SRC%" (
     echo [ERROR] 未找到构建产物：%SRC%
     pause

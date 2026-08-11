@@ -27,7 +27,7 @@
 - **角色包导入/导出**：`.zip` 角色包一键导入、导出，支持批量勾选
 - **上下文管理**：设置携带上下文条数（1 ~ 999 条，或「无限制」），可精确输入
 - **会话自动压缩**：上下文无限制时自动开启压缩，达到所选模型上下文阈值（可调）时自动把更早的历史消息压缩为摘要
-- **自动更新**：启动时自动检测 GitHub Release 新版本，支持加速代理源，一键下载并安装 APK
+- **自动更新**：启动时自动检测新版本（Gitee 优先、GitHub 备用双源），更新弹窗可选下载源，一键下载并安装 APK
 - **明暗模式**：跟随系统 / 浅色 / 深色，可自定义主题色
 
 ---
@@ -46,7 +46,7 @@ lib/
 ├── screens/                       # 页面（聊天、通讯录、我、设置、API 设置等）
 ├── services/
 │   ├── llm_service.dart           # LLM 调用（生成回复 / 压缩摘要）
-│   ├── update_service.dart        # GitHub 更新检测、APK 下载与安装
+│   ├── update_service.dart        # Gitee/GitHub 双源更新检测、APK 下载与安装
 │   ├── prompt_builder.dart        # System Prompt 与输出指令组装
 │   └── character_pack_service.dart# 角色包 zip 解析与导出
 ├── utils/                         # 文件选择、角色包拾取等
@@ -136,8 +136,8 @@ version: 1.0.0
 发布流程：
 
 1. 开发者在 `pubspec.yaml` 中填写想要的版本号，例如 `1.0.0` → `1.1.0`；
-2. 执行 `build_apk.bat release` 打包；
-3. 在 GitHub 仓库新建 Release，`tag` 填与 pubspec 相同的版本号（如 `1.1.0`，可带可不带 `v` 前缀；必须比本地版本新，更新检测据此提示升级），并上传 APK 资产。
+2. 执行 `build_apk.bat release` 打包（产物为 `dist\AiChat-V1.1.0.apk`）；
+3. 在 Gitee 与 GitHub 仓库各新建一个 Release：`tag` 填与 pubspec 相同的版本号（如 `1.1.0`，可带可不带 `v` 前缀；必须比本地版本新，更新检测据此提示升级），并上传 **按命名标准命名** 的 APK 资产 `AiChat-V1.1.0.apk`。
 
 > 说明：App 内「软件版本」通过 `package_info_plus` 读取，`flutter build apk` 会把 pubspec 中的版本写入 APK，无需手动改 AndroidManifest。
 
@@ -155,10 +155,10 @@ build_apk.bat
 build_apk.bat release
 ```
 
-脚本会自动执行 `flutter pub get` → `flutter build apk --debug|--release`，并将 APK 复制到 `dist\` 目录，文件名带版本号：
+脚本会自动执行 `flutter pub get` → `flutter build apk --debug|--release`，并将 APK 复制到 `dist\` 目录，文件名遵循命名标准 `AiChat-V<版本号>.apk`：
 
 ```text
-dist\ai_chat_v1.0.0+1_debug.apk
+dist\AiChat-V1.0.0.apk
 ```
 
 也可以手动执行：
@@ -173,15 +173,19 @@ flutter build apk --release
 
 ## 自动更新机制
 
-- 版本检查：通过 GitHub API `https://api.github.com/repos/Murchey/AiChatApp/releases/latest` 获取最新 Release，对比 `tag_name` 与本地版本号；
-- 下载：优先使用 Release 附带的 APK 资产直链，无资产时按 GitHub 下载地址规则拼接；可通过**更新代理地址**（内置 3 个加速源或自定义）加速；
-- 安装：下载到应用外部目录 `updates/`，通过原生 FileProvider + 系统安装器安装（需授权「安装未知应用」）；
+- **版本检查（双源）**：
+  1. 优先 Gitee：`https://gitee.com/api/v5/repos/Murchey/AiChatApp/releases/latest`（国内直连）；
+  2. 备用 GitHub：`https://api.github.com/repos/Murchey/AiChatApp/releases/latest`（可叠加加速代理）。
+  对比 `tag_name` 与本地版本号，取 Gitee 优先的版本与更新说明；
+- **下载源选项卡**：发现新版本弹窗内提供「下载源」选项卡，**默认首选 Gitee**、其次 GitHub；GitHub 源可叠加加速代理下载；
+- **APK 资产命名标准**：`AiChat-V1.0.0.apk`（`AiChat-V<版本号>.apk`），检测时优先取符合标准的资产，无资产时按此命名拼接下载直链；
+- **安装**：下载到应用外部目录 `updates/`，通过原生 FileProvider + 系统安装器安装（需授权「安装未知应用」）；
 - 入口：
   - **【我】→ 软件版本**：手动检查更新；
   - **【我】→ 设置 → 启动时自动检测更新**：开启后每次启动自动检测；
-  - **【我】→ 设置 → 更新代理地址**：选择/自定义加速代理。
+  - **【我】→ 设置 → GitHub 加速地址**：选择/自定义加速代理（仅影响 GitHub 源下载）。
 
-发布新版本流程：在 GitHub 仓库新建 Release，`tag` 填与 `pubspec.yaml` 相同的版本号（可带 `v` 前缀，需比本地版本新），并上传 APK 资产即可。
+发布新版本流程：在 **Gitee 与 GitHub 仓库**各新建一个 Release，`tag` 填与 `pubspec.yaml` 相同的版本号（可带 `v` 前缀，需比本地版本新），并上传按命名标准命名的 APK 资产 `AiChat-V<版本号>.apk` 即可。
 
 ---
 
