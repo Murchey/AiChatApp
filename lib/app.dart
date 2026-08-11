@@ -48,6 +48,7 @@ class _AiChatAppState extends State<AiChatApp> {
           },
           initialRoute: AppRoutes.splash,
           onGenerateRoute: AppRoutes.generateRoute,
+          navigatorObservers: [routeObserver],
         );
       },
     );

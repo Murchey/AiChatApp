@@ -18,13 +18,14 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with RouteAware {
   final CupertinoTabController _tabController = CupertinoTabController();
 
   // 通讯录字母导航状态
   final Map<String, GlobalKey> _sectionKeys = {};
   bool _showCharIndexTooltip = false;
   String _currentCharTooltipLetter = '';
+  bool _routeSubscribed = false;
 
   @override
   void initState() {
@@ -35,9 +36,29 @@ class _HomeScreenState extends State<HomeScreen> {
     _checkUpdateOnStartup();
   }
 
-  /// 每次启动兜底清理更新目录中残留的安装包
-  Future<void> _cleanupOldApks() async {
-    await UpdateService.cleanupDownloadedApks();
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ModalRoute.of 依赖 InheritedWidget，只能在 didChangeDependencies 中调用
+    if (!_routeSubscribed) {
+      _routeSubscribed = true;
+      routeObserver.subscribe(this, ModalRoute.of(context)!);
+    }
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  /// 从聊天等二级页面返回主页时，强制刷新底部导航栏未读角标。
+  /// 主页被二级页面覆盖期间，notifyListeners 不会重建外层 Consumer，
+  /// 必须在此（主页重新可见时）触发一次重建才能读到最新未读数。
+  @override
+  void didPopNext() {
+    if (mounted) setState(() {});
   }
 
   /// 启动时自动检测更新（设置中可开关）
@@ -54,10 +75,9 @@ class _HomeScreenState extends State<HomeScreen> {
     showUpdateAvailableDialog(context, info, proxyUrl: settings.updateProxyUrl);
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  /// 每次启动兜底清理更新目录中残留的安装包
+  Future<void> _cleanupOldApks() async {
+    await UpdateService.cleanupDownloadedApks();
   }
 
   /// 滚动到指定分组标题（对齐顶部）
@@ -96,39 +116,52 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoTabScaffold(
-      controller: _tabController,
-      tabBar: CupertinoTabBar(
-        backgroundColor: context.navBarColor,
-        activeColor: context.accentColor,
-        inactiveColor: context.textSecondaryColor,
-        border: Border(
-          top: BorderSide(color: context.separatorColor, width: 0.5),
-        ),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.chat_bubble),
-            label: 'AiChat',
+    // 监听未读数变化，驱动底部导航栏角标刷新
+    return Consumer<ChatProvider>(
+      builder: (context, chatProvider, _) {
+        final totalUnread = chatProvider.conversations.fold<int>(
+          0,
+          (sum, c) => sum + c.unreadCount,
+        );
+        return CupertinoTabScaffold(
+          controller: _tabController,
+          tabBar: CupertinoTabBar(
+            backgroundColor: context.navBarColor,
+            activeColor: context.accentColor,
+            inactiveColor: context.textSecondaryColor,
+            border: Border(
+              top: BorderSide(color: context.separatorColor, width: 0.5),
+            ),
+            items: [
+              BottomNavigationBarItem(
+                icon: _buildTabIcon(CupertinoIcons.chat_bubble, totalUnread),
+                activeIcon: _buildTabIcon(
+                  CupertinoIcons.chat_bubble_fill,
+                  totalUnread,
+                ),
+                label: 'AiChat',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.person_2),
+                label: '通讯录',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.person_crop_circle),
+                label: '我',
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.person_2),
-            label: '通讯录',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.person_crop_circle),
-            label: '我',
-          ),
-        ],
-      ),
-      tabBuilder: (context, index) {
-        switch (index) {
-          case 0:
-            return _buildChatList();
-          case 1:
-            return _buildCharacterList();
-          default:
-            return const ProfileScreen();
-        }
+          tabBuilder: (context, index) {
+            switch (index) {
+              case 0:
+                return _buildChatList();
+              case 1:
+                return _buildCharacterList();
+              default:
+                return const ProfileScreen();
+            }
+          },
+        );
       },
     );
   }
@@ -158,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
               itemCount: chatProvider.conversations.length,
               separatorBuilder: (_, __) => Container(
                 height: 0.5,
-                margin: const EdgeInsets.only(left: 72),
+                margin: const EdgeInsets.only(left: 80),
                 color: context.separatorColor,
               ),
               itemBuilder: (context, index) {
@@ -168,10 +201,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     horizontal: 16,
                     vertical: 10,
                   ),
-                  leading: _buildCircleAvatar(
-                    context,
-                    conversation.characterName,
-                    conversation.characterAvatar,
+                  leading: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      _buildSquareAvatar(
+                        context,
+                        conversation.characterName,
+                        conversation.characterAvatar,
+                      ),
+                      // 未读消息数字角标（退出聊天界面期间角色发来的新消息）
+                      if (conversation.unreadCount > 0)
+                        Positioned(
+                          right: -8,
+                          top: -6,
+                          child: _buildUnreadBadge(
+                            conversation.unreadCount,
+                            context.scaffoldColor,
+                          ),
+                        ),
+                    ],
                   ),
                   title: Text(
                     conversation.characterName,
@@ -287,7 +335,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             horizontal: 16,
                             vertical: 10,
                           ),
-                          leading: _buildCircleAvatar(
+                          leading: _buildSquareAvatar(
                             context,
                             character.name,
                             character.avatar,
@@ -328,7 +376,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       Container(
                         height: 0.5,
-                        margin: const EdgeInsets.only(left: 76),
+                        margin: const EdgeInsets.only(left: 84),
                         color: context.separatorColor,
                       ),
                     ],
@@ -386,29 +434,66 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildCircleAvatar(BuildContext context, String name, String avatar) {
+  /// 底部导航栏图标：右上角带未读数字角标
+  Widget _buildTabIcon(IconData icon, int totalUnread) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon),
+        if (totalUnread > 0)
+          Positioned(
+            right: -10,
+            top: -6,
+            child: _buildUnreadBadge(totalUnread, context.scaffoldColor),
+          ),
+      ],
+    );
+  }
+
+  /// 未读消息数字角标（>=100 显示 99+，宽度随数字自适应）
+  Widget _buildUnreadBadge(int count, Color borderColor) {
+    final text = count >= 100 ? '99+' : '$count';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemRed,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 10,
+          color: CupertinoColors.white,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSquareAvatar(BuildContext context, String name, String avatar) {
     // 未设置头像时显示默认用户图标
     if (avatar.isEmpty) {
       return Container(
-        width: 60,
-        height: 60,
+        width: 68,
+        height: 68,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
           color: context.accentColor.withValues(alpha: 0.15),
         ),
         alignment: Alignment.center,
         child: Icon(
           CupertinoIcons.person_fill,
-          size: 30,
+          size: 34,
           color: context.accentColor,
         ),
       );
     }
     return Container(
-      width: 60,
-      height: 60,
+      width: 68,
+      height: 68,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
         color: context.accentColor.withValues(alpha: 0.15),
         image: DecorationImage(
           image: MemoryImage(base64Decode(avatar)),

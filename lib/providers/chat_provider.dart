@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/message.dart';
@@ -19,9 +21,49 @@ class ChatProvider extends ChangeNotifier {
   final Map<String, List<Message>> _messagesMap = {};
   final List<Conversation> _conversations = [];
   String? _lastError; // 最近一次 AI 请求失败的错误提示（界面展示用）
+  String? _activeConversationId; // 当前打开的聊天会话（其内新增角色消息不记未读）
+  String? _replyingConversationId; // 正在生成/逐条渲染回复的会话（防止重复触发）
+  Future<List<String>>? _runningReply; // 进行中的回复流程（重复触发时复用）
 
   List<Conversation> get conversations => _conversations;
   String? get lastError => _lastError;
+
+  /// 是否正在为该会话生成回复（聊天标题据此显示"对方正在输入……"）
+  bool isReplying(String conversationId) =>
+      _replyingConversationId == conversationId;
+
+  /// 聊天界面打开时调用：记录当前会话并清除其未读
+  void markConversationActive(String conversationId) {
+    _activeConversationId = conversationId;
+    debugPrint('[ChatProvider] 会话打开 active=$conversationId');
+    _clearUnread(conversationId);
+  }
+
+  /// 聊天界面销毁时调用：该会话新增消息恢复计入未读
+  void markConversationInactive(String conversationId) {
+    if (_activeConversationId == conversationId) {
+      _activeConversationId = null;
+      debugPrint('[ChatProvider] 会话退出 active=null');
+    }
+  }
+
+  void _clearUnread(String conversationId) {
+    final index = _conversations.indexWhere((c) => c.id == conversationId);
+    if (index == -1 || _conversations[index].unreadCount == 0) return;
+    _conversations[index] = _conversations[index].copyWith(unreadCount: 0);
+    notifyListeners();
+    _persist();
+  }
+
+  /// 新增角色消息时：若用户不在该会话页面则未读 +1（不单独 notify，由调用方统一触发）
+  void _increaseUnread(String conversationId) {
+    if (_activeConversationId == conversationId) return;
+    final index = _conversations.indexWhere((c) => c.id == conversationId);
+    if (index == -1) return;
+    final count = _conversations[index].unreadCount + 1;
+    _conversations[index] = _conversations[index].copyWith(unreadCount: count);
+    debugPrint('[ChatProvider] 未读+1 $conversationId → $count（active=$_activeConversationId）');
+  }
 
   /// 清除错误提示（用户点击关闭后调用）
   void clearError() {
@@ -204,6 +246,104 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// 生成并逐条加入角色的回复消息（微信拟真：逐条延迟渲染）。
+  ///
+  /// 整个流程在本 Provider（应用级单例）中执行，不依赖聊天界面是否存活：
+  /// 即使 AI 尚未回复完就退出聊天界面，回复也会继续生成并完整入库，
+  /// 退出期间产生的角色消息会记为未读。
+  /// 同一会话同时只允许一个回复流程在跑，重复触发时复用进行中的流程。
+  /// 返回生成的消息列表（可能为空，空且无错误时由界面给出轻提示）。
+  Future<List<String>> runProactiveReply({
+    required String conversationId,
+    required ApiModel model,
+    required String characterName,
+    required String characterSystemPrompt,
+    required String userRelationship,
+    required String userNickname,
+    bool replyToUser = false,
+    int contextCount = 10,
+    ApiModel? compressModel,
+    bool enableCompression = false,
+    int contextLength = 8000,
+    double compressThreshold = 0.7,
+    String? imagePath,
+  }) {
+    debugPrint('[ChatProvider] runProactiveReply 被调用: $conversationId replyToUser=$replyToUser');
+    // 同一会话的回复进行中：直接复用同一次流程（防止重复触发/误报空回复）
+    if (_runningReply != null && _replyingConversationId == conversationId) {
+      debugPrint('[ChatProvider] 复用进行中的回复流程: $conversationId');
+      return _runningReply!;
+    }
+    _replyingConversationId = conversationId;
+    notifyListeners(); // 聊天标题立即显示"对方正在输入……"
+    final future = _doRunProactiveReply(
+      conversationId: conversationId,
+      model: model,
+      characterName: characterName,
+      characterSystemPrompt: characterSystemPrompt,
+      userRelationship: userRelationship,
+      userNickname: userNickname,
+      replyToUser: replyToUser,
+      contextCount: contextCount,
+      compressModel: compressModel,
+      enableCompression: enableCompression,
+      contextLength: contextLength,
+      compressThreshold: compressThreshold,
+      imagePath: imagePath,
+    );
+    _runningReply = future;
+    return future;
+  }
+
+  Future<List<String>> _doRunProactiveReply({
+    required String conversationId,
+    required ApiModel model,
+    required String characterName,
+    required String characterSystemPrompt,
+    required String userRelationship,
+    required String userNickname,
+    bool replyToUser = false,
+    int contextCount = 10,
+    ApiModel? compressModel,
+    bool enableCompression = false,
+    int contextLength = 8000,
+    double compressThreshold = 0.7,
+    String? imagePath,
+  }) async {
+    debugPrint('[ChatProvider] _doRunProactiveReply 开始: $conversationId');
+    try {
+      final messages = await generateProactiveMessages(
+        conversationId: conversationId,
+        model: model,
+        characterName: characterName,
+        characterSystemPrompt: characterSystemPrompt,
+        userRelationship: userRelationship,
+        userNickname: userNickname,
+        replyToUser: replyToUser,
+        contextCount: contextCount,
+        compressModel: compressModel,
+        enableCompression: enableCompression,
+        contextLength: contextLength,
+        compressThreshold: compressThreshold,
+        imagePath: imagePath,
+      );
+      final random = Random();
+      for (final content in messages) {
+        addProactiveMessage(conversationId, content);
+        HapticFeedback.lightImpact(); // 消息提示震动
+        // 延迟 = 随机 0~1s + 消息长度 * 50ms（模拟打字耗时）+ 600ms 消息间隔
+        final delay = random.nextDouble() * 1000 + content.length * 50;
+        await Future.delayed(Duration(milliseconds: delay.round() + 600));
+      }
+      return messages;
+    } finally {
+      debugPrint('[ChatProvider] _doRunProactiveReply 结束: $conversationId');
+      _replyingConversationId = null;
+      _runningReply = null;
+      notifyListeners();
+    }
+  }
+
   /// 会话压缩：当会话历史估算 token 达到模型上下文的 [threshold] 时，
   /// 将更早的消息交给压缩模型生成摘要，替换为一条摘要消息并持久化。
   /// 压缩失败（网络/API 异常）时静默跳过，不影响本次回复。
@@ -316,6 +456,7 @@ class ChatProvider extends ChangeNotifier {
   /// 将一条角色主动消息加入会话并持久化（渲染阶段逐条调用）
   void addProactiveMessage(String conversationId, String content) {
     if (content.trim().isEmpty) return;
+    debugPrint('[ChatProvider] addProactiveMessage 入库: $conversationId');
     _messagesMap[conversationId] ??= [];
     _messagesMap[conversationId]!.add(Message(
       id: const Uuid().v4(),
@@ -324,6 +465,7 @@ class ChatProvider extends ChangeNotifier {
       sender: MessageSender.character,
     ));
     _updateConversationLastMessage(conversationId, content);
+    _increaseUnread(conversationId); // 不在该会话页面时记未读
     notifyListeners();
     _persist();
   }

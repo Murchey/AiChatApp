@@ -33,6 +33,11 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# 桌面端脚手架（本项目仅适配 Android，不纳入版本控制）
+/windows/
+/macos/
+/linux/
+
 # Symbolication related
 app.*.symbols
 

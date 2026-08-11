@@ -5,6 +5,11 @@ import '../screens/chat_screen.dart';
 import '../screens/character_list_screen.dart';
 import '../screens/character_detail_screen.dart';
 
+/// 全局路由观察者：监听二级页面的压栈/出栈，
+/// 用于在返回主页时强制刷新底部导航栏未读角标（页面被覆盖期间 Consumer 不会重建）
+final RouteObserver<ModalRoute<dynamic>> routeObserver =
+    RouteObserver<ModalRoute<dynamic>>();
+
 class AppRoutes {
   static const String splash = '/';
   static const String home = '/home';

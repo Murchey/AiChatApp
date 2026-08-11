@@ -36,19 +36,53 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen>
+    with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey<MessageInputState> _inputKey = GlobalKey<MessageInputState>();
   Message? _quoteMessage;
   OverlayEntry? _menuOverlay;
-  bool _proactiveTyping = false; // 主动消息逐条渲染中的"对方正在输入"
-  bool _isProactiveRunning = false; // 防止重复触发主动消息
   bool _initialScrollDone = false; // 首次进入会话是否已完成定位（避免进入时动画滑动）
   bool _selectMode = false; // 多选转发模式
   final Set<String> _selectedIds = {}; // 多选模式下选中的消息 id
+  ChatProvider? _chatProvider; // 生命周期内复用（dispose 中仍需访问）
+  int _lastRenderedCount = -1; // 已渲染消息条数（用于新消息自动滚底）
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // 打开会话：清除未读并记录当前会话（此后角色新消息不再计入未读）
+    _chatProvider = context.read<ChatProvider>();
+    _chatProvider!.markConversationActive(widget.conversationId);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 退到后台/切到其他应用（未 pop 路由、dispose 不会触发）：
+    // 视为"离开聊天界面"，此后角色新消息计入未读；回到前台重新进入会话时清除未读
+    if (_chatProvider == null) return;
+    switch (state) {
+      case AppLifecycleState.resumed:
+        debugPrint(
+            '[ChatScreen] resumed → markConversationActive ${widget.conversationId}');
+        _chatProvider!.markConversationActive(widget.conversationId);
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        debugPrint(
+            '[ChatScreen] $state → markConversationInactive ${widget.conversationId}');
+        _chatProvider!.markConversationInactive(widget.conversationId);
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        break; // 短暂遮挡（来电/系统弹层等）不改变未读状态
+    }
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // 退出会话：恢复未读计数（若 AI 仍在后台回复，新消息将记未读并点亮主页红点）
+    _chatProvider?.markConversationInactive(widget.conversationId);
     _menuOverlay?.remove();
     _scrollController.dispose();
     super.dispose();
@@ -849,7 +883,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ─── 角色主动发消息 ───────────────────────────────────────
 
-  /// 触发"角色主动发消息/回复"：组装 Prompt（携带最近对话历史）→ 调用 LLM 生成消息数组 → 顺序渲染
+  /// 触发"角色主动发消息/回复"：组装参数后交给 [ChatProvider.runProactiveReply]
+  /// 在应用级单例中执行——即使此时退出聊天界面，AI 回复也会继续生成并完整入库。
   ///
   /// [replyToUser] 为 true 时（输入框对号按钮触发）模型针对用户最近的消息分条回复。
   /// [imagePath] 非空时表示"发送图片"：图片会以视觉消息传给模型，让角色看到图片后回复。
@@ -857,8 +892,7 @@ class _ChatScreenState extends State<ChatScreen> {
     bool replyToUser = false,
     String? imagePath,
   }) async {
-    if (_isProactiveRunning) return;
-
+    debugPrint('[ChatScreen] _triggerProactiveMessages: replyToUser=$replyToUser imagePath=$imagePath');
     final chatSettings = context.read<ChatSettingsProvider>();
     final model = context
         .read<ApiProvider>()
@@ -897,81 +931,41 @@ class _ChatScreenState extends State<ChatScreen> {
     final compressModel =
         api.getModelById(api.compressionModelId) ?? model;
 
-    setState(() {
-      _isProactiveRunning = true;
-      _proactiveTyping = true; // 点击后立即显示"对方正在输入……"（等待 API + 逐条渲染期间）
-    });
-    try {
-      final messages = await chatProvider.generateProactiveMessages(
-        conversationId: widget.conversationId,
-        model: model,
-        characterName: characterName,
-        characterSystemPrompt: character?.systemPrompt ?? '',
-        userRelationship: character?.userRelationship ?? '',
-        userNickname:
-            context.read<AuthProvider>().user?.nickname ?? '用户',
-        replyToUser: replyToUser,
-        contextCount: chatSettings.contextCount,
-        enableCompression: chatSettings.enableCompression,
-        compressModel: compressModel,
-        contextLength: model.contextLength,
-        compressThreshold: chatSettings.compressThreshold,
-        imagePath: imagePath,
-      );
-      if (!mounted) return;
-      if (messages.isEmpty) {
-        // API 失败时错误条已展示；模型主动返回空数组（如时间不合理）时给出轻提示
-        if (chatProvider.lastError == null) {
-          showCupertinoDialog(
-            context: context,
-            builder: (ctx) => CupertinoAlertDialog(
-              title: const Text('提示'),
-              content: const Text('角色暂时没有想说的话'),
-              actions: [
-                CupertinoDialogAction(
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('确定'),
-                ),
-              ],
+    final messages = await chatProvider.runProactiveReply(
+      conversationId: widget.conversationId,
+      model: model,
+      characterName: characterName,
+      characterSystemPrompt: character?.systemPrompt ?? '',
+      userRelationship: character?.userRelationship ?? '',
+      userNickname:
+          context.read<AuthProvider>().user?.nickname ?? '用户',
+      replyToUser: replyToUser,
+      contextCount: chatSettings.contextCount,
+      enableCompression: chatSettings.enableCompression,
+      compressModel: compressModel,
+      contextLength: model.contextLength,
+      compressThreshold: chatSettings.compressThreshold,
+      imagePath: imagePath,
+    );
+    debugPrint('[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');
+    if (!mounted) return;
+    if (messages.isEmpty && chatProvider.lastError == null) {
+      // 模型主动返回空数组（如时间不合理）时给出轻提示
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('提示'),
+          content: const Text('角色暂时没有想说的话'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('确定'),
             ),
-          );
-        }
-        return;
-      }
-      await _renderMessagesSequentially(messages);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isProactiveRunning = false;
-          _proactiveTyping = false;
-        });
-      }
+          ],
+        ),
+      );
     }
-  }
-
-  /// 顺序渲染消息队列（微信拟真感）：
-  /// 每条先显示"对方正在输入..."，按长度计算延迟，结束后推入气泡并触发震动。
-  Future<void> _renderMessagesSequentially(List<String> messages) async {
-    final random = Random();
-    final chatProvider = context.read<ChatProvider>();
-    for (final content in messages) {
-      if (!mounted) return;
-      setState(() => _proactiveTyping = true);
-      _scrollToBottom();
-
-      // 延迟 = 随机 0~1s + 消息长度 * 50ms（模拟打字耗时）
-      final delay = random.nextDouble() * 1000 + content.length * 50;
-      await Future.delayed(Duration(milliseconds: delay.round()));
-      if (!mounted) return;
-
-      setState(() => _proactiveTyping = false);
-      chatProvider.addProactiveMessage(widget.conversationId, content);
-      _scrollToBottom();
-      HapticFeedback.lightImpact(); // 消息提示震动
-      await Future.delayed(const Duration(milliseconds: 600)); // 消息间隔
-    }
-    if (mounted) setState(() => _proactiveTyping = false);
   }
 
   /// 选择图片后发送图片消息：先本地插入图片气泡，再把图片传给模型让角色回复
@@ -1017,10 +1011,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        // 多选模式显示标题；否则角色回复逐条渲染中标题变为"对方正在输入……"
+        // 多选模式显示标题；否则角色回复生成/渲染期间标题变为"对方正在输入……"
         middle: Text(_selectMode
             ? '选择消息'
-            : (_proactiveTyping ? '对方正在输入……' : displayName)),
+            : (chatProvider.isReplying(widget.conversationId)
+                ? '对方正在输入……'
+                : displayName)),
         trailing: _selectMode
             ? null
             : CupertinoButton(
@@ -1047,6 +1043,15 @@ class _ChatScreenState extends State<ChatScreen> {
               builder: (context, chatProvider, _) {
                 final messages =
                     chatProvider.getMessages(widget.conversationId);
+
+                // 消息条数增加（AI 逐条回复等）且界面可见时自动滚动到底部；
+                // 首次进入不触发（由 _initialScrollDone 逻辑做无动画定位）
+                if (messages.length != _lastRenderedCount) {
+                  final added = _lastRenderedCount >= 0 &&
+                      messages.length > _lastRenderedCount;
+                  _lastRenderedCount = messages.length;
+                  if (added) _scrollToBottom();
+                }
 
                 // 双方头像（base64）
                 final userAvatar =
