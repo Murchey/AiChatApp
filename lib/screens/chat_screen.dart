@@ -46,6 +46,7 @@ class _ChatScreenState extends State<ChatScreen>
   static final DateFormat _fullFmt = DateFormat('yyyy年M月d日 HH:mm');
   Message? _quoteMessage;
   OverlayEntry? _menuOverlay;
+  String? _pendingImagePath; // 最近发送的图片：对号按钮按下时随回复传给模型
   bool _selectMode = false; // 多选转发模式
   final Set<String> _selectedIds = {}; // 多选模式下选中的消息 id
   ChatProvider? _chatProvider; // 生命周期内复用（dispose 中仍需访问）
@@ -994,7 +995,8 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  /// 选择图片后发送图片消息：先本地插入图片气泡，再把图片传给模型让角色回复
+  /// 选择图片后发送图片消息：先本地插入图片气泡；与文本消息一致，
+  /// 不立即触发回复，等待输入框右侧对号按钮按下后把图片随回复传给模型
   Future<void> _handlePickImage(String imagePath) async {
     final chatSettings = context.read<ChatSettingsProvider>();
     await context.read<ChatProvider>().sendImageMessage(
@@ -1005,7 +1007,7 @@ class _ChatScreenState extends State<ChatScreen>
         );
     if (!mounted) return;
     _scrollToBottom();
-    await _triggerProactiveMessages(imagePath: imagePath, replyToUser: true);
+    _pendingImagePath = imagePath;
   }
 
   /// 选择文件后发送文件消息
@@ -1325,7 +1327,12 @@ class _ChatScreenState extends State<ChatScreen>
             onExport: _exportChat,
             onImport: _importChat,
             onFeatureDetect: _runFeatureDetect,
-            onRequestReply: () => _triggerProactiveMessages(replyToUser: true),
+            onRequestReply: () {
+              // 对号按钮：触发角色回复。若最近发送的是图片，把该图片随回复传给模型
+              final imagePath = _pendingImagePath;
+              _pendingImagePath = null;
+              _triggerProactiveMessages(imagePath: imagePath, replyToUser: true);
+            },
             replyEnabled: replyEnabled,
             imageReady: visionReady,
           ),
