@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -32,10 +33,13 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
-  Message? _quoteMessage; // 待引用的消息
+  final GlobalKey<MessageInputState> _inputKey = GlobalKey<MessageInputState>();
+  Message? _quoteMessage;
+  OverlayEntry? _menuOverlay;
 
   @override
   void dispose() {
+    _menuOverlay?.remove();
     _scrollController.dispose();
     super.dispose();
   }
@@ -193,66 +197,202 @@ class _ChatScreenState extends State<ChatScreen> {
     return '${time.month}月${time.day}日 $timeStr';
   }
 
-  /// 长按气泡：弹出灰色面板（复制 / 引用 / 撤回-仅我方）
-  void _showBubbleMenu(Message message) {
-    showCupertinoModalPopup(
+  // ─── 长按气泡菜单 ───────────────────────────────────────────
+
+  /// 长按气泡：在气泡旁弹出灰色面板
+  void _showBubbleMenu(Message message, GlobalKey bubbleKey) {
+    _menuOverlay?.remove();
+
+    // 先构建菜单项列表，用于计算菜单宽度
+    final items = _buildMenuItems(message);
+
+    // 获取气泡在屏幕上的位置
+    final RenderBox? renderBox =
+        bubbleKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final bubblePosition = renderBox.localToGlobal(Offset.zero);
+    final bubbleSize = renderBox.size;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    // 菜单宽度（3项至少260，2项至少190）
+    final double menuWidth = items.length > 2 ? 260 : 190;
+    const double menuHeight = 64;
+
+    // 计算 X：我方气泡在右侧，菜单靠左；对方气泡在左侧，菜单靠右
+    double left;
+    if (message.isFromUser) {
+      left = bubblePosition.dx - menuWidth - 8;
+      if (left < 8) left = 8;
+    } else {
+      left = bubblePosition.dx + bubbleSize.width + 8;
+      if (left + menuWidth > screenWidth - 8) {
+        left = screenWidth - menuWidth - 8;
+      }
+    }
+
+    // 计算 Y：垂直居中于气泡，但不能超出屏幕顶部和底部
+    double top = bubblePosition.dy + (bubbleSize.height - menuHeight) / 2;
+    if (top < 80) top = 80; // 导航栏下方
+    if (top + menuHeight > screenHeight - 80) {
+      top = screenHeight - menuHeight - 80; // 底部输入栏上方
+    }
+
+    _menuOverlay = OverlayEntry(
+      builder: (_) => Stack(
+        children: [
+          // 半透明遮罩（点击关闭菜单）
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _closeMenu,
+            ),
+          ),
+          // 菜单面板
+          Positioned(
+            left: left,
+            top: top,
+            width: menuWidth,
+            child: _buildMenuPanel(message, items),
+          ),
+        ],
+      ),
+    );
+
+    Overlay.of(context).insert(_menuOverlay!);
+  }
+
+  void _closeMenu() {
+    _menuOverlay?.remove();
+    _menuOverlay = null;
+  }
+
+  /// 构建菜单项列表
+  List<Widget> _buildMenuItems(Message message) {
+    final isUser = message.isFromUser;
+    final items = <Widget>[
+      _menuItem(
+        icon: CupertinoIcons.doc_on_doc,
+        label: '复制',
+        onTap: () {
+          _closeMenu();
+          Clipboard.setData(ClipboardData(text: message.content));
+        },
+      ),
+      _menuItem(
+        icon: CupertinoIcons.text_badge_checkmark,
+        label: '选择文本',
+        onTap: () {
+          _closeMenu();
+          _showTextSelection(message);
+        },
+      ),
+      _menuItem(
+        icon: CupertinoIcons.quote_bubble,
+        label: '引用',
+        onTap: () {
+          _closeMenu();
+          setState(() {
+            _quoteMessage = message;
+          });
+        },
+      ),
+    ];
+
+    if (isUser) {
+      items.add(
+        _menuItem(
+          icon: CupertinoIcons.xmark_circle,
+          label: '撤回',
+          onTap: () {
+            _closeMenu();
+            _withdrawMessage(message);
+          },
+        ),
+      );
+    } else {
+      items.add(
+        _menuItem(
+          icon: CupertinoIcons.refresh,
+          label: '重新回复',
+          onTap: () {
+            _closeMenu();
+            _rerollReply(message);
+          },
+        ),
+      );
+    }
+
+    return items;
+  }
+
+  /// 选择文本：弹窗显示消息文本，用户可复制
+  void _showTextSelection(Message message) {
+    showCupertinoDialog(
       context: context,
-      builder: (ctx) => Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          color: CupertinoColors.systemGrey6,
-          borderRadius: BorderRadius.circular(16),
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('选择文本'),
+        content: Material(
+          color: CupertinoColors.transparent,
+          child: SelectableText(
+            message.content,
+            style: TextStyle(
+              fontSize: 15,
+              color: context.textPrimaryColor,
+            ),
+          ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _menuButton(ctx, CupertinoIcons.doc_on_doc, '复制', () {
-              Navigator.pop(ctx);
-              Clipboard.setData(ClipboardData(text: message.content));
-            }),
-            _menuButton(ctx, CupertinoIcons.quote_bubble, '引用', () {
-              Navigator.pop(ctx);
-              setState(() {
-                _quoteMessage = message;
-              });
-            }),
-            if (message.isFromUser)
-              _menuButton(
-                ctx,
-                CupertinoIcons.arrow_counterclockwise,
-                '撤回',
-                () {
-                  Navigator.pop(ctx);
-                  _withdrawMessage(message);
-                },
-              ),
-          ],
-        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            child: const Text('关闭'),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _menuButton(
-    BuildContext ctx,
-    IconData icon,
-    String label,
-    VoidCallback onTap,
-  ) {
+  Widget _buildMenuPanel(Message message, List<Widget> items) {
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemGrey6.resolveFrom(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: CupertinoColors.systemGrey4.resolveFrom(context),
+          width: 0.5,
+        ),
+      ),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: items,
+      ),
+    );
+  }
+
+  Widget _menuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 24, color: context.textPrimaryColor),
-            const SizedBox(height: 6),
+            Icon(icon, size: 22, color: context.textPrimaryColor),
+            const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12,
                 color: context.textPrimaryColor,
               ),
             ),
@@ -262,17 +402,43 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// 撤回消息（仅我方）：终止 AI 思考并删除消息
+  /// 撤回消息（我方）：终止 AI 思考，删除消息，内容放入输入框供重新编辑
   void _withdrawMessage(Message message) {
     context
         .read<ChatProvider>()
         .withdrawMessage(widget.conversationId, message.id);
+    // 撤回后将消息内容放入输入框
+    _inputKey.currentState?.setText(message.content);
+    _inputKey.currentState?.focus();
     // 若撤回的是被引用消息，清空引用
     if (_quoteMessage?.id == message.id) {
       setState(() {
         _quoteMessage = null;
       });
     }
+  }
+
+  /// 重新回复：删除当前 AI 回复，重新发送上一条用户消息
+  void _rerollReply(Message aiMessage) {
+    final chatProvider = context.read<ChatProvider>();
+    final messages = chatProvider.getMessages(widget.conversationId);
+    // 找到该 AI 消息前面的最后一条用户消息
+    Message? lastUserMessage;
+    for (int i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].id == aiMessage.id) continue;
+      if (messages[i].isFromUser) {
+        lastUserMessage = messages[i];
+        break;
+      }
+    }
+    if (lastUserMessage == null) return;
+
+    // 删除该 AI 回复和之前的用户消息
+    chatProvider.deleteMessage(widget.conversationId, aiMessage.id);
+    chatProvider.deleteMessage(widget.conversationId, lastUserMessage.id);
+
+    // 重新发送（带上原消息内容）
+    _handleSend(lastUserMessage.content);
   }
 
   /// 发送消息（携带引用）
@@ -313,6 +479,26 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _quoteMessage = null;
     });
+  }
+
+  /// 选择图片后发送图片消息
+  void _handlePickImage(String imagePath) {
+    final chatSettings = context.read<ChatSettingsProvider>();
+    context.read<ChatProvider>().sendImageMessage(
+          conversationId: widget.conversationId,
+          imagePath: imagePath,
+          characterName: widget.characterName,
+          contextCount: chatSettings.contextCount,
+        );
+  }
+
+  /// 选择文件后发送文件消息
+  void _handlePickFile(String filePath, String fileName) {
+    context.read<ChatProvider>().sendFileMessage(
+          conversationId: widget.conversationId,
+          filePath: filePath,
+          fileName: fileName,
+        );
   }
 
   @override
@@ -391,7 +577,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         message: messages[index],
                         userAvatar: userAvatar,
                         characterAvatar: characterAvatar,
-                        onLongPress: () => _showBubbleMenu(messages[index]),
+                        onLongPress: (message, bubbleKey) =>
+                            _showBubbleMenu(message, bubbleKey),
                       );
                     },
                   ),
@@ -480,7 +667,10 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           MessageInput(
+            key: _inputKey,
             onSend: _handleSend,
+            onPickImage: _handlePickImage,
+            onPickFile: _handlePickFile,
           ),
         ],
       ),

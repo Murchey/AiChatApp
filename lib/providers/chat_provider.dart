@@ -155,6 +155,26 @@ class ChatProvider extends ChangeNotifier {
     await _persist();
   }
 
+  /// 通用删除单条消息（用于重新回复等场景）
+  void deleteMessage(String conversationId, String messageId) {
+    final messages = _messagesMap[conversationId];
+    if (messages == null) return;
+    messages.removeWhere((m) => m.id == messageId);
+    if (messages.isNotEmpty) {
+      _updateConversationLastMessage(conversationId, messages.last.content);
+    } else {
+      final index = _conversations.indexWhere((c) => c.id == conversationId);
+      if (index != -1) {
+        _conversations[index] = _conversations[index].copyWith(
+          lastMessage: '',
+          lastMessageTime: DateTime.now(),
+        );
+      }
+    }
+    notifyListeners();
+    _persist();
+  }
+
   /// 撤回我方消息：删除消息，并终止正在进行的 AI 回复思考
   void withdrawMessage(String conversationId, String messageId) {
     final messages = _messagesMap[conversationId];
@@ -178,6 +198,50 @@ class ChatProvider extends ChangeNotifier {
     }
     notifyListeners();
     _persist();
+  }
+
+  /// 发送图片消息
+  Future<void> sendImageMessage({
+    required String conversationId,
+    required String imagePath,
+    required String characterName,
+    String modelName = '',
+    int contextCount = 10,
+  }) async {
+    final userMessage = Message(
+      id: const Uuid().v4(),
+      conversationId: conversationId,
+      content: imagePath,
+      type: MessageType.image,
+      sender: MessageSender.user,
+    );
+
+    _messagesMap[conversationId] ??= [];
+    _messagesMap[conversationId]!.add(userMessage);
+    _updateConversationLastMessage(conversationId, '[图片]');
+    notifyListeners();
+    await _persist();
+  }
+
+  /// 发送文件消息（file path）
+  Future<void> sendFileMessage({
+    required String conversationId,
+    required String filePath,
+    required String fileName,
+  }) async {
+    final userMessage = Message(
+      id: const Uuid().v4(),
+      conversationId: conversationId,
+      content: filePath,
+      type: MessageType.file,
+      sender: MessageSender.user,
+    );
+
+    _messagesMap[conversationId] ??= [];
+    _messagesMap[conversationId]!.add(userMessage);
+    _updateConversationLastMessage(conversationId, '[文件] $fileName');
+    notifyListeners();
+    await _persist();
   }
 
   void _updateConversationLastMessage(String conversationId, String content) {

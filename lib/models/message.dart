@@ -1,4 +1,4 @@
-enum MessageType { text, image, system }
+enum MessageType { text, image, file, system }
 
 enum MessageSender { user, character }
 

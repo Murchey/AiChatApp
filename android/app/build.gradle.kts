@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.aichat.ai_chat"
-    compileSdk = flutter.compileSdkVersion
+    // file_picker 等插件要求 compile against API 36，显式指定
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

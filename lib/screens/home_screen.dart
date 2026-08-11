@@ -369,7 +369,7 @@ class _HomeScreenState extends State<HomeScreen> {
         width: 60,
         height: 60,
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
+          borderRadius: BorderRadius.circular(12),
           color: context.accentColor.withValues(alpha: 0.15),
         ),
         alignment: Alignment.center,
@@ -384,7 +384,7 @@ class _HomeScreenState extends State<HomeScreen> {
       width: 60,
       height: 60,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
+        borderRadius: BorderRadius.circular(12),
         color: context.accentColor.withValues(alpha: 0.15),
         image: DecorationImage(
           image: MemoryImage(base64Decode(avatar)),
