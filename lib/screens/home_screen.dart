@@ -129,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           return Container(
-            color: context.listBgColor,
+            color: context.scaffoldColor,
             child: ListView.separated(
               itemCount: chatProvider.conversations.length,
               separatorBuilder: (_, __) => Container(
@@ -234,7 +234,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               // 主列表（普通 ListView 一次性构建，GlobalKey 定位有效）
               Container(
-                color: context.listBgColor,
+                color: context.scaffoldColor,
                 child: ListView(
                   padding: const EdgeInsets.only(right: 28),
                   children: [

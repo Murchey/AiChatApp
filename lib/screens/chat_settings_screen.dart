@@ -22,6 +22,11 @@ class ChatSettingsScreen extends StatelessWidget {
           const SizedBox(height: 12),
           // 上下文条数
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             header: const Text('上下文'),
             children: [
               Padding(
@@ -103,6 +108,11 @@ class ChatSettingsScreen extends StatelessWidget {
           ),
           // 使用的模型
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             header: const Text('使用的模型'),
             children: [
               if (api.models.isEmpty)

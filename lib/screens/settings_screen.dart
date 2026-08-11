@@ -61,6 +61,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 12),
           // 明暗模式
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             header: const Text('外观'),
             children: [
               CupertinoListTile(
@@ -89,6 +94,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           // 主题色
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             header: const Text('主题色'),
             children: [
               Padding(
@@ -131,9 +141,260 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
             ],
           ),
+          // 显示设置：聊天气泡颜色与气泡内字体颜色（自己/对方 × 浅色/深色）
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('显示设置'),
+            children: [
+              _BubbleColorRow(
+                title: '自己气泡（浅色）',
+                color: settings.bubbleColor(BubbleColorSlot.selfLight),
+                onTap: () => _showColorPicker(
+                  context: context,
+                  title: '自己气泡颜色（浅色模式）',
+                  initialColor: settings.bubbleColor(BubbleColorSlot.selfLight),
+                  onColorChanged: (c) =>
+                      settings.setBubbleColor(BubbleColorSlot.selfLight, c),
+                  onReset: () =>
+                      settings.resetBubbleColor(BubbleColorSlot.selfLight),
+                ),
+              ),
+              _BubbleColorRow(
+                title: '对方气泡（浅色）',
+                color: settings.bubbleColor(BubbleColorSlot.otherLight),
+                onTap: () => _showColorPicker(
+                  context: context,
+                  title: '对方气泡颜色（浅色模式）',
+                  initialColor:
+                      settings.bubbleColor(BubbleColorSlot.otherLight),
+                  onColorChanged: (c) =>
+                      settings.setBubbleColor(BubbleColorSlot.otherLight, c),
+                  onReset: () =>
+                      settings.resetBubbleColor(BubbleColorSlot.otherLight),
+                ),
+              ),
+              _BubbleColorRow(
+                title: '自己气泡（深色）',
+                color: settings.bubbleColor(BubbleColorSlot.selfDark),
+                onTap: () => _showColorPicker(
+                  context: context,
+                  title: '自己气泡颜色（深色模式）',
+                  initialColor: settings.bubbleColor(BubbleColorSlot.selfDark),
+                  onColorChanged: (c) =>
+                      settings.setBubbleColor(BubbleColorSlot.selfDark, c),
+                  onReset: () =>
+                      settings.resetBubbleColor(BubbleColorSlot.selfDark),
+                ),
+              ),
+              _BubbleColorRow(
+                title: '对方气泡（深色）',
+                color: settings.bubbleColor(BubbleColorSlot.otherDark),
+                onTap: () => _showColorPicker(
+                  context: context,
+                  title: '对方气泡颜色（深色模式）',
+                  initialColor: settings.bubbleColor(BubbleColorSlot.otherDark),
+                  onColorChanged: (c) =>
+                      settings.setBubbleColor(BubbleColorSlot.otherDark, c),
+                  onReset: () =>
+                      settings.resetBubbleColor(BubbleColorSlot.otherDark),
+                ),
+              ),
+              _BubbleColorRow(
+                title: '自己气泡字体（浅色）',
+                color: settings.bubbleTextColor(BubbleTextSlot.selfLight),
+                onTap: () => _showColorPicker(
+                  context: context,
+                  title: '自己气泡字体颜色（浅色模式）',
+                  initialColor:
+                      settings.bubbleTextColor(BubbleTextSlot.selfLight),
+                  onColorChanged: (c) =>
+                      settings.setBubbleTextColor(BubbleTextSlot.selfLight, c),
+                  onReset: () =>
+                      settings.resetBubbleTextColor(BubbleTextSlot.selfLight),
+                ),
+              ),
+              _BubbleColorRow(
+                title: '对方气泡字体（浅色）',
+                color: settings.bubbleTextColor(BubbleTextSlot.otherLight),
+                onTap: () => _showColorPicker(
+                  context: context,
+                  title: '对方气泡字体颜色（浅色模式）',
+                  initialColor:
+                      settings.bubbleTextColor(BubbleTextSlot.otherLight),
+                  onColorChanged: (c) =>
+                      settings.setBubbleTextColor(BubbleTextSlot.otherLight, c),
+                  onReset: () =>
+                      settings.resetBubbleTextColor(BubbleTextSlot.otherLight),
+                ),
+              ),
+              _BubbleColorRow(
+                title: '自己气泡字体（深色）',
+                color: settings.bubbleTextColor(BubbleTextSlot.selfDark),
+                onTap: () => _showColorPicker(
+                  context: context,
+                  title: '自己气泡字体颜色（深色模式）',
+                  initialColor:
+                      settings.bubbleTextColor(BubbleTextSlot.selfDark),
+                  onColorChanged: (c) =>
+                      settings.setBubbleTextColor(BubbleTextSlot.selfDark, c),
+                  onReset: () =>
+                      settings.resetBubbleTextColor(BubbleTextSlot.selfDark),
+                ),
+              ),
+              _BubbleColorRow(
+                title: '对方气泡字体（深色）',
+                color: settings.bubbleTextColor(BubbleTextSlot.otherDark),
+                onTap: () => _showColorPicker(
+                  context: context,
+                  title: '对方气泡字体颜色（深色模式）',
+                  initialColor:
+                      settings.bubbleTextColor(BubbleTextSlot.otherDark),
+                  onColorChanged: (c) =>
+                      settings.setBubbleTextColor(BubbleTextSlot.otherDark, c),
+                  onReset: () =>
+                      settings.resetBubbleTextColor(BubbleTextSlot.otherDark),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 24),
         ],
       ),
+    );
+  }
+
+  /// 弹出颜色选择器（底部弹层）：网格 + HEX + HSV 滑块，可实时预览
+  void _showColorPicker({
+    required BuildContext context,
+    required String title,
+    required Color initialColor,
+    required ValueChanged<Color> onColorChanged,
+    required VoidCallback onReset,
+  }) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => Container(
+        height: 560,
+        decoration: BoxDecoration(
+          color: context.listBgColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      onPressed: () {
+                        onReset();
+                        Navigator.pop(ctx);
+                      },
+                      child: Text(
+                        '恢复默认',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text(
+                        '完成',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: context.accentColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                height: 0.5,
+                color: context.separatorColor,
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: _CustomColorPicker(
+                    initialColor: initialColor,
+                    onChanged: onColorChanged,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 气泡颜色设置行：标题 + 颜色圆点预览 + 右箭头
+class _BubbleColorRow extends StatelessWidget {
+  final String title;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _BubbleColorRow({
+    required this.title,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoListTile(
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 16,
+          color: context.textPrimaryColor,
+        ),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: context.separatorColor,
+                width: 1,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Icon(
+            CupertinoIcons.chevron_right,
+            size: 16,
+            color: context.textSecondaryColor,
+          ),
+        ],
+      ),
+      onTap: onTap,
     );
   }
 }

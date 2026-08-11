@@ -87,6 +87,11 @@ class ProfileScreen extends StatelessWidget {
               ),
               // 角色管理
               CupertinoListSection.insetGrouped(
+                backgroundColor: context.scaffoldColor,
+                decoration: BoxDecoration(
+                  color: context.listBgColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 children: [
                   CupertinoListTile(
                     leading: Icon(
@@ -139,6 +144,11 @@ class ProfileScreen extends StatelessWidget {
               ),
               // 设置列表
               CupertinoListSection.insetGrouped(
+                backgroundColor: context.scaffoldColor,
+                decoration: BoxDecoration(
+                  color: context.listBgColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 children: [
                   CupertinoListTile(
                     leading: Icon(

@@ -121,6 +121,11 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
           const SizedBox(height: 12),
           // DeepSeek 官方一键预设
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             header: const Text('快捷预设'),
             children: [
               CupertinoListTile(
@@ -154,6 +159,11 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
           ),
           const SizedBox(height: 12),
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             header: const Text('基本信息'),
             children: [
               _buildField(
@@ -169,6 +179,11 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
             ],
           ),
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             header: const Text('连接配置'),
             children: [
               _buildField(

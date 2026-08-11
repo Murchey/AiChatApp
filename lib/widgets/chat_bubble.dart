@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
-import 'package:intl/intl.dart';
 import '../config/theme.dart';
 import '../models/message.dart';
 
@@ -11,6 +10,12 @@ class ChatBubble extends StatefulWidget {
   final String characterAvatar;
   /// 回调参数为消息本身 + 气泡的 GlobalKey（用于定位菜单）
   final Function(Message message, GlobalKey bubbleKey)? onLongPress;
+  /// 多选模式：点击气泡切换选中，且不再触发长按菜单
+  final bool selectMode;
+  final bool selected;
+  final VoidCallback? onTap;
+  /// 点击"合并转发"聊天记录卡片时回调（进入详情页）
+  final VoidCallback? onForwardTap;
 
   const ChatBubble({
     super.key,
@@ -18,6 +23,10 @@ class ChatBubble extends StatefulWidget {
     this.userAvatar = '',
     this.characterAvatar = '',
     this.onLongPress,
+    this.selectMode = false,
+    this.selected = false,
+    this.onTap,
+    this.onForwardTap,
   });
 
   @override
@@ -31,6 +40,12 @@ class _ChatBubbleState extends State<ChatBubble> {
   Widget build(BuildContext context) {
     final message = widget.message;
     final isUser = message.isFromUser;
+
+    // 合并转发"聊天记录"卡片：独立展示，不包裹在聊天气泡内
+    if (message.isForwardCard) {
+      return _buildForwardCard(context);
+    }
+
     final avatar = isUser ? widget.userAvatar : widget.characterAvatar;
     final isImage = message.type == MessageType.image;
     final isFile = message.type == MessageType.file;
@@ -46,11 +61,16 @@ class _ChatBubbleState extends State<ChatBubble> {
             _buildAvatar(context, avatar),
             const SizedBox(width: 8),
           ],
+          // 多选模式：选中勾选框（消息在左侧时勾选框在气泡右侧）
+          if (widget.selectMode && !isUser) _buildSelectCheck(context),
           Flexible(
             child: GestureDetector(
-              onLongPress: widget.onLongPress != null
-                  ? () => widget.onLongPress!(message, _bubbleKey)
-                  : null,
+              onTap: widget.selectMode ? widget.onTap : null,
+              onLongPress: widget.selectMode
+                  ? null
+                  : (widget.onLongPress != null
+                      ? () => widget.onLongPress!(message, _bubbleKey)
+                      : null),
               child: Container(
                 key: _bubbleKey,
                 padding:
@@ -61,8 +81,10 @@ class _ChatBubbleState extends State<ChatBubble> {
                       : context.bubbleOtherColor,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: context.separatorColor,
-                    width: 0.5,
+                    color: widget.selected
+                        ? context.accentColor
+                        : context.separatorColor,
+                    width: widget.selected ? 1.5 : 0.5,
                   ),
                 ),
                 child: Column(
@@ -71,7 +93,6 @@ class _ChatBubbleState extends State<ChatBubble> {
                     // 引用块
                     if (message.quoteContent.isNotEmpty)
                       _buildQuoteBlock(context, widget.message),
-                    // 图片消息
                     if (isImage) ...[
                       _buildImageContent(context),
                       const SizedBox(height: 6),
@@ -84,18 +105,116 @@ class _ChatBubbleState extends State<ChatBubble> {
                         style: TextStyle(
                           fontSize: 16,
                           height: 1.4,
-                          color: context.textPrimaryColor,
+                          color: isUser
+                              ? context.bubbleTextSelfColor
+                              : context.bubbleTextOtherColor,
                         ),
                       ),
-                      const SizedBox(height: 4),
                     ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // 多选模式：消息在右侧时勾选框在气泡左侧
+          if (widget.selectMode && isUser) _buildSelectCheck(context),
+          if (isUser) ...[
+            const SizedBox(width: 8),
+            _buildAvatar(context, avatar),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 多选模式下的选中勾选框
+  Widget _buildSelectCheck(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, right: 4, top: 22),
+      child: Icon(
+        widget.selected
+            ? CupertinoIcons.checkmark_circle_fill
+            : CupertinoIcons.circle,
+        size: 22,
+        color: widget.selected
+            ? context.accentColor
+            : context.textSecondaryColor,
+      ),
+    );
+  }
+
+  /// 合并转发"聊天记录"卡片：独立整行展示（不用气泡包裹），
+  /// 点击进入详情页查看原始对话；多选模式下点击切换选中。
+  Widget _buildForwardCard(BuildContext context) {
+    final items = widget.message.forwardedItems;
+    final previews = items.take(3).map((e) {
+      final display = e.type == 'image'
+          ? '[图片]'
+          : e.type == 'file'
+              ? '[文件]'
+              : e.content;
+      return '${e.senderName}: $display';
+    }).join('\n');
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          // 多选模式：选中勾选框（卡片在左侧时勾选框在右侧）
+          if (widget.selectMode) _buildSelectCheck(context),
+          Expanded(
+            child: GestureDetector(
+              onTap: widget.selectMode ? widget.onTap : widget.onForwardTap,
+              onLongPress: widget.selectMode
+                  ? null
+                  : (widget.onLongPress != null
+                      ? () => widget.onLongPress!(widget.message, _bubbleKey)
+                      : null),
+              child: Container(
+                key: _bubbleKey,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: context.listBgColor,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: widget.selected
+                        ? context.accentColor
+                        : CupertinoColors.transparent,
+                    width: widget.selected ? 1.5 : 0.5,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      DateFormat('HH:mm').format(message.createdAt),
+                      '聊天记录',
                       style: TextStyle(
-                        fontSize: 11,
-                        color: isUser
-                            ? context.textPrimaryColor.withValues(alpha: 0.45)
-                            : context.textSecondaryColor,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: context.textPrimaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${items.length} 条消息',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 0.5,
+                      color: context.separatorColor,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      previews,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.5,
+                        color: context.textSecondaryColor,
                       ),
                     ),
                   ],
@@ -103,10 +222,9 @@ class _ChatBubbleState extends State<ChatBubble> {
               ),
             ),
           ),
-          if (isUser) ...[
-            const SizedBox(width: 8),
-            _buildAvatar(context, avatar),
-          ],
+          // 我方转发人头像（右侧）
+          const SizedBox(width: 8),
+          _buildAvatar(context, widget.userAvatar),
         ],
       ),
     );

@@ -195,6 +195,11 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
         children: [
           // 导入角色包入口
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             header: const SizedBox.shrink(),
             children: [
               CupertinoListTile(

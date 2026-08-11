@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import 'package:provider/provider.dart';
+import '../providers/settings_provider.dart';
 
 /// 亮/暗两套色板
 class AppColors {
@@ -7,22 +9,28 @@ class AppColors {
   static const navBarLight = Color(0xFFF7F7F7); // 导航栏背景（微信浅色）
   static const listBgLight = Color(0xFFFFFFFF); // 列表卡片背景
   static const chatBgLight = Color(0xFFFAFAFA); // 聊天纯色背景（白）
-  static const bubbleSelfLight = Color(0xFFDCF8C6); // 自己气泡（浅绿）
+  static const bubbleSelfLight = Color(0xFF95EC6A); // 自己气泡
   static const bubbleOtherLight = Color(0xFFFFFFFF); // 对方气泡
   static const textPrimaryLight = Color(0xFF1F1F1F);
   static const textSecondaryLight = Color(0xFF8A8A8E);
   static const fieldBgLight = Color(0xFFEDEDED); // 输入框背景
 
-  // 暗色模式（统一使用 #181818）
-  static const scaffoldDark = Color(0xFF181818);
-  static const navBarDark = Color(0xFF181818);
+  // 暗色模式（页面背景统一 #111111）
+  static const scaffoldDark = Color(0xFF111111);
+  static const navBarDark = Color(0xFF111111);
   static const listBgDark = Color(0xFF222222);
-  static const chatBgDark = Color(0xFF181818);
-  static const bubbleSelfDark = Color(0xFF056162); // 自己气泡（深绿）
-  static const bubbleOtherDark = Color(0xFF262626);
+  static const chatBgDark = Color(0xFF111111);
+  static const bubbleSelfDark = Color(0xFF40B475); // 自己气泡
+  static const bubbleOtherDark = Color(0xFF2C2C2C); // 对方气泡
   static const textPrimaryDark = Color(0xFFF0F0F0);
   static const textSecondaryDark = Color(0xFF8E8E93);
   static const fieldBgDark = Color(0xFF2A2A2C);
+
+  // 气泡内字体颜色（自己/对方 × 浅色/深色）
+  static const bubbleTextSelfLight = Color(0xFF000000);
+  static const bubbleTextOtherLight = Color(0xFF000000);
+  static const bubbleTextSelfDark = Color(0xFF000000);
+  static const bubbleTextOtherDark = Color(0xFFD6D6D6);
 
   // 预设主题色（5 个）
   static const presetColors = <Color>[
@@ -86,11 +94,33 @@ extension AppThemeX on BuildContext {
 
   Color get chatBgColor => isDark ? AppColors.chatBgDark : AppColors.chatBgLight;
 
-  Color get bubbleSelfColor =>
-      isDark ? AppColors.bubbleSelfDark : AppColors.bubbleSelfLight;
+  /// 自己气泡颜色：支持在设置中按明暗模式单独自定义
+  Color get bubbleSelfColor {
+    final settings = read<SettingsProvider>();
+    return settings.bubbleColor(
+        isDark ? BubbleColorSlot.selfDark : BubbleColorSlot.selfLight);
+  }
 
-  Color get bubbleOtherColor =>
-      isDark ? AppColors.bubbleOtherDark : AppColors.bubbleOtherLight;
+  /// 对方气泡颜色：支持在设置中按明暗模式单独自定义
+  Color get bubbleOtherColor {
+    final settings = read<SettingsProvider>();
+    return settings.bubbleColor(
+        isDark ? BubbleColorSlot.otherDark : BubbleColorSlot.otherLight);
+  }
+
+  /// 自己气泡内字体颜色：支持在设置中按明暗模式单独自定义
+  Color get bubbleTextSelfColor {
+    final settings = read<SettingsProvider>();
+    return settings.bubbleTextColor(
+        isDark ? BubbleTextSlot.selfDark : BubbleTextSlot.selfLight);
+  }
+
+  /// 对方气泡内字体颜色：支持在设置中按明暗模式单独自定义
+  Color get bubbleTextOtherColor {
+    final settings = read<SettingsProvider>();
+    return settings.bubbleTextColor(
+        isDark ? BubbleTextSlot.otherDark : BubbleTextSlot.otherLight);
+  }
 
   Color get textPrimaryColor =>
       isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;

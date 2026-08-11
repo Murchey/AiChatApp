@@ -54,6 +54,11 @@ class ApiSettingsScreen extends StatelessWidget {
         children: [
           const SizedBox(height: 12),
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             header: Text('可用模型 (${api.models.length})'),
             children: [
               for (final model in api.models)

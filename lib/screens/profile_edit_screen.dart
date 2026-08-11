@@ -209,6 +209,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           const SizedBox(height: 12),
           // 头像 + 昵称
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             children: [
               CupertinoListTile(
                 title: const Text('头像'),
@@ -245,6 +250,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           ),
           // 性别 / 地区定位 / 个性签名
           CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
             children: [
               CupertinoListTile(
                 title: const Text('性别'),

@@ -184,6 +184,17 @@ class ChatProvider extends ChangeNotifier {
     for (int i = start; i < history.length; i++) {
       final m = history[i];
       if (m.type != MessageType.text) continue; // 图片/文件消息不入上下文
+      // 合并转发卡片：展开为原始对话消息，参与上下文
+      if (m.isForwardCard) {
+        for (final item in m.forwardedItems) {
+          if (item.type != 'text') continue;
+          result.add({
+            'role': item.isUser ? 'user' : 'assistant',
+            'content': item.content,
+          });
+        }
+        continue;
+      }
       result.add({
         'role': m.isFromUser ? 'user' : 'assistant',
         'content': m.content,
@@ -205,6 +216,59 @@ class ChatProvider extends ChangeNotifier {
     _updateConversationLastMessage(conversationId, content);
     notifyListeners();
     _persist();
+  }
+
+  /// 逐条转发：将选中消息逐条作为"我"的消息加入目标会话（保留原消息类型）
+  Future<void> forwardIndividually({
+    required String conversationId,
+    required List<Message> messages,
+  }) async {
+    if (messages.isEmpty) return;
+    _messagesMap[conversationId] ??= [];
+    for (final m in messages) {
+      _messagesMap[conversationId]!.add(Message(
+        id: const Uuid().v4(),
+        conversationId: conversationId,
+        content: m.content,
+        type: m.type,
+        sender: MessageSender.user,
+      ));
+    }
+    _updateConversationLastMessage(conversationId, messages.last.content);
+    notifyListeners();
+    await _persist();
+  }
+
+  /// 合并转发：生成一条"聊天记录"卡片消息加入目标会话，
+  /// 点击卡片可进入二级页面查看原始对话（消息数据保存在 [Message.forwardedItems]）。
+  Future<void> forwardMerged({
+    required String conversationId,
+    required String sourceName,
+    required List<Message> messages,
+  }) async {
+    if (messages.isEmpty) return;
+    final items = messages.map((m) => ForwardItem(
+          senderName: m.isFromUser ? '我' : sourceName,
+          isUser: m.isFromUser,
+          content: m.content,
+          type: m.type == MessageType.image
+              ? 'image'
+              : m.type == MessageType.file
+                  ? 'file'
+                  : 'text',
+          createdAt: m.createdAt,
+        )).toList();
+    _messagesMap[conversationId] ??= [];
+    _messagesMap[conversationId]!.add(Message(
+      id: const Uuid().v4(),
+      conversationId: conversationId,
+      content: '［聊天记录］',
+      sender: MessageSender.user,
+      forwardedItems: items,
+    ));
+    _updateConversationLastMessage(conversationId, '［聊天记录］');
+    notifyListeners();
+    await _persist();
   }
 
   /// 通用删除单条消息（用于重新回复等场景）

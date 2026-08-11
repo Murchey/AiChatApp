@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../models/conversation.dart';
 import '../models/message.dart';
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
@@ -16,6 +19,7 @@ import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 import 'chat_detail_screen.dart';
 import 'chat_settings_screen.dart';
+import 'forward_detail_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -41,6 +45,8 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _proactiveTyping = false; // 主动消息逐条渲染中的"对方正在输入"
   bool _isProactiveRunning = false; // 防止重复触发主动消息
   bool _initialScrollDone = false; // 首次进入会话是否已完成定位（避免进入时动画滑动）
+  bool _selectMode = false; // 多选转发模式
+  final Set<String> _selectedIds = {}; // 多选模式下选中的消息 id
 
   @override
   void dispose() {
@@ -203,7 +209,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // 菜单宽度（3项至少260，2项至少190）
     final double menuWidth = items.length > 2 ? 260 : 190;
-    const double menuHeight = 64;
+    // 菜单高度：5 项以上会换行成两行（64 → 128）
+    final double menuHeight = items.length > 4 ? 128 : 64;
 
     // 计算 X：我方气泡在右侧，菜单靠左；对方气泡在左侧，菜单靠右
     double left;
@@ -308,6 +315,17 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     }
+
+    items.add(
+      _menuItem(
+        icon: CupertinoIcons.square_stack,
+        label: '多选',
+        onTap: () {
+          _closeMenu();
+          _enterSelectMode(message);
+        },
+      ),
+    );
 
     return items;
   }
@@ -453,6 +471,308 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _quoteMessage = null;
     });
+  }
+
+  // ─── 多选转发 ─────────────────────────────────────────────
+
+  /// 从长按菜单进入多选模式（默认选中当前长按的消息）
+  void _enterSelectMode(Message message) {
+    setState(() {
+      _selectMode = true;
+      _selectedIds.add(message.id);
+    });
+  }
+
+  void _exitSelectMode() {
+    setState(() {
+      _selectMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  /// 多选模式下点击气泡切换选中状态
+  void _toggleSelect(Message message) {
+    setState(() {
+      if (!_selectedIds.remove(message.id)) {
+        _selectedIds.add(message.id);
+      }
+    });
+  }
+
+  /// 转发选中的消息到其他会话；merge=true 合并转发，否则逐条转发
+  Future<void> _forwardMessages({required bool merge}) async {
+    final chatProvider = context.read<ChatProvider>();
+    final messages = chatProvider
+        .getMessages(widget.conversationId)
+        .where((m) => _selectedIds.contains(m.id))
+        .toList();
+    if (messages.isEmpty) return;
+
+    final target = await _pickTargetConversation();
+    if (target == null || !mounted) return;
+
+    final conversation = chatProvider.conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    final character = conversation != null
+        ? context
+            .read<CharacterProvider>()
+            .getCharacterById(conversation.characterId)
+        : null;
+    final sourceName = character?.displayName ?? widget.characterName;
+
+    if (merge) {
+      await chatProvider.forwardMerged(
+        conversationId: target.id,
+        sourceName: sourceName,
+        messages: messages,
+      );
+    } else {
+      await chatProvider.forwardIndividually(
+        conversationId: target.id,
+        messages: messages,
+      );
+    }
+    if (!mounted) return;
+    _exitSelectMode();
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('转发成功'),
+        content: Text(
+          '已将 ${messages.length} 条消息${merge ? '（合并）' : ''}转发到「${target.characterName}」',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 弹出目标会话选择器（排除当前会话）
+  Future<Conversation?> _pickTargetConversation() async {
+    final chatProvider = context.read<ChatProvider>();
+    final candidates = chatProvider.conversations
+        .where((c) => c.id != widget.conversationId)
+        .toList();
+    if (candidates.isEmpty) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('提示'),
+          content: const Text('暂无可转发的聊天，请先创建其他聊天'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      );
+      return null;
+    }
+    return showCupertinoModalPopup<Conversation>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(8),
+          height: min(360.0, candidates.length * 56.0 + 96.0),
+          decoration: BoxDecoration(
+            color: context.listBgColor,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  '转发到',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: context.textPrimaryColor,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                height: 0.5,
+                color: context.separatorColor,
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: candidates.length,
+                  itemBuilder: (context, index) {
+                    final c = candidates[index];
+                    return CupertinoListTile(
+                      leading: _buildConvAvatar(c),
+                      title: Text(
+                        c.characterName,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                      onTap: () => Navigator.pop(ctx, c),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 消息时间标签：居中显示在聊天气泡间隙上，
+  /// 仅在会话首条或与上一条消息间隔超过 10 分钟时展示
+  Widget _buildTimeLabel(DateTime time) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(time.year, time.month, time.day);
+    String text;
+    if (day == today) {
+      text = DateFormat('HH:mm').format(time);
+    } else if (day.year == now.year) {
+      text = DateFormat('M月d日 HH:mm').format(time);
+    } else {
+      text = DateFormat('yyyy年M月d日 HH:mm').format(time);
+    }
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: context.textSecondaryColor.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 11,
+            color: context.textSecondaryColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConvAvatar(Conversation c) {
+    if (c.characterAvatar.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.memory(
+          base64Decode(c.characterAvatar),
+          width: 40,
+          height: 40,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: context.accentColor.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        CupertinoIcons.person_fill,
+        size: 20,
+        color: context.accentColor,
+      ),
+    );
+  }
+
+  /// 多选模式底部操作栏：取消 + 已选数量 + 逐条/合并转发
+  Widget _buildSelectBar(BuildContext context) {
+    final count = _selectedIds.length;
+    return Container(
+      color: context.navBarColor,
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              onPressed: _exitSelectMode,
+              child: Text(
+                '取消',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: context.textSecondaryColor,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                '已选 $count 条',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: context.textPrimaryColor,
+                ),
+              ),
+            ),
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              onPressed: count > 0 ? () => _forwardMessages(merge: false) : null,
+              child: Text(
+                '逐条转发',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: count > 0
+                      ? context.accentColor
+                      : context.textSecondaryColor,
+                ),
+              ),
+            ),
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              onPressed: count > 0 ? () => _forwardMessages(merge: true) : null,
+              child: Text(
+                '合并转发',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: count > 0
+                      ? context.accentColor
+                      : context.textSecondaryColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 点击"聊天记录"卡片进入合并转发详情页
+  void _openForwardDetail(
+    Message message, {
+    required String userAvatar,
+    required String characterAvatar,
+  }) {
+    if (message.forwardedItems.isEmpty) return;
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => ForwardDetailScreen(
+          items: message.forwardedItems,
+          userAvatar: userAvatar,
+          characterAvatar: characterAvatar,
+        ),
+      ),
+    );
   }
 
   // ─── 功能检测（模型是否支持图片发送） ─────────────────────
@@ -656,24 +976,28 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        // 角色回复逐条渲染中，标题变为"对方正在输入……"，结束后恢复角色备注/昵称
-        middle: Text(_proactiveTyping ? '对方正在输入……' : displayName),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () {
-            // 三条横线：进入角色与设置二级界面
-            Navigator.push(
-              context,
-              CupertinoPageRoute(
-                builder: (_) => ChatDetailScreen(
-                  conversationId: widget.conversationId,
-                  characterName: displayName,
-                ),
+        // 多选模式显示标题；否则角色回复逐条渲染中标题变为"对方正在输入……"
+        middle: Text(_selectMode
+            ? '选择消息'
+            : (_proactiveTyping ? '对方正在输入……' : displayName)),
+        trailing: _selectMode
+            ? null
+            : CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () {
+                  // 三条横线：进入角色与设置二级界面
+                  Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                      builder: (_) => ChatDetailScreen(
+                        conversationId: widget.conversationId,
+                        characterName: displayName,
+                      ),
+                    ),
+                  );
+                },
+                child: const Icon(CupertinoIcons.line_horizontal_3),
               ),
-            );
-          },
-          child: const Icon(CupertinoIcons.line_horizontal_3),
-        ),
       ),
       child: Column(
         children: [
@@ -741,12 +1065,36 @@ class _ChatScreenState extends State<ChatScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     itemCount: messages.length,
                     itemBuilder: (context, index) {
-                      return ChatBubble(
-                        message: messages[index],
-                        userAvatar: userAvatar,
-                        characterAvatar: characterAvatar,
-                        onLongPress: (message, bubbleKey) =>
-                            _showBubbleMenu(message, bubbleKey),
+                      final msg = messages[index];
+                      final prev = index > 0 ? messages[index - 1] : null;
+                      // 与上一条消息间隔超过 10 分钟才显示时间（第一条总是显示）
+                      final showTime = prev == null ||
+                          msg.createdAt
+                                  .difference(prev.createdAt)
+                                  .inMinutes >=
+                              10;
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (showTime) _buildTimeLabel(msg.createdAt),
+                          ChatBubble(
+                            message: msg,
+                            userAvatar: userAvatar,
+                            characterAvatar: characterAvatar,
+                            selectMode: _selectMode,
+                            selected: _selectedIds.contains(msg.id),
+                            onTap: _selectMode
+                                ? () => _toggleSelect(msg)
+                                : null,
+                            onForwardTap: () => _openForwardDetail(
+                              msg,
+                              userAvatar: userAvatar,
+                              characterAvatar: characterAvatar,
+                            ),
+                            onLongPress: (message, bubbleKey) =>
+                                _showBubbleMenu(message, bubbleKey),
+                          ),
+                        ],
                       );
                     },
                   ),
@@ -754,10 +1102,14 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
-          // AI 请求失败错误提示条（可点击关闭）
-          Consumer<ChatProvider>(
-            builder: (context, chatProvider, _) {
-              final error = chatProvider.lastError;
+          // 多选模式：显示选择操作栏；否则显示错误条/引用条/输入框
+          if (_selectMode)
+            _buildSelectBar(context)
+          else ...[
+            // AI 请求失败错误提示条（可点击关闭）
+            Consumer<ChatProvider>(
+              builder: (context, chatProvider, _) {
+                final error = chatProvider.lastError;
               if (error == null || error.isEmpty) {
                 return const SizedBox.shrink();
               }
@@ -863,6 +1215,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onRequestReply: () => _triggerProactiveMessages(replyToUser: true),
             replyEnabled: replyEnabled,
           ),
+          ],
         ],
       ),
     );
