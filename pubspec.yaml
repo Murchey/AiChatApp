@@ -14,6 +14,8 @@ dependencies:
   shared_preferences: ^2.2.2
   intl: ^0.19.0
   uuid: ^4.2.1
+  archive: ^4.0.2
+  gbk_codec: ^0.4.0
   image_picker: ^1.0.7
   lpinyin: ^2.0.3
   path_provider: ^2.1.3

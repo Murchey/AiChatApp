@@ -9,6 +9,10 @@ class CharacterProvider extends ChangeNotifier {
   Character? _selectedCharacter;
   bool _isLoading = false;
   static const _storageKey = 'characters_v1';
+  static const _deletedKey = 'characters_deleted_v1';
+
+  /// 被用户删除的默认角色 id（删除后重启不恢复）
+  Set<String> _deletedDefaultIds = {};
 
   List<Character> get characters => _characters;
   Character? get selectedCharacter => _selectedCharacter;
@@ -38,6 +42,9 @@ class CharacterProvider extends ChangeNotifier {
 
     // 先从本地读取自定义修改（如系统提示词），再合并默认角色
     final prefs = await SharedPreferences.getInstance();
+    final deletedIds = prefs.getStringList(_deletedKey) ?? const [];
+    _deletedDefaultIds = deletedIds.toSet();
+
     final stored = prefs.getString(_storageKey);
     Map<String, dynamic> customMap = {};
     if (stored != null) {
@@ -46,31 +53,41 @@ class CharacterProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
-    final defaults = _defaultCharacters();
-    _characters = defaults.map((c) {
-      final custom = customMap[c.id];
-      if (custom is Map<String, dynamic>) {
-        return Character(
-          id: c.id,
-          name: custom['name'] as String? ?? c.name,
-          remark: custom['remark'] as String? ?? c.remark,
-          signature: custom['signature'] as String? ?? c.signature,
-          region: custom['region'] as String? ?? c.region,
-          avatar: custom['avatar'] as String? ?? c.avatar,
-          description: custom['description'] as String? ?? c.description,
-          personality: custom['personality'] as String? ?? c.personality,
-          greeting: custom['greeting'] as String? ?? c.greeting,
-          systemPrompt: custom['system_prompt'] as String? ?? c.systemPrompt,
-          customPersona:
-              custom['custom_persona'] as String? ?? c.customPersona,
-          userRelationship:
-              custom['user_relationship'] as String? ?? c.userRelationship,
-          tags: (custom['tags'] as List<dynamic>?)?.cast<String>() ?? c.tags,
-        );
-      }
-      return c;
-    }).toList();
-
+    // 默认角色过滤掉用户已删除的
+    final defaults = _defaultCharacters()
+        .where((c) => !_deletedDefaultIds.contains(c.id))
+        .toList();
+    final defaultIds = defaults.map((c) => c.id).toSet();
+    _characters = [
+      ...defaults.map((c) {
+        final custom = customMap[c.id];
+        if (custom is Map<String, dynamic>) {
+          return Character(
+            id: c.id,
+            name: custom['name'] as String? ?? c.name,
+            remark: custom['remark'] as String? ?? c.remark,
+            signature: custom['signature'] as String? ?? c.signature,
+            region: custom['region'] as String? ?? c.region,
+            avatar: custom['avatar'] as String? ?? c.avatar,
+            description: custom['description'] as String? ?? c.description,
+            personality: custom['personality'] as String? ?? c.personality,
+            greeting: custom['greeting'] as String? ?? c.greeting,
+            systemPrompt: custom['system_prompt'] as String? ?? c.systemPrompt,
+            customPersona:
+                custom['custom_persona'] as String? ?? c.customPersona,
+            userRelationship:
+                custom['user_relationship'] as String? ?? c.userRelationship,
+            tags:
+                (custom['tags'] as List<dynamic>?)?.cast<String>() ?? c.tags,
+          );
+        }
+        return c;
+      }),
+      // 恢复用户导入/自定义的角色（不在默认角色中）
+      ...customMap.entries
+           .where((e) => !defaultIds.contains(e.key) && e.value is Map<String, dynamic>)
+           .map((e) => Character.fromJson(e.value as Map<String, dynamic>)),
+    ];
     _isLoading = false;
     notifyListeners();
   }
@@ -169,6 +186,31 @@ class CharacterProvider extends ChangeNotifier {
     );
     notifyListeners();
     await _persistCharacters();
+  }
+
+  /// 新增角色（导入角色包 / 自定义添加）并持久化
+  Future<Character> addCharacter(Character character) async {
+    _characters.add(character);
+    notifyListeners();
+    await _persistCharacters();
+    return character;
+  }
+
+  /// 批量删除角色并持久化
+  Future<void> removeCharacters(List<String> ids) async {
+    final idSet = ids.toSet();
+    _characters.removeWhere((c) => idSet.contains(c.id));
+    notifyListeners();
+    await _persistCharacters();
+
+    // 记录被删除的默认角色，重启后不恢复
+    final defaultIds = _defaultCharacters().map((c) => c.id).toSet();
+    final deletedDefaults = idSet.intersection(defaultIds);
+    if (deletedDefaults.isNotEmpty) {
+      _deletedDefaultIds.addAll(deletedDefaults);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_deletedKey, _deletedDefaultIds.toList());
+    }
   }
 
   Future<void> _persistCharacters() async {

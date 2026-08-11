@@ -147,6 +147,20 @@ class ChatSettingsScreen extends StatelessWidget {
                   ),
             ],
           ),
+          if (api.models.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '添加模型后，可在聊天输入框的加号面板中使用【功能检测】测试该模型是否支持图片发送，检测通过后【相册】【拍照】才可点击。',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.5,
+                  color: context.textSecondaryColor,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
         ],
       ),

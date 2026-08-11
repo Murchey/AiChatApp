@@ -9,7 +9,9 @@ class MessageInput extends StatefulWidget {
   final Function(String, String)? onPickFile; // (文件路径, 文件名)
   final VoidCallback? onSettings; // 打开聊天设置
   final VoidCallback? onExport; // 导出聊天记录
-  final VoidCallback? onProactiveMessage; // 角色主动发消息（测试触发）
+  final Future<bool> Function()? onFeatureDetect; // 功能检测：测试当前模型是否支持图片（返回是否通过）
+  final VoidCallback? onRequestReply; // 请求角色回复（对号按钮触发）
+  final bool replyEnabled; // 对号按钮是否可点：上一条消息是用户发送时才可点
   /// 外部可通过此 key 调用 setText / focus
   final GlobalKey<MessageInputState>? inputKey;
 
@@ -21,7 +23,9 @@ class MessageInput extends StatefulWidget {
     this.onPickFile,
     this.onSettings,
     this.onExport,
-    this.onProactiveMessage,
+    this.onFeatureDetect,
+    this.onRequestReply,
+    this.replyEnabled = true,
   });
 
   @override
@@ -38,6 +42,7 @@ class MessageInputState extends State<MessageInput> {
   final FocusNode _inputFocusNode = FocusNode();
   bool _hasText = false;
   bool _showGrid = false;
+  bool _imageReady = false; // 图片功能是否已检测通过（检测前相册/拍照保持禁用）
 
   /// 外部可直接设置输入框内容
   void setText(String text) {
@@ -158,7 +163,7 @@ class MessageInputState extends State<MessageInput> {
                     ),
                   ),
                 ),
-                // 发送按钮：输入内容后才显示
+                // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（点击请求角色回复）
                 if (_hasText) ...[
                   CupertinoButton.filled(
                     onPressed: _handleSend,
@@ -171,6 +176,19 @@ class MessageInputState extends State<MessageInput> {
                         color: CupertinoColors.white,
                         fontWeight: FontWeight.w600,
                       ),
+                    ),
+                  ),
+                ] else if (widget.onRequestReply != null) ...[
+                  CupertinoButton(
+                    padding: const EdgeInsets.all(4),
+                    onPressed:
+                        widget.replyEnabled ? widget.onRequestReply : null,
+                    child: Icon(
+                      CupertinoIcons.checkmark_circle_fill,
+                      size: 30,
+                      color: widget.replyEnabled
+                          ? context.accentColor
+                          : context.textSecondaryColor,
                     ),
                   ),
                 ],
@@ -189,6 +207,7 @@ class MessageInputState extends State<MessageInput> {
       _GridItem(
         icon: CupertinoIcons.photo,
         label: '相册',
+        enabled: _imageReady,
         onTap: () async {
           setState(() => _showGrid = false);
           final file = await _picker.pickImage(source: ImageSource.gallery);
@@ -200,6 +219,7 @@ class MessageInputState extends State<MessageInput> {
       _GridItem(
         icon: CupertinoIcons.camera,
         label: '拍照',
+        enabled: _imageReady,
         onTap: () async {
           setState(() => _showGrid = false);
           final file = await _picker.pickImage(source: ImageSource.camera);
@@ -254,11 +274,14 @@ class MessageInputState extends State<MessageInput> {
         },
       ),
       _GridItem(
-        icon: CupertinoIcons.sparkles,
-        label: '角色消息',
-        onTap: () {
+        icon: CupertinoIcons.wrench,
+        label: '功能检测',
+        onTap: () async {
           setState(() => _showGrid = false);
-          widget.onProactiveMessage?.call();
+          final ok = await widget.onFeatureDetect?.call() ?? false;
+          if (mounted) {
+            setState(() => _imageReady = ok);
+          }
         },
       ),
     ];
@@ -283,8 +306,9 @@ class MessageInputState extends State<MessageInput> {
   }
 
   Widget _buildGridTile(BuildContext context, _GridItem item) {
+    final enabled = item.enabled;
     return GestureDetector(
-      onTap: item.onTap,
+      onTap: enabled ? item.onTap : null,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -292,18 +316,28 @@ class MessageInputState extends State<MessageInput> {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: context.fieldBgColor,
+              color: enabled
+                  ? context.fieldBgColor
+                  : context.fieldBgColor.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(14),
             ),
             alignment: Alignment.center,
-            child: Icon(item.icon, size: 28, color: context.textPrimaryColor),
+            child: Icon(
+              item.icon,
+              size: 28,
+              color: enabled
+                  ? context.textPrimaryColor
+                  : context.textSecondaryColor.withValues(alpha: 0.5),
+            ),
           ),
           const SizedBox(height: 6),
           Text(
             item.label,
             style: TextStyle(
               fontSize: 12,
-              color: context.textSecondaryColor,
+              color: enabled
+                  ? context.textSecondaryColor
+                  : context.textSecondaryColor.withValues(alpha: 0.5),
             ),
           ),
         ],
@@ -333,10 +367,12 @@ class _GridItem {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool enabled;
 
   const _GridItem({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.enabled = true,
   });
 }

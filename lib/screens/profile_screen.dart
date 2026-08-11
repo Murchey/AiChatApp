@@ -5,7 +5,10 @@ import '../config/theme.dart';
 import '../models/user.dart';
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
+import '../utils/character_pack_picker.dart';
 import 'api_settings_screen.dart';
+import 'character_import_screen.dart';
+import 'character_manage_screen.dart';
 import 'profile_edit_screen.dart';
 import 'settings_screen.dart';
 
@@ -82,6 +85,58 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
               ),
+              // 角色管理
+              CupertinoListSection.insetGrouped(
+                children: [
+                  CupertinoListTile(
+                    leading: Icon(
+                      CupertinoIcons.person_2_fill,
+                      color: context.accentColor,
+                    ),
+                    title: const Text('管理当前角色'),
+                    subtitle: Text(
+                      '添加 / 删除 / 导出角色包',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                    trailing: Icon(
+                      CupertinoIcons.chevron_right,
+                      size: 16,
+                      color: context.textSecondaryColor,
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => const CharacterManageScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  CupertinoListTile(
+                    leading: Icon(
+                      CupertinoIcons.archivebox,
+                      color: context.accentColor,
+                    ),
+                    title: const Text('导入角色包'),
+                    subtitle: Text(
+                      '从 zip 文件导入角色',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                    trailing: Icon(
+                      CupertinoIcons.chevron_right,
+                      size: 16,
+                      color: context.textSecondaryColor,
+                    ),
+                    onTap: () => _importCharacterPack(context),
+                  ),
+                ],
+              ),
               // 设置列表
               CupertinoListSection.insetGrouped(
                 children: [
@@ -147,6 +202,46 @@ class ProfileScreen extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// 选择 zip 角色包并进入勾选导入页
+  Future<void> _importCharacterPack(BuildContext context) async {
+    try {
+      final result = await pickAndParseCharacterPack();
+      if (result == null || !context.mounted) return;
+      if (result.entries.isEmpty) {
+        _showTip(context, '该 zip 中没有找到角色包（需包含 Profile.json 的角色文件夹）');
+        return;
+      }
+      await Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (_) => CharacterImportScreen(
+            entries: result.entries,
+            zipName: result.name,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) _showTip(context, '导入失败：$e');
+    }
+  }
+
+  void _showTip(BuildContext context, String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('提示'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
       ),
     );
   }

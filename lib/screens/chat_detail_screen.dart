@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
@@ -9,15 +10,26 @@ import '../providers/character_provider.dart';
 import '../services/prompt_builder.dart';
 
 /// 聊天详情/角色资料：上半部分可编辑角色卡（备注/昵称/个性签名/定位地区），
-/// 中部聊天管理，最下方折叠的提示词设置 panel。
+/// 中部聊天管理（聊天场景），最下方折叠的提示词设置 panel。
+///
+/// 通过 [conversationId] 进入时为聊天详情页；通过 [characterId] 直接进入时
+/// 为角色资料编辑页（如角色管理页），可设置 [showChatManage] 为 false 隐藏聊天管理区。
 class ChatDetailScreen extends StatefulWidget {
   final String conversationId;
   final String characterName;
+
+  /// 直接指定要编辑的角色（角色管理页使用，不再依赖会话）
+  final String? characterId;
+
+  /// 是否显示"清空上下文/删除聊天"管理区（仅聊天场景）
+  final bool showChatManage;
 
   const ChatDetailScreen({
     super.key,
     required this.conversationId,
     required this.characterName,
+    this.characterId,
+    this.showChatManage = true,
   });
 
   @override
@@ -35,6 +47,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   String get _characterId {
+    // 直接指定的角色优先（角色管理页场景）
+    final direct = widget.characterId;
+    if (direct != null && direct.isNotEmpty) return direct;
     return context
             .read<ChatProvider>()
             .conversations
@@ -74,6 +89,38 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (updated != null) {
       chatProvider.updateCharacterDisplayName(characterId, updated.displayName);
     }
+  }
+
+  /// 选择相册图片并更新角色头像
+  Future<void> _pickAvatar() async {
+    final characterId = _characterId;
+    if (characterId.isEmpty) return;
+    final provider = context.read<CharacterProvider>();
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 500,
+      maxHeight: 500,
+      imageQuality: 85,
+    );
+    if (file == null || !mounted) return;
+    final bytes = await file.readAsBytes();
+    await provider.updateAvatar(characterId, base64Encode(bytes));
+    if (!mounted) return;
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('头像已更新'),
+        content: const Text('新的角色头像已保存'),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 弹出单字段编辑框
@@ -226,14 +273,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final chatProvider = context.watch<ChatProvider>();
-    final conversation = chatProvider.conversations
-        .where((c) => c.id == widget.conversationId)
-        .firstOrNull;
+    final conversation = widget.conversationId.isEmpty
+        ? null
+        : chatProvider.conversations
+            .where((c) => c.id == widget.conversationId)
+            .firstOrNull;
 
-    final character = conversation != null
-        ? context
-            .watch<CharacterProvider>()
-            .getCharacterById(conversation.characterId)
+    final characterId = _characterId;
+    final character = characterId.isNotEmpty
+        ? context.watch<CharacterProvider>().getCharacterById(characterId)
         : null;
 
     final avatar = character?.avatar ?? conversation?.characterAvatar ?? '';
@@ -247,8 +295,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           _buildCharacterCard(conversation, avatar, displayName),
           const SizedBox(height: 16),
           _buildInfoSection(character),
-          const SizedBox(height: 24),
-          _buildManageSection(),
+          if (widget.showChatManage && conversation != null) ...[
+            const SizedBox(height: 24),
+            _buildManageSection(),
+          ],
           const SizedBox(height: 24),
           _buildPromptPanel(character),
         ],
@@ -262,10 +312,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     String avatar,
     String displayName,
   ) {
-    final character = conversation != null
-        ? context
-            .read<CharacterProvider>()
-            .getCharacterById(conversation.characterId)
+    final characterId = _characterId;
+    final character = characterId.isNotEmpty
+        ? context.read<CharacterProvider>().getCharacterById(characterId)
         : null;
     final signature = character?.signature ?? '';
     final region = character?.region ?? '';
@@ -279,28 +328,56 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       ),
       child: Row(
         children: [
-          // 方形头像
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: context.accentColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-              image: avatar.isNotEmpty
-                  ? DecorationImage(
-                      image: MemoryImage(base64Decode(avatar)),
-                      fit: BoxFit.cover,
-                    )
-                  : null,
+          // 方形头像（点击更换）
+          GestureDetector(
+            onTap: _pickAvatar,
+            child: Stack(
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: context.accentColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    image: avatar.isNotEmpty
+                        ? DecorationImage(
+                            image: MemoryImage(base64Decode(avatar)),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                  ),
+                  alignment: Alignment.center,
+                  child: avatar.isEmpty
+                      ? Icon(
+                          CupertinoIcons.person_fill,
+                          size: 36,
+                          color: context.accentColor,
+                        )
+                      : null,
+                ),
+                // 右下角相机角标
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: context.accentColor,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: context.listBgColor,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: const Icon(
+                      CupertinoIcons.camera_fill,
+                      size: 10,
+                      color: CupertinoColors.white,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            alignment: Alignment.center,
-            child: avatar.isEmpty
-                ? Icon(
-                    CupertinoIcons.person_fill,
-                    size: 36,
-                    color: context.accentColor,
-                  )
-                : null,
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -368,7 +445,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final signature = character?.signature ?? '';
     final region = character?.region ?? '';
     final userRelationship = character?.userRelationship ?? '';
-    final customPersona = character?.customPersona ?? '';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -442,21 +518,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               hint: '例如：青梅竹马 / 刚认识',
               maxLength: PromptBuilder.maxRelationshipLength,
               onSave: (v) => _saveField(userRelationship: v),
-            ),
-          ),
-          _separator(),
-          _infoTile(
-            icon: CupertinoIcons.text_quote,
-            label: '角色人设',
-            value: customPersona,
-            placeholder: '未设置，性格/口癖/作息等',
-            onTap: () => _editField(
-              title: '角色人设',
-              initial: customPersona,
-              hint: '描述角色的性格、口癖、作息习惯等',
-              multiline: true,
-              maxLength: PromptBuilder.maxPersonaLength,
-              onSave: (v) => _saveField(customPersona: v),
             ),
           ),
         ],
