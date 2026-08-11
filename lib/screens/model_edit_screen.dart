@@ -84,6 +84,21 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     if (mounted) Navigator.pop(context);
   }
 
+  /// 一键填入 DeepSeek 官方配置（仅填充空白字段）
+  void _applyDeepSeekPreset() {
+    setState(() {
+      if (_displayController.text.trim().isEmpty) {
+        _displayController.text = 'DeepSeek Chat';
+      }
+      if (_modelNameController.text.trim().isEmpty) {
+        _modelNameController.text = 'deepseek-chat';
+      }
+      if (_baseUrlController.text.trim().isEmpty) {
+        _baseUrlController.text = 'https://api.deepseek.com';
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
@@ -104,18 +119,52 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       child: ListView(
         children: [
           const SizedBox(height: 12),
+          // DeepSeek 官方一键预设
+          CupertinoListSection.insetGrouped(
+            header: const Text('快捷预设'),
+            children: [
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.sparkles,
+                  color: context.accentColor,
+                ),
+                title: Text(
+                  'DeepSeek 官方配置',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: context.textPrimaryColor,
+                  ),
+                ),
+                subtitle: Text(
+                  '自动填入官方接口地址与 deepseek-chat 模型，仅需补充 API Key',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 14,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: _applyDeepSeekPreset,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           CupertinoListSection.insetGrouped(
             header: const Text('基本信息'),
             children: [
               _buildField(
                 controller: _displayController,
                 label: '展示名称',
-                placeholder: '用于界面显示',
+                placeholder: '用于界面显示，如 DeepSeek Chat',
               ),
               _buildField(
                 controller: _modelNameController,
                 label: '模型名称',
-                placeholder: 'API 调用使用，如 gpt-4o',
+                placeholder: 'API 调用使用，如 deepseek-chat / deepseek-reasoner',
               ),
             ],
           ),
@@ -125,12 +174,12 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
               _buildField(
                 controller: _baseUrlController,
                 label: 'API 请求地址',
-                placeholder: '如 https://api.openai.com/v1',
+                placeholder: 'DeepSeek 官方为 https://api.deepseek.com，留空则使用官方默认',
               ),
               _buildField(
                 controller: _apiKeyController,
                 label: 'API Key',
-                placeholder: '输入你的 API Key',
+                placeholder: '输入你的 API Key（DeepSeek 在 platform.deepseek.com 申请）',
                 obscureText: true,
               ),
             ],

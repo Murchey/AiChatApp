@@ -7,6 +7,9 @@ class MessageInput extends StatefulWidget {
   final Function(String) onSend;
   final Function(String)? onPickImage;
   final Function(String, String)? onPickFile; // (文件路径, 文件名)
+  final VoidCallback? onSettings; // 打开聊天设置
+  final VoidCallback? onExport; // 导出聊天记录
+  final VoidCallback? onProactiveMessage; // 角色主动发消息（测试触发）
   /// 外部可通过此 key 调用 setText / focus
   final GlobalKey<MessageInputState>? inputKey;
 
@@ -16,6 +19,9 @@ class MessageInput extends StatefulWidget {
     required this.onSend,
     this.onPickImage,
     this.onPickFile,
+    this.onSettings,
+    this.onExport,
+    this.onProactiveMessage,
   });
 
   @override
@@ -228,6 +234,31 @@ class MessageInputState extends State<MessageInput> {
         label: '转账',
         onTap: () {
           setState(() => _showGrid = false);
+        },
+      ),
+      // ── 第二行：原右上角菜单功能 ──
+      _GridItem(
+        icon: CupertinoIcons.settings,
+        label: '聊天设置',
+        onTap: () {
+          setState(() => _showGrid = false);
+          widget.onSettings?.call();
+        },
+      ),
+      _GridItem(
+        icon: CupertinoIcons.share_up,
+        label: '导出聊天',
+        onTap: () {
+          setState(() => _showGrid = false);
+          widget.onExport?.call();
+        },
+      ),
+      _GridItem(
+        icon: CupertinoIcons.sparkles,
+        label: '角色消息',
+        onTap: () {
+          setState(() => _showGrid = false);
+          widget.onProactiveMessage?.call();
         },
       ),
     ];

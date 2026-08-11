@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
+import 'chat_detail_screen.dart';
 import 'chat_settings_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -36,6 +38,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final GlobalKey<MessageInputState> _inputKey = GlobalKey<MessageInputState>();
   Message? _quoteMessage;
   OverlayEntry? _menuOverlay;
+  bool _proactiveTyping = false; // 主动消息逐条渲染中的"对方正在输入"
+  bool _isProactiveRunning = false; // 防止重复触发主动消息
 
   @override
   void dispose() {
@@ -56,38 +60,12 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// 右上角三点菜单：聊天设置 / 导出聊天记录
-  void _showMoreActions(BuildContext context) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (ctx) => CupertinoActionSheet(
-        title: Text(widget.characterName),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.push(
-                context,
-                CupertinoPageRoute(
-                  builder: (_) => const ChatSettingsScreen(),
-                ),
-              );
-            },
-            child: const Text('聊天设置'),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _exportChat();
-            },
-            child: const Text('导出聊天记录'),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          isDestructiveAction: true,
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('取消'),
-        ),
+  /// 打开聊天设置（模型/上下文条数）
+  void _openChatSettings() {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => const ChatSettingsScreen(),
       ),
     );
   }
@@ -443,10 +421,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// 发送消息（携带引用）
   void _handleSend(String content) {
-    final characterProvider = context.read<CharacterProvider>();
-    final character = characterProvider.characters
-        .where((c) => c.name == widget.characterName)
+    final chatProvider = context.read<ChatProvider>();
+    final conversation = chatProvider.conversations
+        .where((c) => c.id == widget.conversationId)
         .firstOrNull;
+    final characterProvider = context.read<CharacterProvider>();
+    final character = conversation != null
+        ? characterProvider.getCharacterById(conversation.characterId)
+        : null;
 
     // 读取聊天设置：上下文条数 + 使用的模型
     final chatSettings = context.read<ChatSettingsProvider>();
@@ -459,7 +441,8 @@ class _ChatScreenState extends State<ChatScreen> {
           content: content,
           characterName: widget.characterName,
           characterSystemPrompt: character?.systemPrompt ?? '',
-          modelName: model?.displayName ?? '',
+          userProfile: _buildUserProfile(),
+          model: model,
           contextCount: chatSettings.contextCount,
           quoteContent: quote?.content ?? '',
           quoteSender: quote == null
@@ -479,6 +462,102 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _quoteMessage = null;
     });
+  }
+
+  /// 组装用户个人信息文本，随上下文发送给 AI
+  String _buildUserProfile() {
+    final user = context.read<AuthProvider>().user;
+    if (user == null) return '';
+    final parts = <String>[
+      '昵称：${user.nickname}',
+      if (user.gender.isNotEmpty) '性别：${user.gender}',
+      if (user.region.isNotEmpty) '地区：${user.region}',
+      if (user.signature.isNotEmpty) '个性签名：${user.signature}',
+    ];
+    return '【用户资料】${parts.join('；')}。请参考以上资料与用户对话。';
+  }
+
+  // ─── 角色主动发消息 ───────────────────────────────────────
+
+  /// 触发"角色主动发消息"：组装 Prompt → 调用 LLM 生成消息数组 → 顺序渲染
+  Future<void> _triggerProactiveMessages() async {
+    if (_isProactiveRunning) return;
+
+    final chatSettings = context.read<ChatSettingsProvider>();
+    final model = context
+        .read<ApiProvider>()
+        .getModelById(chatSettings.selectedModelId);
+    if (model == null) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('提示'),
+          content: const Text('请先在「聊天设置」中选择一个模型，再进行角色主动消息测试'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final chatProvider = context.read<ChatProvider>();
+    final conversation = chatProvider.conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    final character = conversation != null
+        ? context
+            .read<CharacterProvider>()
+            .getCharacterById(conversation.characterId)
+        : null;
+    final characterName = character?.displayName ?? widget.characterName;
+
+    setState(() => _isProactiveRunning = true);
+    try {
+      final messages = await chatProvider.generateProactiveMessages(
+        conversationId: widget.conversationId,
+        model: model,
+        characterName: characterName,
+        characterSystemPrompt: character?.systemPrompt ?? '',
+        customPersona: character?.customPersona ?? '',
+        userRelationship: character?.userRelationship ?? '',
+        userNickname:
+            context.read<AuthProvider>().user?.nickname ?? '用户',
+      );
+      if (!mounted) return;
+      if (messages.isEmpty) return; // 时间不合理返回 [] 或 API 失败（错误条已展示）
+      await _renderMessagesSequentially(messages);
+    } finally {
+      if (mounted) setState(() => _isProactiveRunning = false);
+    }
+  }
+
+  /// 顺序渲染消息队列（微信拟真感）：
+  /// 每条先显示"对方正在输入..."，按长度计算延迟，结束后推入气泡并触发震动。
+  Future<void> _renderMessagesSequentially(List<String> messages) async {
+    final random = Random();
+    final chatProvider = context.read<ChatProvider>();
+    for (final content in messages) {
+      if (!mounted) return;
+      setState(() => _proactiveTyping = true);
+      _scrollToBottom();
+
+      // 延迟 = 随机 0~1s + 消息长度 * 50ms（模拟打字耗时）
+      final delay = random.nextDouble() * 1000 + content.length * 50;
+      await Future.delayed(Duration(milliseconds: delay.round()));
+      if (!mounted) return;
+
+      setState(() => _proactiveTyping = false);
+      chatProvider.addProactiveMessage(widget.conversationId, content);
+      _scrollToBottom();
+      HapticFeedback.lightImpact(); // 消息提示震动
+      await Future.delayed(const Duration(milliseconds: 600)); // 消息间隔
+    }
+    if (mounted) setState(() => _proactiveTyping = false);
   }
 
   /// 选择图片后发送图片消息
@@ -503,13 +582,36 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 实时显示名：优先使用角色资料中的备注/昵称
+    final chatProvider = context.watch<ChatProvider>();
+    final conversation = chatProvider.conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    final character = conversation != null
+        ? context
+            .watch<CharacterProvider>()
+            .getCharacterById(conversation.characterId)
+        : null;
+    final displayName = character?.displayName ?? widget.characterName;
+
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: Text(widget.characterName),
+        middle: Text(displayName),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: () => _showMoreActions(context),
-          child: const Icon(CupertinoIcons.ellipsis),
+          onPressed: () {
+            // 三条横线：进入角色与设置二级界面
+            Navigator.push(
+              context,
+              CupertinoPageRoute(
+                builder: (_) => ChatDetailScreen(
+                  conversationId: widget.conversationId,
+                  characterName: displayName,
+                ),
+              ),
+            );
+          },
+          child: const Icon(CupertinoIcons.line_horizontal_3),
         ),
       ),
       child: Column(
@@ -550,7 +652,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            '和 ${widget.characterName} 开始聊天吧',
+                            '和 $displayName 开始聊天吧',
                             style: TextStyle(
                               fontSize: 16,
                               color: context.textSecondaryColor,
@@ -588,7 +690,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           Consumer<ChatProvider>(
             builder: (context, chatProvider, _) {
-              if (chatProvider.isLoading) {
+              // 普通回复或主动消息生成中，均显示"对方正在输入..."
+              if (chatProvider.isLoading || _proactiveTyping) {
                 return Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -600,7 +703,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       const CupertinoActivityIndicator(),
                       const SizedBox(width: 10),
                       Text(
-                        '${widget.characterName} 正在输入...',
+                        '$displayName 正在输入...',
                         style: TextStyle(
                           fontSize: 13,
                           color: context.textSecondaryColor,
@@ -611,6 +714,51 @@ class _ChatScreenState extends State<ChatScreen> {
                 );
               }
               return const SizedBox.shrink();
+            },
+          ),
+          // AI 请求失败错误提示条（可点击关闭）
+          Consumer<ChatProvider>(
+            builder: (context, chatProvider, _) {
+              final error = chatProvider.lastError;
+              if (error == null || error.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                color: context.navBarColor,
+                child: Row(
+                  children: [
+                    const Icon(
+                      CupertinoIcons.exclamationmark_triangle_fill,
+                      size: 15,
+                      color: CupertinoColors.systemRed,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        error,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: CupertinoColors.systemRed,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: chatProvider.clearError,
+                      child: Icon(
+                        CupertinoIcons.xmark_circle_fill,
+                        size: 16,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              );
             },
           ),
           // 引用条（设置了引用时显示在输入框上方）
@@ -634,7 +782,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           Text(
                             _quoteMessage!.isFromUser
                                 ? '引用 我'
-                                : '引用 ${widget.characterName}',
+                                : '引用 $displayName',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -671,6 +819,9 @@ class _ChatScreenState extends State<ChatScreen> {
             onSend: _handleSend,
             onPickImage: _handlePickImage,
             onPickFile: _handlePickFile,
+            onSettings: _openChatSettings,
+            onExport: _exportChat,
+            onProactiveMessage: _triggerProactiveMessages,
           ),
         ],
       ),

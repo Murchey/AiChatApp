@@ -44,6 +44,8 @@ class Conversation {
   }
 
   Conversation copyWith({
+    String? characterName,
+    String? characterAvatar,
     String? lastMessage,
     DateTime? lastMessageTime,
     int? unreadCount,
@@ -51,8 +53,8 @@ class Conversation {
     return Conversation(
       id: id,
       characterId: characterId,
-      characterName: characterName,
-      characterAvatar: characterAvatar,
+      characterName: characterName ?? this.characterName,
+      characterAvatar: characterAvatar ?? this.characterAvatar,
       lastMessage: lastMessage ?? this.lastMessage,
       lastMessageTime: lastMessageTime ?? this.lastMessageTime,
       unreadCount: unreadCount ?? this.unreadCount,

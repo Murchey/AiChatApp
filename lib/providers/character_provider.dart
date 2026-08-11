@@ -53,11 +53,18 @@ class CharacterProvider extends ChangeNotifier {
         return Character(
           id: c.id,
           name: custom['name'] as String? ?? c.name,
+          remark: custom['remark'] as String? ?? c.remark,
+          signature: custom['signature'] as String? ?? c.signature,
+          region: custom['region'] as String? ?? c.region,
           avatar: custom['avatar'] as String? ?? c.avatar,
           description: custom['description'] as String? ?? c.description,
           personality: custom['personality'] as String? ?? c.personality,
           greeting: custom['greeting'] as String? ?? c.greeting,
           systemPrompt: custom['system_prompt'] as String? ?? c.systemPrompt,
+          customPersona:
+              custom['custom_persona'] as String? ?? c.customPersona,
+          userRelationship:
+              custom['user_relationship'] as String? ?? c.userRelationship,
           tags: (custom['tags'] as List<dynamic>?)?.cast<String>() ?? c.tags,
         );
       }
@@ -126,7 +133,7 @@ class CharacterProvider extends ChangeNotifier {
   Future<void> updateSystemPrompt(String id, String prompt) async {
     final index = _characters.indexWhere((c) => c.id == id);
     if (index == -1) return;
-    _characters[index] = _characters[index].copyWithSystemPrompt(prompt);
+    _characters[index] = _characters[index].copyWith(systemPrompt: prompt);
     notifyListeners();
     await _persistCharacters();
   }
@@ -135,7 +142,31 @@ class CharacterProvider extends ChangeNotifier {
   Future<void> updateAvatar(String id, String avatarBase64) async {
     final index = _characters.indexWhere((c) => c.id == id);
     if (index == -1) return;
-    _characters[index] = _characters[index].copyWithAvatar(avatarBase64);
+    _characters[index] = _characters[index].copyWith(avatar: avatarBase64);
+    notifyListeners();
+    await _persistCharacters();
+  }
+
+  /// 更新角色资料信息（昵称/备注/个性签名/定位地区/人设/关系）并持久化
+  Future<void> updateCharacterInfo(
+    String id, {
+    String? name,
+    String? remark,
+    String? signature,
+    String? region,
+    String? customPersona,
+    String? userRelationship,
+  }) async {
+    final index = _characters.indexWhere((c) => c.id == id);
+    if (index == -1) return;
+    _characters[index] = _characters[index].copyWith(
+      name: name,
+      remark: remark,
+      signature: signature,
+      region: region,
+      customPersona: customPersona,
+      userRelationship: userRelationship,
+    );
     notifyListeners();
     await _persistCharacters();
   }

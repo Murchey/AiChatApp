@@ -57,14 +57,19 @@ class ProfileScreen extends StatelessWidget {
                                 color: context.textPrimaryColor,
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'ID: ${user?.id ?? '--'}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: context.textSecondaryColor,
+                            if (user != null &&
+                                user.signature.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                user.signature,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: context.textSecondaryColor,
+                                ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       ),

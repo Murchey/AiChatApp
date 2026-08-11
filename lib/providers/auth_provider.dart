@@ -20,10 +20,20 @@ class AuthProvider extends ChangeNotifier {
     final userId = prefs.getString('user_id');
     final nickname = prefs.getString('user_nickname');
     final avatar = prefs.getString('user_avatar') ?? '';
+    final region = prefs.getString('user_region') ?? '';
+    final signature = prefs.getString('user_signature') ?? '';
+    final gender = prefs.getString('user_gender') ?? '';
     _apiKey = prefs.getString('api_key') ?? '';
 
     if (userId != null && nickname != null) {
-      _user = User(id: userId, nickname: nickname, avatar: avatar);
+      _user = User(
+        id: userId,
+        nickname: nickname,
+        avatar: avatar,
+        region: region,
+        signature: signature,
+        gender: gender,
+      );
     }
 
     _isLoading = false;
@@ -45,32 +55,30 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateAvatar(String avatar) async {
+  /// 更新用户资料（昵称/头像/地区/签名/性别），任一字段传 null 表示不修改
+  Future<void> updateProfile({
+    String? nickname,
+    String? avatar,
+    String? region,
+    String? signature,
+    String? gender,
+  }) async {
+    if (_user == null) return;
+    final trimmed = nickname?.trim();
+    if (trimmed != null && trimmed.isEmpty) return;
+    _user = _user!.copyWith(
+      nickname: trimmed,
+      avatar: avatar,
+      region: region,
+      signature: signature,
+      gender: gender,
+    );
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_avatar', avatar);
-    _user = _user == null
-        ? null
-        : User(
-            id: _user!.id,
-            nickname: _user!.nickname,
-            avatar: avatar,
-            createdAt: _user!.createdAt,
-          );
-    notifyListeners();
-  }
-
-  Future<void> updateNickname(String nickname) async {
-    if (nickname.trim().isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_nickname', nickname.trim());
-    _user = _user == null
-        ? null
-        : User(
-            id: _user!.id,
-            nickname: nickname.trim(),
-            avatar: _user!.avatar,
-            createdAt: _user!.createdAt,
-          );
+    await prefs.setString('user_nickname', _user!.nickname);
+    if (avatar != null) await prefs.setString('user_avatar', avatar);
+    if (region != null) await prefs.setString('user_region', region);
+    if (signature != null) await prefs.setString('user_signature', signature);
+    if (gender != null) await prefs.setString('user_gender', gender);
     notifyListeners();
   }
 

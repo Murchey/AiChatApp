@@ -7,7 +7,6 @@ import '../config/theme.dart';
 import '../models/character.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
-import 'character_prompt_screen.dart';
 
 class CharacterDetailScreen extends StatefulWidget {
   final String characterId;
@@ -162,73 +161,38 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
                   ],
                 ),
               ),
-              // 底部操作：设置 + 开始聊天
+              // 底部操作：开始聊天（提示词仅可在聊天页右上角菜单的折叠 panel 中编辑）
               SafeArea(
                 top: false,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: CupertinoButton(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          borderRadius: BorderRadius.circular(12),
-                          color: context.listBgColor,
-                          child: Text(
-                            '设置',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: context.accentColor,
-                            ),
-                          ),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              CupertinoPageRoute(
-                                builder: (_) => CharacterPromptScreen(
-                                  characterId: character.id,
-                                  characterName: character.name,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: CupertinoButton.filled(
-                          onPressed: () {
-                            final conversation =
-                                chatProvider.getOrCreateConversation(
-                              characterId: character.id,
-                              characterName: character.name,
-                              characterAvatar: character.avatar,
-                            );
+                  child: CupertinoButton.filled(
+                    onPressed: () {
+                      final conversation =
+                          chatProvider.getOrCreateConversation(
+                        characterId: character.id,
+                        characterName: character.displayName,
+                        characterAvatar: character.avatar,
+                      );
 
-                            Navigator.pushNamed(
-                              context,
-                              AppRoutes.chat,
-                              arguments: {
-                                'conversationId': conversation.id,
-                                'characterName': character.name,
-                                'characterAvatar': character.avatar,
-                              },
-                            );
-                          },
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 14),
-                          child: const Text(
-                            '开始聊天',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
+                      Navigator.pushNamed(
+                        context,
+                        AppRoutes.chat,
+                        arguments: {
+                          'conversationId': conversation.id,
+                          'characterName': character.displayName,
+                          'characterAvatar': character.avatar,
+                        },
+                      );
+                    },
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: const Text(
+                      '开始聊天',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
