@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
@@ -111,16 +112,28 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
         apiKey: _apiKeyController.text.trim(),
         contextLength: contextLength,
       ));
+      if (mounted) Navigator.pop(context);
     } else {
-      await api.addModel(
+      final added = await api.addModel(
         displayName: displayName,
         modelName: modelName,
         baseUrl: _baseUrlController.text.trim(),
         apiKey: _apiKeyController.text.trim(),
         contextLength: contextLength,
       );
+      if (mounted) Navigator.pop(context);
+      // 添加成功后后台自动检测上下文长度并保存：
+      // 本地注册表未命中的模型联网探测 /models，探测成功自动更新
+      unawaited(_autoDetectContext(api, added));
     }
-    if (mounted) Navigator.pop(context);
+  }
+
+  /// 后台检测模型上下文长度并更新保存（失败静默，不影响使用）
+  Future<void> _autoDetectContext(ApiProvider api, ApiModel model) async {
+    final length = await LLMService.detectContextLength(model);
+    if (length == null || length == model.contextLength) return;
+    await api.updateModel(model.copyWith(contextLength: length));
+    debugPrint('[ModelEdit] ${model.modelName} 上下文长度自动更新为 $length');
   }
 
   /// 自动检测模型上下文长度：请求 /models 接口，失败时按模型名启发式估算；

@@ -565,6 +565,81 @@ class LLMService {
     return null;
   }
 
+  /// 获取 OpenAI 兼容服务商的可用模型 ID 列表（GET /models）。
+  ///
+  /// 请求失败或返回为空时抛出 [LLMException]（可读提示）。
+  /// 返回结果仅含模型 ID，上下文长度需配合本地注册表 [localContextLength] 补全。
+  static Future<List<String>> fetchAvailableModels({
+    String baseUrl = '',
+    String apiKey = '',
+  }) async {
+    var base = baseUrl.trim().isNotEmpty ? baseUrl.trim() : defaultBaseUrl;
+    base = base.replaceAll(RegExp(r'/+$'), '');
+    if (base.endsWith('/chat/completions')) {
+      base = base.substring(0, base.length - '/chat/completions'.length);
+    }
+    final url = '$base/models';
+
+    final client = HttpClient();
+    try {
+      final request = await client
+          .getUrl(Uri.parse(url))
+          .timeout(const Duration(seconds: 15));
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      if (apiKey.isNotEmpty) {
+        request.headers
+            .set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+      }
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode != 200) {
+        throw LLMException('获取模型列表失败（HTTP ${response.statusCode}），请检查请求地址与 API Key');
+      }
+      final ids = _parseModelList(body);
+      if (ids.isEmpty) {
+        throw const LLMException('接口未返回可用的模型列表');
+      }
+      return ids;
+    } catch (e) {
+      if (e is LLMException) rethrow;
+      debugPrint('[LLMService] 请求 /models 失败: $e');
+      throw LLMException(describeException(e));
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// 从 GET /models 响应中解析模型 ID 列表，兼容多种返回格式：
+  /// - OpenAI 标准格式：{"data": [{"id": "gpt-4o"}, ...]}
+  /// - 部分服务商：{"models": [...]} 或纯数组 ["gpt-4o", ...]
+  static List<String> _parseModelList(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        final data = decoded['data'] ?? decoded['models'];
+        if (data is List) {
+          return data
+              .map((e) =>
+                  e is Map<String, dynamic> ? e['id'] as String? : e as String?)
+              .whereType<String>()
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+        }
+      } else if (decoded is List) {
+        return decoded
+            .whereType<String>()
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+    } catch (_) {
+      debugPrint('[LLMService] 解析 /models 响应失败: $body');
+    }
+    return const [];
+  }
+
   /// 容错解析 LLM 返回的消息数组：
   /// 1. 直接 JSON.parse
   /// 2. 失败则用正则提取 `[...]` 片段再解析（LLM 偶尔带 ```json 标签或对象包裹）

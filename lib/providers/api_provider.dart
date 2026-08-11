@@ -141,23 +141,25 @@ class ApiProvider extends ChangeNotifier {
     );
   }
 
-  Future<void> addModel({
+  Future<ApiModel> addModel({
     required String displayName,
     required String modelName,
     String baseUrl = '',
     String apiKey = '',
     int contextLength = 8000,
   }) async {
-    _models.add(ApiModel(
+    final model = ApiModel(
       id: const Uuid().v4(),
       displayName: displayName.trim(),
       modelName: modelName.trim(),
       baseUrl: baseUrl.trim(),
       apiKey: apiKey.trim(),
       contextLength: contextLength,
-    ));
+    );
+    _models.add(model);
     notifyListeners();
     await _persist();
+    return model;
   }
 
   Future<void> updateModel(ApiModel model) async {
