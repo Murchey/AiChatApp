@@ -191,6 +191,27 @@ class UpdateService {
     } catch (_) {}
   }
 
+  /// 清理更新目录中残留的安装包（.apk）。
+  /// 安装完成后调用，或新版本每次启动时兜底清理，
+  /// 避免安装包长期占用缓存空间。
+  static Future<void> cleanupDownloadedApks() async {
+    try {
+      final dir = await getExternalStorageDirectory();
+      if (dir == null) return;
+      final updatesDir = Directory('${dir.path}/updates');
+      if (!updatesDir.existsSync()) return;
+      for (final entry in updatesDir.listSync()) {
+        if (entry is! File) continue;
+        if (!entry.path.toLowerCase().endsWith('.apk')) continue;
+        try {
+          entry.deleteSync();
+        } catch (_) {
+          // 个别文件被占用时忽略，等下次启动再清
+        }
+      }
+    } catch (_) {}
+  }
+
   /// 简单的语义化版本号比较：latest > current 返回 true
   static bool _isNewerVersion(String latest, String current) {
     final l = latest.split('.').map((e) => int.tryParse(e) ?? 0).toList();

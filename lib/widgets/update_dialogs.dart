@@ -30,6 +30,7 @@ class _UpdateAvailableDialog extends StatefulWidget {
 
 class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
   late UpdateSource _source;
+  bool _useProxy = true; // 是否使用内置代理加速下载（仅 GitHub 源生效）
 
   UpdateInfo get _info => widget.info;
   bool get _giteeAvailable => _info.giteeDownloadUrl.isNotEmpty;
@@ -90,6 +91,40 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
                 color: context.textPrimaryColor,
               ),
             ),
+          // 选择 GitHub 源时显示"是否使用内置代理下载"复选框；
+          // 不勾选则直连 GitHub 源头下载，勾选则走已配置的加速代理
+          if (_source == UpdateSource.github) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _useProxy = !_useProxy),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _useProxy
+                          ? CupertinoIcons.checkmark_square_fill
+                          : CupertinoIcons.square,
+                      size: 20,
+                      color: _useProxy
+                          ? context.accentColor
+                          : context.textSecondaryColor,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '使用内置代理下载',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: context.textPrimaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
       actions: [
@@ -108,6 +143,7 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
                 info: _info,
                 source: _source,
                 proxyUrl: widget.proxyUrl,
+                useProxy: _useProxy,
               ),
             );
           },
@@ -124,11 +160,13 @@ class _DownloadDialog extends StatefulWidget {
   final UpdateInfo info;
   final UpdateSource source;
   final String proxyUrl;
+  final bool useProxy;
 
   const _DownloadDialog({
     required this.info,
     required this.source,
     required this.proxyUrl,
+    required this.useProxy,
   });
 
   @override
@@ -146,9 +184,12 @@ class _DownloadDialogState extends State<_DownloadDialog> {
       ? widget.info.giteeDownloadUrl
       : widget.info.githubDownloadUrl;
 
-  /// GitHub 源才叠加代理前缀，Gitee 源直接下载
-  String get _proxyForSource =>
-      widget.source == UpdateSource.gitee ? '' : widget.proxyUrl;
+  /// 仅 GitHub 源且勾选"使用内置代理"时才叠加代理前缀，
+  /// 否则（Gitee 源 / 不勾选代理）直连源头下载
+  String get _proxyForSource => widget.source == UpdateSource.gitee ||
+          !widget.useProxy
+      ? ''
+      : widget.proxyUrl;
 
   @override
   void initState() {
@@ -178,6 +219,11 @@ class _DownloadDialogState extends State<_DownloadDialog> {
     // 下载完成：关闭弹窗并启动系统安装
     Navigator.of(context).pop();
     await UpdateService.installApk(path);
+    // 稍作延迟再清理安装包，避免系统安装器仍在读取文件；
+    // 若本次删除失败，新版本下次启动时也会兜底清理
+    Future.delayed(const Duration(seconds: 5), () {
+      UpdateService.cleanupDownloadedApks();
+    });
   }
 
   @override
@@ -216,6 +262,15 @@ class _DownloadDialogState extends State<_DownloadDialog> {
                   const SizedBox(height: 8),
                   Text(
                     '$percent%',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '下载过程中请勿退出后台，避免下载中断；按下系统返回键取消下载。',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
                       color: context.textSecondaryColor,

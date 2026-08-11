@@ -31,7 +31,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     context.read<ChatProvider>().init();
     context.read<CharacterProvider>().loadCharacters();
+    _cleanupOldApks();
     _checkUpdateOnStartup();
+  }
+
+  /// 每次启动兜底清理更新目录中残留的安装包
+  Future<void> _cleanupOldApks() async {
+    await UpdateService.cleanupDownloadedApks();
   }
 
   /// 启动时自动检测更新（设置中可开关）
