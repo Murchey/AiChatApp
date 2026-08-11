@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 允许外部文件目录下的 updates 目录共享（用于安装下载的 APK） -->
+    <external-files-path name="updates" path="updates/" />
+    <external-path name="external" path="." />
+</paths>

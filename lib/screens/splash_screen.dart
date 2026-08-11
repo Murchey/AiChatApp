@@ -76,8 +76,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final dark = context.isDark;
     return CupertinoPageScaffold(
-      backgroundColor: context.accentColor,
+      backgroundColor:
+          dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -86,7 +88,7 @@ class _SplashScreenState extends State<SplashScreen> {
               width: 100,
               height: 100,
               decoration: BoxDecoration(
-                color: CupertinoColors.white,
+                color: dark ? CupertinoColors.white : context.accentColor,
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
@@ -98,28 +100,19 @@ class _SplashScreenState extends State<SplashScreen> {
               child: Icon(
                 CupertinoIcons.chat_bubble_2_fill,
                 size: 56,
-                color: context.accentColor,
+                color: dark ? context.accentColor : CupertinoColors.white,
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
+            Text(
               'AiChat',
               style: TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
-                color: CupertinoColors.white,
+                color:
+                    dark ? CupertinoColors.white : const Color(0xFF000000),
                 letterSpacing: 2,
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '与AI角色畅聊无限',
-              style: TextStyle(fontSize: 16, color: Color(0xB3FFFFFF)),
-            ),
-            const SizedBox(height: 48),
-            const CupertinoActivityIndicator(
-              color: CupertinoColors.white,
-              radius: 12,
             ),
           ],
         ),

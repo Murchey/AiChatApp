@@ -3,6 +3,7 @@ package com.aichat.ai_chat
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -35,9 +36,39 @@ class MainActivity : FlutterActivity() {
                             result.error("LAUNCH_FAILED", e.message, null)
                         }
                     }
+                    "installApk" -> {
+                        val path = call.argument<String>("path")
+                        if (path == null) {
+                            result.error("NO_PATH", "apk path is null", null)
+                        } else {
+                            val file = File(path)
+                            if (!file.exists()) {
+                                result.error("FILE_NOT_FOUND", "apk not found: $path", null)
+                            } else {
+                                installApk(file)
+                                result.success(true)
+                            }
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /// 通过 FileProvider 共享 APK 并触发系统安装
+    private fun installApk(file: File) {
+        val uri = FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            file
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        if (intent.resolveActivity(packageManager) != null) {
+            startActivity(intent)
+        }
     }
 
     @Deprecated("Deprecated in Java")

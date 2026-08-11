@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/settings_provider.dart';
+import '../services/update_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -46,6 +47,101 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onPressed: () => Navigator.pop(ctx),
           child: const Text('取消'),
         ),
+      ),
+    );
+  }
+
+  /// 代理源展示文案：内置源显示「代理 N」，自定义显示「自定义」
+  String _proxyDisplayText(String url) {
+    final idx = kProxySources.indexOf(url);
+    if (idx >= 0) return '代理 ${idx + 1}: $url';
+    return '自定义: $url';
+  }
+
+  /// 弹出更新代理源选择（底部弹层）：内置源 + 自定义
+  void _showProxyPicker(BuildContext context, SettingsProvider settings) {
+    final isCustom = !kProxySources.contains(settings.updateProxyUrl);
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('选择代理源'),
+        message: const Text('用于加速 GitHub 更新下载'),
+        actions: [
+          for (var i = 0; i < kProxySources.length; i++)
+            CupertinoActionSheetAction(
+              isDefaultAction: settings.updateProxyUrl == kProxySources[i],
+              onPressed: () {
+                settings.setUpdateProxyUrl(kProxySources[i]);
+                Navigator.pop(ctx);
+              },
+              child: Text('代理 ${i + 1}'),
+            ),
+          CupertinoActionSheetAction(
+            isDefaultAction: isCustom,
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showCustomProxyDialog(context, settings);
+            },
+            child: const Text('自定义'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+  }
+
+  /// 自定义代理源输入弹窗
+  void _showCustomProxyDialog(BuildContext context, SettingsProvider settings) {
+    final controller = TextEditingController(
+      text: kProxySources.contains(settings.updateProxyUrl)
+          ? ''
+          : settings.updateProxyUrl,
+    );
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('自定义代理源'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              '请输入代理源 URL 前缀',
+              style: TextStyle(
+                fontSize: 13,
+                color: ctx.isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
+              ),
+            ),
+            const SizedBox(height: 12),
+            CupertinoTextField(
+              controller: controller,
+              placeholder: 'https://example.com/',
+              autofocus: true,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+          ],
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () {
+              final url = controller.text.trim();
+              if (url.isNotEmpty) settings.setUpdateProxyUrl(url);
+              Navigator.pop(ctx);
+            },
+            child: const Text('保存'),
+          ),
+        ],
       ),
     );
   }
@@ -258,6 +354,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onReset: () =>
                       settings.resetBubbleTextColor(BubbleTextSlot.otherDark),
                 ),
+              ),
+            ],
+          ),
+          // 更新检测：启动时自动检测 + 更新代理地址
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('更新检测'),
+            children: [
+              CupertinoListTile(
+                title: const Text('启动时自动检测更新'),
+                subtitle: Text(
+                  settings.autoCheckUpdate
+                      ? '已启用，启动时自动检测 GitHub 新版本'
+                      : '已关闭',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSwitch(
+                  value: settings.autoCheckUpdate,
+                  onChanged: (v) => settings.setAutoCheckUpdate(v),
+                ),
+              ),
+              CupertinoListTile(
+                title: const Text('更新代理地址'),
+                subtitle: Text(
+                  _proxyDisplayText(settings.updateProxyUrl),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => _showProxyPicker(context, settings),
               ),
             ],
           ),

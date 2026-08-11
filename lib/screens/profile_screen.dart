@@ -1,19 +1,43 @@
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/user.dart';
-import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/settings_provider.dart';
+import '../services/update_service.dart';
 import '../utils/character_pack_picker.dart';
+import '../widgets/update_dialogs.dart';
 import 'api_settings_screen.dart';
 import 'character_import_screen.dart';
 import 'character_manage_screen.dart';
 import 'profile_edit_screen.dart';
 import 'settings_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  String _appVersion = '1.0.0';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _appVersion = info.version);
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +48,6 @@ class ProfileScreen extends StatelessWidget {
       child: Consumer<AuthProvider>(
         builder: (context, auth, _) {
           final user = auth.user;
-          final api = context.watch<ApiProvider>();
           return ListView(
             children: [
               // 资料卡（微信个人页样式：方形头像靠左）
@@ -126,13 +149,6 @@ class ProfileScreen extends StatelessWidget {
                       color: context.accentColor,
                     ),
                     title: const Text('导入角色包'),
-                    subtitle: Text(
-                      '从 zip 文件导入角色',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
                     trailing: Icon(
                       CupertinoIcons.chevron_right,
                       size: 16,
@@ -156,13 +172,6 @@ class ProfileScreen extends StatelessWidget {
                       color: context.accentColor,
                     ),
                     title: const Text('设置'),
-                    subtitle: Text(
-                      '深色模式与主题色',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
                     trailing: Icon(
                       CupertinoIcons.chevron_right,
                       size: 16,
@@ -183,15 +192,6 @@ class ProfileScreen extends StatelessWidget {
                       color: context.accentColor,
                     ),
                     title: const Text('API 设置'),
-                    subtitle: Text(
-                      api.models.isEmpty
-                          ? '未配置模型'
-                          : '已配置 ${api.models.length} 个模型',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
                     trailing: Icon(
                       CupertinoIcons.chevron_right,
                       size: 16,
@@ -205,6 +205,68 @@ class ProfileScreen extends StatelessWidget {
                         ),
                       );
                     },
+                  ),
+                ],
+              ),
+              // 关于
+              CupertinoListSection.insetGrouped(
+                backgroundColor: context.scaffoldColor,
+                decoration: BoxDecoration(
+                  color: context.listBgColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                children: [
+                  CupertinoListTile(
+                    leading: Icon(
+                      CupertinoIcons.info_circle,
+                      color: context.accentColor,
+                    ),
+                    title: const Text('软件版本'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'V$_appVersion',
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          CupertinoIcons.chevron_right,
+                          size: 16,
+                          color: context.textSecondaryColor,
+                        ),
+                      ],
+                    ),
+                    onTap: () => _checkUpdate(context),
+                  ),
+                  CupertinoListTile(
+                    leading: Icon(
+                      CupertinoIcons.link,
+                      color: context.accentColor,
+                    ),
+                    title: const Text('项目仓库'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'AiChat',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          CupertinoIcons.chevron_right,
+                          size: 16,
+                          color: context.textSecondaryColor,
+                        ),
+                      ],
+                    ),
+                    onTap: _showGitHubRepo,
                   ),
                 ],
               ),
@@ -282,5 +344,70 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
     );
+  }
+
+  /// 弹窗展示项目仓库地址，提供复制按钮
+  Future<void> _showGitHubRepo() async {
+    if (!mounted) return;
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('项目仓库'),
+        content: const Text(
+          kGitHubRepoUrl,
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () async {
+              await Clipboard.setData(
+                const ClipboardData(text: kGitHubRepoUrl),
+              );
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+              if (!mounted) return;
+              _showTip(context, '仓库地址已复制');
+            },
+            child: const Text('复制'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 检查更新：先展示检查中弹窗，再根据结果弹出对应提示
+  Future<void> _checkUpdate(BuildContext context) async {
+    showCupertinoDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const CupertinoAlertDialog(
+        title: Text('检查更新'),
+        content: Padding(
+          padding: EdgeInsets.only(top: 16),
+          child: CupertinoActivityIndicator(radius: 14),
+        ),
+      ),
+    );
+
+    UpdateInfo? info;
+    final settings = context.read<SettingsProvider>();
+    try {
+      info = await UpdateService.checkForUpdate(proxyUrl: settings.updateProxyUrl);
+    } catch (_) {}
+
+    if (!context.mounted) return;
+    // 关闭"检查更新"弹窗
+    Navigator.of(context, rootNavigator: true).pop();
+
+    if (info == null) {
+      _showTip(context, '当前已是最新版本 V$_appVersion');
+      return;
+    }
+    showUpdateAvailableDialog(context, info, proxyUrl: settings.updateProxyUrl);
   }
 }

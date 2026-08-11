@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/theme.dart';
+import '../services/update_service.dart';
 
 /// 明暗模式：跟随系统 / 浅色 / 深色
 enum AppThemeMode { system, light, dark }
@@ -74,9 +75,15 @@ class SettingsProvider extends ChangeNotifier {
   final Map<BubbleColorSlot, Color> _bubbleColors = {};
   // 自定义聊天气泡内字体颜色（未设置时使用 AppColors 默认值）
   final Map<BubbleTextSlot, Color> _bubbleTextColors = {};
+  // 启动时自动检测更新
+  bool _autoCheckUpdate = true;
+  // 更新代理地址（默认第一个内置加速源）
+  String _updateProxyUrl = kProxySources.first;
 
   AppThemeMode get themeMode => _themeMode;
   Color get accentColor => _accentColor;
+  bool get autoCheckUpdate => _autoCheckUpdate;
+  String get updateProxyUrl => _updateProxyUrl;
 
   Color bubbleColor(BubbleColorSlot slot) =>
       _bubbleColors[slot] ?? slot.defaultColor;
@@ -120,6 +127,9 @@ class SettingsProvider extends ChangeNotifier {
       final v = prefs.getInt(slot.storageKey);
       if (v != null) _bubbleTextColors[slot] = Color(v);
     }
+    _autoCheckUpdate = prefs.getBool('auto_check_update') ?? true;
+    _updateProxyUrl =
+        prefs.getString('update_proxy_url') ?? kProxySources.first;
     notifyListeners();
   }
 
@@ -150,6 +160,22 @@ class SettingsProvider extends ChangeNotifier {
     _bubbleColors.remove(slot);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(slot.storageKey);
+    notifyListeners();
+  }
+
+  /// 设置启动时自动检测更新
+  Future<void> setAutoCheckUpdate(bool value) async {
+    _autoCheckUpdate = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_check_update', value);
+    notifyListeners();
+  }
+
+  /// 设置更新代理地址
+  Future<void> setUpdateProxyUrl(String url) async {
+    _updateProxyUrl = url;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('update_proxy_url', url);
     notifyListeners();
   }
 

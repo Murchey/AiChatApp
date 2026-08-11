@@ -5,7 +5,10 @@ import '../config/routes.dart';
 import '../config/theme.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/settings_provider.dart';
+import '../services/update_service.dart';
 import '../widgets/alphabet_index_bar.dart';
+import '../widgets/update_dialogs.dart';
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,6 +31,21 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     context.read<ChatProvider>().init();
     context.read<CharacterProvider>().loadCharacters();
+    _checkUpdateOnStartup();
+  }
+
+  /// 启动时自动检测更新（设置中可开关）
+  Future<void> _checkUpdateOnStartup() async {
+    final settings = context.read<SettingsProvider>();
+    if (!settings.autoCheckUpdate) return;
+    // 稍作延迟，避免与页面初始化抢占资源
+    await Future.delayed(const Duration(seconds: 1));
+    if (!mounted) return;
+    final info = await UpdateService.checkForUpdate(
+      proxyUrl: settings.updateProxyUrl,
+    );
+    if (!mounted || info == null) return;
+    showUpdateAvailableDialog(context, info, proxyUrl: settings.updateProxyUrl);
   }
 
   @override
