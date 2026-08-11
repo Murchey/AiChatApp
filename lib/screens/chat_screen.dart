@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -691,11 +690,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildConvAvatar(Conversation c) {
-    if (c.characterAvatar.isNotEmpty) {
+    final avatarImage = avatarImageFor(c.characterAvatar);
+    if (avatarImage != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(6),
-        child: Image.memory(
-          base64Decode(c.characterAvatar),
+        child: Image(
+          image: avatarImage,
           width: 40,
           height: 40,
           fit: BoxFit.cover,
