@@ -18,6 +18,50 @@ class ApiSettingsScreen extends StatelessWidget {
     );
   }
 
+  /// 压缩会话模型显示文案
+  String _compressionModelLabel(ApiProvider api) {
+    if (api.compressionModelId == null) return '跟随聊天模型';
+    final model = api.getModelById(api.compressionModelId);
+    if (model == null) return '跟随聊天模型';
+    return '${model.displayName}（${model.modelName}）';
+  }
+
+  /// 弹出压缩会话模型的选取（跟随聊天模型 / 已配置模型）
+  void _showCompressionModelPicker(BuildContext context) {
+    final api = context.read<ApiProvider>();
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('压缩会话使用的模型'),
+        message: const Text('用于上下文达到 70% 时压缩历史消息'),
+        actions: [
+          CupertinoActionSheetAction(
+            isDefaultAction: api.compressionModelId == null,
+            onPressed: () {
+              api.setCompressionModel(null);
+              Navigator.pop(ctx);
+            },
+            child: const Text('跟随聊天模型'),
+          ),
+          for (final model in api.models)
+            CupertinoActionSheetAction(
+              isDefaultAction: api.compressionModelId == model.id,
+              onPressed: () {
+                api.setCompressionModel(model.id);
+                Navigator.pop(ctx);
+              },
+              child: Text(model.displayName),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+  }
+
   void _confirmDelete(BuildContext context, ApiModel model) {
     showCupertinoDialog(
       context: context,
@@ -121,6 +165,39 @@ class ApiSettingsScreen extends StatelessWidget {
                   ),
                 ),
                 onTap: () => _openModelEdit(context),
+              ),
+            ],
+          ),
+          // 会话压缩专用模型
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('会话压缩'),
+            children: [
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.archivebox,
+                  color: context.accentColor,
+                ),
+                title: const Text('压缩会话使用的模型'),
+                subtitle: Text(
+                  _compressionModelLabel(api),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => _showCompressionModelPicker(context),
               ),
             ],
           ),

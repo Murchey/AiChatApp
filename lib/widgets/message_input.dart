@@ -9,6 +9,7 @@ class MessageInput extends StatefulWidget {
   final Function(String, String)? onPickFile; // (文件路径, 文件名)
   final VoidCallback? onSettings; // 打开聊天设置
   final VoidCallback? onExport; // 导出聊天记录
+  final VoidCallback? onImport; // 导入聊天记录（zip）
   final Future<bool> Function()? onFeatureDetect; // 功能检测：测试当前模型是否支持图片（返回是否通过）
   final VoidCallback? onRequestReply; // 请求角色回复（对号按钮触发）
   final bool replyEnabled; // 对号按钮是否可点：上一条消息是用户发送时才可点
@@ -23,6 +24,7 @@ class MessageInput extends StatefulWidget {
     this.onPickFile,
     this.onSettings,
     this.onExport,
+    this.onImport,
     this.onFeatureDetect,
     this.onRequestReply,
     this.replyEnabled = true,
@@ -250,10 +252,11 @@ class MessageInputState extends State<MessageInput> {
         },
       ),
       _GridItem(
-        icon: CupertinoIcons.money_dollar_circle,
-        label: '转账',
+        icon: CupertinoIcons.arrow_down_doc,
+        label: '导入记录',
         onTap: () {
           setState(() => _showGrid = false);
+          widget.onImport?.call();
         },
       ),
       // ── 第二行：原右上角菜单功能 ──

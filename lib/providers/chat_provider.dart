@@ -12,6 +12,10 @@ class ChatProvider extends ChangeNotifier {
   static const _conversationsKey = 'chat_conversations_v1';
   static const _messagesKey = 'chat_messages_v1';
 
+  // 会话压缩参数
+  static const int kKeepRecentMessages = 20; // 压缩时保留的最近消息条数
+  static const double _tokensPerChar = 1.2; // 中文约 1 字符/token，混合按 1.2 估算
+
   final Map<String, List<Message>> _messagesMap = {};
   final List<Conversation> _conversations = [];
   String? _lastError; // 最近一次 AI 请求失败的错误提示（界面展示用）
@@ -132,6 +136,8 @@ class ChatProvider extends ChangeNotifier {
   /// [replyToUser] 为 true 时模型针对用户最近的消息回复（对号按钮触发）。
   /// [historyMessages] 未传时自动从当前会话取最近 [contextCount] 条文本消息，
   /// 使模型知道用户说了什么，从而分多条回复。
+  /// [enableCompression] 开启且 [contextLength] 已知时，若历史估算 token 达到
+  /// 模型上下文 [kCompressThreshold]，会先用 [compressModel] 压缩更早的历史消息。
   /// API 层失败时设置 [_lastError] 并返回空列表；解析兜底消息由 LLMService 处理。
   Future<List<String>> generateProactiveMessages({
     required String conversationId,
@@ -144,7 +150,20 @@ class ChatProvider extends ChangeNotifier {
     bool replyToUser = false,
     List<Map<String, String>>? historyMessages,
     int contextCount = 10,
+    ApiModel? compressModel,
+    bool enableCompression = false,
+    int contextLength = 8000,
+    double compressThreshold = 0.7,
   }) async {
+    // 会话压缩：开启压缩且模型上下文已知时，先检查历史长度是否达到阈值
+    if (enableCompression && compressModel != null && contextLength > 0) {
+      await _maybeCompressConversation(
+        conversationId: conversationId,
+        compressModel: compressModel,
+        contextLength: contextLength,
+        threshold: compressThreshold,
+      );
+    }
     final prompt = PromptBuilder.buildSystemPrompt(
       baseSystemPrompt: characterSystemPrompt,
       characterName: characterName,
@@ -172,6 +191,86 @@ class ChatProvider extends ChangeNotifier {
       _lastError = LLMService.describeException(e);
       return const [];
     }
+  }
+
+  /// 会话压缩：当会话历史估算 token 达到模型上下文的 [threshold] 时，
+  /// 将更早的消息交给压缩模型生成摘要，替换为一条摘要消息并持久化。
+  /// 压缩失败（网络/API 异常）时静默跳过，不影响本次回复。
+  Future<void> _maybeCompressConversation({
+    required String conversationId,
+    required ApiModel compressModel,
+    required int contextLength,
+    required double threshold,
+  }) async {
+    final messages = _messagesMap[conversationId] ?? [];
+    if (messages.isEmpty) return;
+    final textMessages =
+        messages.where((m) => m.type == MessageType.text).toList();
+    if (textMessages.length <= kKeepRecentMessages) return;
+
+    if (_estimateTokens(textMessages) < contextLength * threshold) {
+      return;
+    }
+
+    // 确定压缩边界：从尾部数出最近 kKeepRecentMessages 条文本消息，之前的全部压缩
+    var cutIndex = 0;
+    var textSeen = 0;
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].type == MessageType.text) textSeen++;
+      if (textSeen == kKeepRecentMessages) {
+        cutIndex = i;
+        break;
+      }
+    }
+    if (cutIndex <= 0) return;
+    final toCompress = messages.sublist(0, cutIndex);
+    final kept = messages.sublist(cutIndex);
+
+    final history = toCompress
+        .map((m) => {
+              'role': m.isFromUser ? 'user' : 'assistant',
+              'content': m.content,
+            })
+        .toList();
+
+    try {
+      final summary = await LLMService.compressHistory(
+        model: compressModel,
+        historyMessages: history,
+      );
+      if (summary.isEmpty) return;
+      _messagesMap[conversationId] = [
+        Message(
+          id: const Uuid().v4(),
+          conversationId: conversationId,
+          content: '［已自动压缩更早的 ${toCompress.length} 条消息］\n$summary',
+          type: MessageType.text,
+          sender: MessageSender.character,
+        ),
+        ...kept,
+      ];
+      _updateConversationLastMessage(conversationId, kept.last.content);
+      notifyListeners();
+      await _persist();
+    } catch (e) {
+      debugPrint('[ChatProvider] 会话压缩失败，继续原样发送: $e');
+    }
+  }
+
+  /// 粗略估算文本消息的 token 数
+  static int _estimateTokens(List<Message> messages) {
+    var chars = 0;
+    for (final m in messages) {
+      if (m.type != MessageType.text) continue;
+      chars += m.content.length;
+    }
+    return (chars / _tokensPerChar).ceil();
+  }
+
+  /// 估算某会话当前全部消息占用的 token 数（用于「聊天设置」中展示上下文使用程度）
+  int getContextTokens(String conversationId) {
+    final messages = _messagesMap[conversationId] ?? [];
+    return _estimateTokens(messages);
   }
 
   /// 从会话记录中取最近 [contextCount] 条文本消息作为对话历史
@@ -310,6 +409,19 @@ class ChatProvider extends ChangeNotifier {
     }
     notifyListeners();
     _persist();
+  }
+
+  /// 导入聊天记录：将解析出的消息追加到当前会话（保留原消息时间戳）
+  Future<void> importMessages({
+    required String conversationId,
+    required List<Message> messages,
+  }) async {
+    if (messages.isEmpty) return;
+    _messagesMap[conversationId] ??= [];
+    _messagesMap[conversationId]!.addAll(messages);
+    _updateConversationLastMessage(conversationId, messages.last.content);
+    notifyListeners();
+    await _persist();
   }
 
   /// 发送图片消息

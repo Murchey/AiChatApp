@@ -22,4 +22,22 @@ class FilePickerHelper {
       name: map['name'] as String? ?? 'file',
     );
   }
+
+  /// 打开系统"保存文件"选择器（Android ACTION_CREATE_DOCUMENT），
+  /// 由用户自选保存位置与文件名后写入 [bytes]。
+  /// 返回保存的文件名；用户取消返回 null。
+  static Future<String?> saveFile({
+    required String suggestedName,
+    String mimeType = 'application/octet-stream',
+    required Uint8List bytes,
+  }) async {
+    final result = await _channel.invokeMethod('saveFile', {
+      'suggestedName': suggestedName,
+      'mimeType': mimeType,
+      'bytes': bytes,
+    });
+    if (result == null) return null;
+    final map = result as Map<dynamic, dynamic>;
+    return map['name'] as String? ?? suggestedName;
+  }
 }

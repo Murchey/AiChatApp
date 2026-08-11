@@ -14,9 +14,12 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "com.aichat.ai_chat/files"
         private const val REQUEST_PICK_FILE = 0x1101
+        private const val REQUEST_SAVE_FILE = 0x1102
     }
 
     private var pendingResult: MethodChannel.Result? = null
+    private var pendingSaveName: String = ""
+    private var pendingSaveBytes: ByteArray? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -47,6 +50,31 @@ class MainActivity : FlutterActivity() {
                             } else {
                                 installApk(file)
                                 result.success(true)
+                            }
+                        }
+                    }
+                    "saveFile" -> {
+                        val suggestedName = call.argument<String>("suggestedName") ?: "export.zip"
+                        val mimeType = call.argument<String>("mimeType") ?: "application/octet-stream"
+                        val bytes = call.argument<ByteArray>("bytes")
+                        if (bytes == null) {
+                            result.error("NO_DATA", "no data provided", null)
+                        } else {
+                            pendingResult = result
+                            pendingSaveName = suggestedName
+                            pendingSaveBytes = bytes
+                            // 系统"保存文件"选择器：让用户自选保存位置与文件名
+                            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = mimeType
+                                putExtra(Intent.EXTRA_TITLE, suggestedName)
+                            }
+                            try {
+                                startActivityForResult(intent, REQUEST_SAVE_FILE)
+                            } catch (e: Exception) {
+                                pendingResult = null
+                                pendingSaveBytes = null
+                                result.error("LAUNCH_FAILED", e.message, null)
                             }
                         }
                     }
@@ -91,6 +119,29 @@ class MainActivity : FlutterActivity() {
                 }
             } else {
                 // 用户取消选择
+                pending?.success(null)
+            }
+        } else if (requestCode == REQUEST_SAVE_FILE) {
+            val pending = pendingResult
+            pendingResult = null
+            val bytes = pendingSaveBytes
+            val name = pendingSaveName
+            pendingSaveBytes = null
+            if (resultCode == RESULT_OK && bytes != null) {
+                val uri = data?.data
+                if (uri != null) {
+                    try {
+                        // 写入用户选择的保存位置
+                        contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                        pending?.success(mapOf("name" to name))
+                    } catch (e: Exception) {
+                        pending?.error("WRITE_FAILED", e.message, null)
+                    }
+                } else {
+                    pending?.success(null)
+                }
+            } else {
+                // 用户取消保存
                 pending?.success(null)
             }
         } else {

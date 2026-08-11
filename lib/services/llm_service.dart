@@ -14,6 +14,31 @@ class LLMService {
   static const String defaultBaseUrl = 'https://api.deepseek.com';
   static const List<String> _fallbackMessages = ['（网络开小差了，等下再聊）'];
 
+  /// 会话压缩的 System Prompt：将较早的聊天记录压缩为一段摘要
+  static const String kCompressSystemPrompt = '你是一个对话压缩助手。请将以下聊天记录压缩为一段简洁连贯的中文摘要，'
+      '保留关键信息：用户的身份与偏好、对方（角色）的人设特征、重要话题与结论、未完成的事项。'
+      '摘要不超过 300 字，直接输出摘要内容，不要任何前缀或解释。';
+
+  /// 会话压缩：将较早的历史消息交给压缩模型生成一段摘要文本。
+  ///
+  /// [historyMessages] 为待压缩的 user/assistant 消息列表。
+  /// 压缩失败（网络/API 异常）时抛出 [LLMException] 等异常，由调用方决定是否忽略。
+  static Future<String> compressHistory({
+    required ApiModel model,
+    required List<Map<String, String>> historyMessages,
+  }) async {
+    final raw = await fetchCompletion(
+      model: model,
+      messages: [
+        {'role': 'system', 'content': kCompressSystemPrompt},
+        ...historyMessages,
+      ],
+      temperature: 0.3,
+      maxTokens: 800,
+    );
+    return raw.trim();
+  }
+
   /// API 调用异常（无 Key / 网络 / 非 200 等），带可读提示信息
   static String describeException(Object error) {
     if (error is LLMException) return error.message;
@@ -192,6 +217,147 @@ class LLMService {
     } finally {
       client.close(force: true);
     }
+  }
+
+  /// 自动检测模型的上下文长度（token）。
+  ///
+  /// 1. 优先请求 `GET {base}/models`，从服务商返回中解析上下文字段
+  ///   （如 OpenRouter 的 `context_length`、部分供应商的 `context_window` /
+  ///   `max_model_len` / `max_tokens`）；
+  /// 2. 接口不提供或未实现时，按模型名启发式返回常见值；
+  /// 3. 两者都无法确定时返回 null，由调用方保留原值。
+  static Future<int?> detectContextLength(ApiModel model) async {
+    // 1. 请求 GET /models
+    var base = model.baseUrl.trim().isNotEmpty
+        ? model.baseUrl.trim()
+        : defaultBaseUrl;
+    base = base.replaceAll(RegExp(r'/+$'), '');
+    if (base.endsWith('/chat/completions')) {
+      base = base.substring(0, base.length - '/chat/completions'.length);
+    }
+    final url = '$base/models';
+
+    final client = HttpClient();
+    try {
+      final request = await client
+          .getUrl(Uri.parse(url))
+          .timeout(const Duration(seconds: 15));
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      if (model.apiKey.isNotEmpty) {
+        request.headers
+            .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
+      }
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode == 200) {
+        final found = _parseContextFromModelsResponse(body, model.modelName);
+        if (found != null) return found;
+      } else {
+        debugPrint('[LLMService] /models 返回 HTTP ${response.statusCode}，改用启发式');
+      }
+    } catch (e) {
+      debugPrint('[LLMService] 请求 /models 失败: $e，改用启发式');
+    } finally {
+      client.close(force: true);
+    }
+
+    // 2. 模型名启发式
+    return _heuristicContextLength(model.modelName);
+  }
+
+  /// 从 GET /models 的响应中解析与 [modelName] 匹配的模型上下文长度。
+  /// 解析不到返回 null。
+  static int? _parseContextFromModelsResponse(String body, String modelName) {
+    try {
+      final decoded = jsonDecode(body);
+      final data = decoded is Map<String, dynamic> ? decoded['data'] : null;
+      if (data is! List || data.isEmpty) return null;
+
+      final target = modelName.toLowerCase();
+      Map<String, dynamic>? best;
+      var bestScore = -1;
+      for (final item in data) {
+        if (item is! Map<String, dynamic>) continue;
+        final id = (item['id'] as String? ?? '').toLowerCase();
+        // 匹配分：完全相等最高，其次是配置名是 id 的子串（兼容 OpenRouter 的 provider/model），再其次 id 是配置名的子串
+        var score = -1;
+        if (id.isNotEmpty && id == target) {
+          score = 3;
+        } else if (id.isNotEmpty && id.contains(target)) {
+          score = 2;
+        } else if (target.isNotEmpty && target.contains(id)) {
+          score = 1;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          best = item;
+        }
+      }
+      // 匹配到模型后从常见字段取值
+      if (best != null && bestScore > 0) {
+        final length = _readContextField(best);
+        if (length != null) return length;
+      }
+      // 列表只有一个模型（部分供应商 /models 仅返回当前模型）且未匹配到时直接取该条
+      if (data.length == 1 && data.first is Map<String, dynamic>) {
+        final length = _readContextField(data.first as Map<String, dynamic>);
+        if (length != null) return length;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// 从单个模型条目中读取上下文长度字段
+  static int? _readContextField(Map<String, dynamic> item) {
+    for (final key in [
+      'context_length',
+      'context_window',
+      'max_model_len',
+      'max_tokens',
+    ]) {
+      final v = item[key];
+      if (v is int && v > 0) return v;
+      if (v is String) {
+        final n = int.tryParse(v.trim());
+        if (n != null && n > 0) return n;
+      }
+    }
+    return null;
+  }
+
+  /// 常见模型上下文长度的启发式表（按模型名子串匹配，靠前的优先）
+  static const List<(String, int)> _contextHeuristics = [
+    ('gemini', 1048576),
+    ('claude', 200000),
+    ('deepseek', 65536),
+    ('gpt-4o', 128000),
+    ('gpt-4-turbo', 128000),
+    ('gpt-4', 8192),
+    ('gpt-3.5', 16385),
+    ('glm', 128000),
+    ('moonshot', 128000),
+    ('kimi', 128000),
+    ('qwen-long', 10000000),
+    ('qwen', 32768),
+    ('doubao', 65536),
+    ('minimax', 24576),
+    ('mistral', 32768),
+    ('llama', 32768),
+    ('yi-', 32768),
+    ('baichuan', 32768),
+    ('gemma', 8192),
+    ('spark', 8192),
+    ('ernie', 8192),
+  ];
+
+  static int? _heuristicContextLength(String modelName) {
+    final name = modelName.toLowerCase();
+    if (name.isEmpty) return null;
+    for (final (key, value) in _contextHeuristics) {
+      if (name.contains(key)) return value;
+    }
+    return null;
   }
 
   /// 容错解析 LLM 返回的消息数组：

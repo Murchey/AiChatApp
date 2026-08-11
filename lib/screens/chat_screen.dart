@@ -1,10 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/conversation.dart';
@@ -14,7 +12,9 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
+import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
+import '../utils/file_picker_helper.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 import 'chat_detail_screen.dart';
@@ -78,12 +78,14 @@ class _ChatScreenState extends State<ChatScreen> {
     Navigator.push(
       context,
       CupertinoPageRoute(
-        builder: (_) => const ChatSettingsScreen(),
+        builder: (_) =>
+            ChatSettingsScreen(conversationId: widget.conversationId),
       ),
     );
   }
 
-  /// 导出当前聊天记录为 Markdown 文件保存到手机
+  /// 导出当前聊天记录为 zip 包（chat.json + 聊天中的图片/文件），
+  /// 通过系统"保存文件"选择器由用户自选保存位置。
   Future<void> _exportChat() async {
     final messages =
         context.read<ChatProvider>().getMessages(widget.conversationId);
@@ -105,49 +107,32 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    // 生成 Markdown 内容
-    final sb = StringBuffer();
-    sb.writeln('# 与 ${widget.characterName} 的聊天记录');
-    sb.writeln();
-    sb.writeln('> 导出时间: ${_formatDateTime(DateTime.now())}');
-    sb.writeln();
-    for (final message in messages) {
-      final who = message.isFromUser ? '我' : widget.characterName;
-      sb.writeln('## ${_formatDateTime(message.createdAt)} - $who');
-      sb.writeln();
-      sb.writeln(message.content);
-      sb.writeln();
-    }
-
-    // 保存文件到手机下载目录
-    String savePath;
     try {
-      final dir = await getDownloadsDirectory();
-      if (dir == null) {
-        final docDir = await getApplicationDocumentsDirectory();
-        savePath = '${docDir.path}/AiChat导出';
-      } else {
-        savePath = dir.path;
-      }
-    } catch (_) {
-      final docDir = await getApplicationDocumentsDirectory();
-      savePath = '${docDir.path}/AiChat导出';
-    }
-
-    try {
-      final now = DateTime.now();
-      final fileName =
-          '${widget.characterName}_聊天记录_${now.month}${now.day}_${now.hour}${now.minute}${now.second}.md';
-      final file = File('$savePath/$fileName');
-      await file.writeAsString(sb.toString());
-
+      final bytes = await ChatRecordsService.buildExportZip(
+        characterName: widget.characterName,
+        messages: messages,
+      );
       if (!mounted) return;
+
+      final now = DateTime.now();
+      String two(int n) => n.toString().padLeft(2, '0');
+      final fileName = '${widget.characterName}_聊天记录_'
+          '${now.year}${two(now.month)}${two(now.day)}_'
+          '${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
+      final savedName = await FilePickerHelper.saveFile(
+        suggestedName: fileName,
+        mimeType: 'application/zip',
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      if (savedName == null) return; // 用户取消保存
+
       showCupertinoDialog(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
           title: const Text('导出成功'),
           content: Text(
-            '已将 ${messages.length} 条聊天记录保存为 Markdown 文件：\n\n${file.path}',
+            '已将 ${messages.length} 条聊天记录（含聊天中的图片/文件）保存为 zip 文件：$savedName',
           ),
           actions: [
             CupertinoDialogAction(
@@ -160,11 +145,42 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      _showImportExportError('导出失败', '打包聊天记录时出错：$e');
+    }
+  }
+
+  /// 导入聊天记录 zip：选择 zip → 解析 → 提取图片/文件 → 追加到当前会话
+  Future<void> _importChat() async {
+    try {
+      final picked = await FilePickerHelper.pickFile();
+      if (picked == null || !mounted) return; // 用户取消选择
+      if (!picked.name.toLowerCase().endsWith('.zip')) {
+        _showImportExportError('导入失败', '请选择聊天记录 zip 文件');
+        return;
+      }
+
+      final chatProvider = context.read<ChatProvider>();
+      final messages = await ChatRecordsService.importZip(
+        zipPath: picked.path,
+        conversationId: widget.conversationId,
+      );
+      if (messages.isEmpty) {
+        _showImportExportError('导入失败', '压缩包中没有可导入的消息');
+        return;
+      }
+      await chatProvider.importMessages(
+        conversationId: widget.conversationId,
+        messages: messages,
+      );
+      if (!mounted) return;
+      _scrollToBottom();
       showCupertinoDialog(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('导出失败'),
-          content: Text('保存文件时出错：$e'),
+          title: const Text('导入成功'),
+          content: Text(
+            '已将 ${messages.length} 条聊天记录导入到当前会话（${picked.name}）',
+          ),
           actions: [
             CupertinoDialogAction(
               isDefaultAction: true,
@@ -174,18 +190,27 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
       );
+    } catch (e) {
+      if (!mounted) return;
+      _showImportExportError('导入失败', '$e');
     }
   }
 
-  String _formatDateTime(DateTime time) {
-    final now = DateTime.now();
-    String two(int n) => n.toString().padLeft(2, '0');
-    final isToday = time.year == now.year &&
-        time.month == now.month &&
-        time.day == now.day;
-    final timeStr = '${two(time.hour)}:${two(time.minute)}';
-    if (isToday) return '今天 $timeStr';
-    return '${time.month}月${time.day}日 $timeStr';
+  void _showImportExportError(String title, String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
   }
 
   // ─── 长按气泡菜单 ───────────────────────────────────────────
@@ -863,6 +888,11 @@ class _ChatScreenState extends State<ChatScreen> {
         : null;
     final characterName = character?.displayName ?? widget.characterName;
 
+    // 会话压缩：压缩模型默认跟随聊天模型，可在「API 设置 → 会话压缩」中单独指定
+    final api = context.read<ApiProvider>();
+    final compressModel =
+        api.getModelById(api.compressionModelId) ?? model;
+
     setState(() {
       _isProactiveRunning = true;
       _proactiveTyping = true; // 点击后立即显示"对方正在输入……"（等待 API + 逐条渲染期间）
@@ -879,6 +909,10 @@ class _ChatScreenState extends State<ChatScreen> {
             context.read<AuthProvider>().user?.nickname ?? '用户',
         replyToUser: replyToUser,
         contextCount: chatSettings.contextCount,
+        enableCompression: chatSettings.enableCompression,
+        compressModel: compressModel,
+        contextLength: model.contextLength,
+        compressThreshold: chatSettings.compressThreshold,
       );
       if (!mounted) return;
       if (messages.isEmpty) {
@@ -1211,6 +1245,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onPickFile: _handlePickFile,
             onSettings: _openChatSettings,
             onExport: _exportChat,
+            onImport: _importChat,
             onFeatureDetect: _runFeatureDetect,
             onRequestReply: () => _triggerProactiveMessages(replyToUser: true),
             replyEnabled: replyEnabled,

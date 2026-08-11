@@ -10,6 +10,7 @@ class ApiModel {
   final String modelName; // 模型名称（API 调用使用）
   final String baseUrl; // API 请求地址
   final String apiKey; // API Key
+  final int contextLength; // 模型上下文长度（token），用于会话压缩 70% 阈值
 
   const ApiModel({
     required this.id,
@@ -17,6 +18,7 @@ class ApiModel {
     required this.modelName,
     this.baseUrl = '',
     this.apiKey = '',
+    this.contextLength = 8000,
   });
 
   Map<String, dynamic> toJson() => {
@@ -25,6 +27,7 @@ class ApiModel {
         'model_name': modelName,
         'base_url': baseUrl,
         'api_key': apiKey,
+        'context_length': contextLength,
       };
 
   factory ApiModel.fromJson(Map<String, dynamic> json) => ApiModel(
@@ -33,6 +36,7 @@ class ApiModel {
         modelName: json['model_name'] as String? ?? '',
         baseUrl: json['base_url'] as String? ?? '',
         apiKey: json['api_key'] as String? ?? '',
+        contextLength: json['context_length'] as int? ?? 8000,
       );
 
   ApiModel copyWith({
@@ -40,6 +44,7 @@ class ApiModel {
     String? modelName,
     String? baseUrl,
     String? apiKey,
+    int? contextLength,
   }) {
     return ApiModel(
       id: id,
@@ -47,6 +52,7 @@ class ApiModel {
       modelName: modelName ?? this.modelName,
       baseUrl: baseUrl ?? this.baseUrl,
       apiKey: apiKey ?? this.apiKey,
+      contextLength: contextLength ?? this.contextLength,
     );
   }
 }
@@ -54,9 +60,13 @@ class ApiModel {
 /// 管理用户配置的 API 模型列表（持久化到本地）
 class ApiProvider extends ChangeNotifier {
   static const _storageKey = 'api_models_v1';
+  static const _compressModelKey = 'api_compress_model';
   List<ApiModel> _models = [];
+  String? _compressionModelId; // 会话压缩专用模型（null 表示跟随聊天模型）
 
   List<ApiModel> get models => List.unmodifiable(_models);
+
+  String? get compressionModelId => _compressionModelId;
 
   ApiModel? getModelById(String? id) {
     if (id == null) return null;
@@ -80,7 +90,20 @@ class ApiProvider extends ChangeNotifier {
         _models = [];
       }
     }
+    _compressionModelId = prefs.getString(_compressModelKey);
     notifyListeners();
+  }
+
+  /// 设置会话压缩专用模型（null 表示跟随聊天模型）
+  Future<void> setCompressionModel(String? modelId) async {
+    _compressionModelId = modelId;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (modelId == null) {
+      await prefs.remove(_compressModelKey);
+    } else {
+      await prefs.setString(_compressModelKey, modelId);
+    }
   }
 
   Future<void> _persist() async {
@@ -96,6 +119,7 @@ class ApiProvider extends ChangeNotifier {
     required String modelName,
     String baseUrl = '',
     String apiKey = '',
+    int contextLength = 8000,
   }) async {
     _models.add(ApiModel(
       id: const Uuid().v4(),
@@ -103,6 +127,7 @@ class ApiProvider extends ChangeNotifier {
       modelName: modelName.trim(),
       baseUrl: baseUrl.trim(),
       apiKey: apiKey.trim(),
+      contextLength: contextLength,
     ));
     notifyListeners();
     await _persist();
