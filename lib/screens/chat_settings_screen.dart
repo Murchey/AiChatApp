@@ -149,6 +149,34 @@ class ChatSettingsScreen extends StatelessWidget {
                   color: context.textSecondaryColor,
                 ),
               ),
+              const SizedBox(height: 10),
+              // 手动压缩对话按钮
+              SizedBox(
+                width: double.infinity,
+                child: CupertinoButton(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  borderRadius: BorderRadius.circular(8),
+                  color: context.accentColor.withValues(alpha: 0.12),
+                  onPressed: () =>
+                      _handleManualCompress(context, settings, api, chat),
+                  child: Text(
+                    '压缩对话',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: context.accentColor,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '立即压缩更早的历史消息为一段摘要，保留最近 20 条',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.textSecondaryColor,
+                ),
+              ),
               if (overThreshold && settings.enableCompression) ...[
                 const SizedBox(height: 4),
                 Text(
@@ -215,6 +243,48 @@ class ChatSettingsScreen extends StatelessWidget {
               Navigator.pop(ctx);
             },
             child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 点击【压缩对话】：忽略阈值，立即压缩更早的历史消息
+  Future<void> _handleManualCompress(
+    BuildContext context,
+    ChatSettingsProvider settings,
+    ApiProvider api,
+    ChatProvider chat,
+  ) async {
+    final model = api.getModelById(settings.selectedModelId);
+    // 压缩模型：优先使用「API 设置 → 会话压缩」中单独指定的模型，否则跟随当前聊天模型
+    final compressModel = api.getModelById(api.compressionModelId) ?? model;
+    if (compressModel == null) {
+      if (!context.mounted) return;
+      _showTip(context, '请先在「API 设置」中添加模型');
+      return;
+    }
+    final contextLength = model?.contextLength ?? 0;
+    final ok = await chat.compressConversationNow(
+      conversationId: conversationId!,
+      compressModel: compressModel,
+      contextLength: contextLength > 0 ? contextLength : 8000,
+    );
+    if (!context.mounted) return;
+    _showTip(context, ok ? '已压缩对话' : '暂无可压缩的消息');
+  }
+
+  /// 弹出轻提示对话框
+  void _showTip(BuildContext context, String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('知道了'),
           ),
         ],
       ),

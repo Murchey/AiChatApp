@@ -17,7 +17,7 @@ class LLMService {
   /// 会话压缩的 System Prompt：将较早的聊天记录压缩为一段摘要
   static const String kCompressSystemPrompt = '你是一个对话压缩助手。请将以下聊天记录压缩为一段简洁连贯的中文摘要，'
       '保留关键信息：用户的身份与偏好、对方（角色）的人设特征、重要话题与结论、未完成的事项。'
-      '摘要不超过 300 字，直接输出摘要内容，不要任何前缀或解释。';
+      '摘要不超过 600 字，直接输出摘要内容，不要任何前缀或解释。';
 
   /// 会话压缩：将较早的历史消息交给压缩模型生成一段摘要文本。
   ///
@@ -27,7 +27,7 @@ class LLMService {
     required ApiModel model,
     required List<Map<String, String>> historyMessages,
   }) async {
-    final raw = await fetchCompletion(
+    final result = await fetchCompletion(
       model: model,
       messages: [
         {'role': 'system', 'content': kCompressSystemPrompt},
@@ -36,7 +36,7 @@ class LLMService {
       temperature: 0.3,
       maxTokens: 800,
     );
-    return raw.trim();
+    return result.content.trim();
   }
 
   /// API 调用异常（无 Key / 网络 / 非 200 等），带可读提示信息
@@ -57,13 +57,13 @@ class LLMService {
   /// 不使用 response_format 强制 JSON（DeepSeek json_object 模式官方承认
   /// 有概率返回空 content），改为 prompt 约束 + [parseMessages] 容错解析。
   /// API 层失败时抛出 [LLMException]；响应解析失败时返回兜底消息。
-  static Future<List<String>> generateMessages({
+  static Future<ProactiveResult> generateMessages({
     required ApiModel model,
     required String systemPrompt,
     List<Map<String, Object>> historyMessages = const [],
     String outputInstruction = '',
   }) async {
-    final raw = await fetchCompletion(
+    final completion = await fetchCompletion(
       model: model,
       messages: [
         {'role': 'system', 'content': systemPrompt},
@@ -74,10 +74,11 @@ class LLMService {
       temperature: 0.9,
       maxTokens: 1024,
     );
+    final raw = completion.content;
     debugPrint('[LLMService] 模型原始响应: $raw');
     final result = parseMessages(raw);
     debugPrint('[LLMService] 解析结果(${result.length}条): $result');
-    return result;
+    return ProactiveResult(result, completion.usage);
   }
 
   /// 发送图片消息：以 OpenAI 兼容的视觉消息格式，把用户选择的图片
@@ -87,7 +88,7 @@ class LLMService {
   /// [historyMessages] 为最近的文本对话历史（不含本图片），
   /// [outputInstruction] 复用普通文本的格式强指令。
   /// 图片读取失败时抛出 [LLMException]（可读提示）。
-  static Future<List<String>> generateVisionReply({
+  static Future<ProactiveResult> generateVisionReply({
     required ApiModel model,
     required String systemPrompt,
     required List<Map<String, Object>> historyMessages,
@@ -101,7 +102,7 @@ class LLMService {
     } catch (_) {
       throw const LLMException('无法读取图片，请重新选择图片后重试');
     }
-    final raw = await fetchCompletion(
+    final completion = await fetchCompletion(
       model: model,
       messages: [
         {'role': 'system', 'content': systemPrompt},
@@ -122,10 +123,11 @@ class LLMService {
       temperature: 0.9,
       maxTokens: 1024,
     );
+    final raw = completion.content;
     debugPrint('[LLMService] 模型原始响应: $raw');
     final result = parseMessages(raw);
     debugPrint('[LLMService] 解析结果(${result.length}条): $result');
-    return result;
+    return ProactiveResult(result, completion.usage);
   }
 
   /// 按文件扩展名推断图片 MIME（OpenAI 视觉格式要求 data URL 带类型）
@@ -143,12 +145,13 @@ class LLMService {
     }
   }
 
-  /// 调用对话补全 API，返回原始回复文本。失败抛出 [LLMException]。
+  /// 调用对话补全 API，返回回复内容与真实 token 用量（usage）。
+  /// 失败抛出 [LLMException]。
   ///
   /// [messages] 的 content 既可以是字符串（普通文本消息），
   /// 也可以是 OpenAI 兼容的多模态 part 数组（[{type:text},{type:image_url}]），
   /// 由 jsonEncode 直接序列化。
-  static Future<String> fetchCompletion({
+  static Future<CompletionResult> fetchCompletion({
     required ApiModel model,
     required List<Map<String, Object>> messages,
     double temperature = 0.9,
@@ -172,7 +175,7 @@ class LLMService {
     // 部分模型（快速/推理模型）偶发返回 HTTP 200 但 content 为空，
     // 重发一次请求让模型重新生成，显著降低"API 返回内容为空"的出现频率。
     for (var attempt = 0; attempt < 2; attempt++) {
-      final content = await _requestOnce(
+      final result = await _requestOnce(
         url: url,
         model: model,
         messages: messages,
@@ -180,15 +183,15 @@ class LLMService {
         maxTokens: maxTokens,
         jsonMode: jsonMode,
       );
-      if (content.trim().isNotEmpty) return content;
+      if (result.content.trim().isNotEmpty) return result;
       debugPrint('[LLMService] 第 ${attempt + 1} 次响应 content 为空，自动重试');
     }
     throw const LLMException('API 返回内容为空，已自动重试一次仍无结果，请稍后重试或检查模型设置');
   }
 
-  /// 发起一次对话补全请求，返回响应中的 content（可能为空字符串）。
+  /// 发起一次对话补全请求，返回回复内容与真实 token 用量。
   /// 非 200 状态码或网络异常时抛出 [LLMException]。
-  static Future<String> _requestOnce({
+  static Future<CompletionResult> _requestOnce({
     required String url,
     required ApiModel model,
     required List<Map<String, Object>> messages,
@@ -233,7 +236,10 @@ class LLMService {
         final message =
             (choices.first as Map<String, dynamic>)['message']
                 as Map<String, dynamic>?;
-        return message?['content'] as String? ?? '';
+        return CompletionResult(
+          message?['content'] as String? ?? '',
+          _parseUsage(decoded),
+        );
       }
 
       // 非 200：尽量解析官方错误信息 {"error":{"message":...}}
@@ -640,6 +646,51 @@ class LLMService {
     return const [];
   }
 
+  /// 本地分词估算一段文本的 token 数（API 未返回 usage 字段时的备用方案）。
+  ///
+  /// 中文的实际 Token 切分比"两字一 Token"要碎得多：
+  /// - 汉字 / 全角字符（中文标点、假名、CJK 扩展等）：1 字 ≈ 2 Token（保守估算，避免低估）
+  /// - 其余字符（英文、数字、半角标点、空格、换行）：约 4 字符 ≈ 1 Token
+  static int estimateTokens(String text) {
+    if (text.isEmpty) return 0;
+    var cjk = 0;
+    var other = 0;
+    for (final rune in text.runes) {
+      if (_isCjkRune(rune)) {
+        cjk++;
+      } else {
+        other++;
+      }
+    }
+    return (cjk * 2 + other * 0.25).ceil();
+  }
+
+  /// 是否为汉字 / 全角类字符（按 Unicode 区段判断）
+  static bool _isCjkRune(int r) =>
+      (r >= 0x2E80 && r <= 0x9FFF) || // CJK 部首/扩展 A/统一表意文字、中文标点、假名
+      (r >= 0xF900 && r <= 0xFAFF) || // CJK 兼容表意文字
+      (r >= 0xFF00 && r <= 0xFFEF); // 全角字符与全角标点
+
+  /// 从对话补全响应中解析 token 用量（usage 字段，可能缺失）。
+  /// 单次调用总消耗 = prompt_tokens（系统提示词 + 软件提示词 + 历史 + 本次提问）
+  ///               + completion_tokens（AI 思考过程 + 最终回复）。
+  static ChatUsage _parseUsage(Map<String, dynamic> decoded) {
+    final usage = decoded['usage'];
+    if (usage is! Map<String, dynamic>) return const ChatUsage();
+    return ChatUsage(
+      promptTokens: _usageInt(usage['prompt_tokens']),
+      completionTokens: _usageInt(usage['completion_tokens']),
+      totalTokens: _usageInt(usage['total_tokens']),
+    );
+  }
+
+  static int? _usageInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v.trim());
+    return null;
+  }
+
   /// 容错解析 LLM 返回的消息数组：
   /// 1. 直接 JSON.parse
   /// 2. 失败则用正则提取 `[...]` 片段再解析（LLM 偶尔带 ```json 标签或对象包裹）
@@ -726,4 +777,34 @@ class LLMException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// 一次对话补全的 token 用量（来自 API 响应 usage 字段；字段缺失为 null）
+class ChatUsage {
+  final int? promptTokens; // 输入：系统提示词 + 软件提示词 + 历史上下文 + 本次提问
+  final int? completionTokens; // 输出：AI 思考过程 + 最终回复
+  final int? totalTokens; // prompt + completion
+
+  const ChatUsage({
+    this.promptTokens,
+    this.completionTokens,
+    this.totalTokens,
+  });
+
+  bool get isEmpty =>
+      promptTokens == null && completionTokens == null && totalTokens == null;
+}
+
+/// 对话补全结果：回复内容 + 真实 token 用量
+class CompletionResult {
+  final String content;
+  final ChatUsage usage;
+  const CompletionResult(this.content, this.usage);
+}
+
+/// 角色回复结果：解析出的消息列表 + 本次请求的 token 用量
+class ProactiveResult {
+  final List<String> messages;
+  final ChatUsage usage;
+  const ProactiveResult(this.messages, this.usage);
 }

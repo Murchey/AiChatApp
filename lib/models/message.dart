@@ -48,6 +48,8 @@ class Message {
   final String quoteSender;
   // 合并转发的原始消息列表（非空表示这是一条"聊天记录"卡片）
   final List<ForwardItem> forwardedItems;
+  // 是否为会话压缩生成的摘要消息（压缩时不删除前文原文，仅用此标记定位上下文起点）
+  final bool isCompressionSummary;
 
   Message({
     required this.id,
@@ -60,6 +62,7 @@ class Message {
     this.quoteContent = '',
     this.quoteSender = '',
     this.forwardedItems = const [],
+    this.isCompressionSummary = false,
   }) : createdAt = createdAt ?? DateTime.now();
 
   bool get isFromUser => sender == MessageSender.user;
@@ -86,6 +89,8 @@ class Message {
       forwardedItems: (json['forwarded_items'] as List<dynamic>? ?? [])
           .map((e) => ForwardItem.fromJson(e as Map<String, dynamic>))
           .toList(),
+      isCompressionSummary:
+          json['is_compression_summary'] as bool? ?? false,
     );
   }
 
@@ -101,6 +106,7 @@ class Message {
       'quote_content': quoteContent,
       'quote_sender': quoteSender,
       'forwarded_items': forwardedItems.map((e) => e.toJson()).toList(),
+      'is_compression_summary': isCompressionSummary,
     };
   }
 }

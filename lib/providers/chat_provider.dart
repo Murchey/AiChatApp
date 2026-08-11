@@ -14,10 +14,13 @@ import 'api_provider.dart';
 class ChatProvider extends ChangeNotifier {
   static const _conversationsKey = 'chat_conversations_v1';
   static const _messagesKey = 'chat_messages_v1';
+  static const _contextTokensKey = 'chat_context_tokens_v1'; // 各会话上下文 token 累计值
 
   // 会话压缩参数
   static const int kKeepRecentMessages = 20; // 压缩时保留的最近消息条数
-  static const double _tokensPerChar = 1.2; // 中文约 1 字符/token，混合按 1.2 估算
+  // 每条消息的 JSON 结构开销（role/content 键名、括号、引号等约占 4~5 token，
+  // 计入本地估算，贴近服务端按整个 JSON 计费的真实情况）
+  static const int kPerMessageJsonTokens = 5;
 
   final Map<String, List<Message>> _messagesMap = {};
   final List<Conversation> _conversations = [];
@@ -25,6 +28,8 @@ class ChatProvider extends ChangeNotifier {
   String? _activeConversationId; // 当前打开的聊天会话（其内新增角色消息不记未读）
   String? _replyingConversationId; // 正在生成/逐条渲染回复的会话（防止重复触发）
   Future<List<String>>? _runningReply; // 进行中的回复流程（重复触发时复用）
+  final Map<String, int> _contextTokens = {}; // 会话 → 上下文 token 用量（输入侧，API usage 优先）
+  final Map<String, int> _systemTokens = {}; // 会话 → 系统提示词 + 输出指令 token（内存态，供乐观更新）
 
   List<Conversation> get conversations => _conversations;
   String? get lastError => _lastError;
@@ -102,7 +107,17 @@ class ChatProvider extends ChangeNotifier {
         });
       }
     } catch (_) {}
-    notifyListeners();
+    // 加载各会话上下文 token 累计值
+    try {
+      final ctxStr = prefs.getString(_contextTokensKey);
+      if (ctxStr != null) {
+        final map = jsonDecode(ctxStr) as Map<String, dynamic>;
+        _contextTokens
+          ..clear()
+          ..addAll(map.map(
+              (k, v) => MapEntry(k, (v as num).toInt())));
+      }
+    } catch (_) {}
   }
 
   /// 保存会话与聊天记录到本地（持久化）
@@ -123,6 +138,7 @@ class ChatProvider extends ChangeNotifier {
         ),
       ),
     );
+    await prefs.setString(_contextTokensKey, jsonEncode(_contextTokens));
   }
 
   Conversation getOrCreateConversation({
@@ -168,6 +184,10 @@ class ChatProvider extends ChangeNotifier {
     _messagesMap[conversationId] ??= [];
     _messagesMap[conversationId]!.add(userMessage);
     _updateConversationLastMessage(conversationId, content);
+    // 乐观更新：发送后立即按「系统提示词 + 历史 + 本条输入」估算上下文用量，
+    // 无需等待 API 返回（API 返回后会用真实 usage.prompt_tokens 校准覆盖）
+    _contextTokens[conversationId] =
+        _estimateSendInputBudget(conversationId, extra: [content]);
     _lastError = null;
     notifyListeners();
     await _persist();
@@ -182,8 +202,8 @@ class ChatProvider extends ChangeNotifier {
   /// 使模型知道用户说了什么，从而分多条回复。
   /// [enableCompression] 开启且 [contextLength] 已知时，若历史估算 token 达到
   /// 模型上下文 [kCompressThreshold]，会先用 [compressModel] 压缩更早的历史消息。
-  /// API 层失败时设置 [_lastError] 并返回空列表；解析兜底消息由 LLMService 处理。
-  Future<List<String>> generateProactiveMessages({
+  /// API 层失败时设置 [_lastError] 并返回空结果；解析兜底消息由 LLMService 处理。
+  Future<ProactiveResult> generateProactiveMessages({
     required String conversationId,
     required ApiModel model,
     required String characterName,
@@ -211,6 +231,10 @@ class ChatProvider extends ChangeNotifier {
       characterName: characterName,
       replyToUser: replyToUser,
     );
+    // 记录本会话的系统提示词 + 输出指令 token，供发送消息时乐观更新进度条
+    _systemTokens[conversationId] =
+        _estimateTextTokens(prompt) + _estimateTextTokens(outputInstruction) +
+            kPerMessageJsonTokens * 2;
     // 会话压缩：开启压缩且模型上下文已知时，先检查历史长度是否达到阈值。
     // 预算同时计入系统提示词与格式指令占用的 token——
     // 系统提示词越长，压缩越早触发，避免「提示词 + 历史」超过模型上下文上限
@@ -221,7 +245,8 @@ class ChatProvider extends ChangeNotifier {
         contextLength: contextLength,
         threshold: compressThreshold,
         systemPromptTokens:
-            _estimateTextTokens(prompt) + _estimateTextTokens(outputInstruction),
+            _estimateTextTokens(prompt) + _estimateTextTokens(outputInstruction) +
+                kPerMessageJsonTokens * 2, // 系统提示词与输出指令各是一条消息
       );
     }
     try {
@@ -245,10 +270,10 @@ class ChatProvider extends ChangeNotifier {
       );
     } on LLMException catch (e) {
       _lastError = e.message;
-      return const [];
+      return const ProactiveResult([], ChatUsage());
     } catch (e) {
       _lastError = LLMService.describeException(e);
-      return const [];
+      return const ProactiveResult([], ChatUsage());
     }
   }
 
@@ -318,7 +343,7 @@ class ChatProvider extends ChangeNotifier {
   }) async {
     debugPrint('[ChatProvider] _doRunProactiveReply 开始: $conversationId');
     try {
-      final messages = await generateProactiveMessages(
+      final result = await generateProactiveMessages(
         conversationId: conversationId,
         model: model,
         characterName: characterName,
@@ -333,6 +358,7 @@ class ChatProvider extends ChangeNotifier {
         compressThreshold: compressThreshold,
         imagePath: imagePath,
       );
+      final messages = result.messages;
       final random = Random();
       for (final content in messages) {
         addProactiveMessage(conversationId, content);
@@ -341,6 +367,14 @@ class ChatProvider extends ChangeNotifier {
         final delay = random.nextDouble() * 1000 + content.length * 50;
         await Future.delayed(Duration(milliseconds: delay.round() + 600));
       }
+      // 已使用的上下文 = 会话累计（摘要起全部文本消息 + 系统提示词）。
+      // 仅当 API 返回的 prompt_tokens 更大时用它校准（说明本地估算偏低或
+      // 上下文窗口未截断、prompt 代表全量真实消耗），
+      // 避免把显示值压成"最近一次请求的截断窗口"（几十条消息后只剩几百）。
+      final prompt = result.usage.promptTokens;
+      final estimated = _estimateSendInputBudget(conversationId);
+      _contextTokens[conversationId] =
+          prompt != null && prompt > estimated ? prompt : estimated;
       return messages;
     } finally {
       debugPrint('[ChatProvider] _doRunProactiveReply 结束: $conversationId');
@@ -350,28 +384,33 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  /// 会话压缩：当会话历史估算 token 达到模型上下文的 [threshold] 时，
-  /// 将更早的消息交给压缩模型生成摘要，替换为一条摘要消息并持久化。
-  /// [systemPromptTokens] 为系统提示词 + 格式指令占用的 token，
-  /// 计入压缩预算（长系统提示词时更早触发压缩）。
-  /// 压缩失败（网络/API 异常）时静默跳过，不影响本次回复。
-  Future<void> _maybeCompressConversation({
+  /// 会话压缩：当"已使用的上下文 token"（摘要起全部文本消息）估算值 +
+  /// 系统提示词 + 格式指令达到模型上下文的 [threshold] 时，
+  /// 将更早的消息交给压缩模型生成摘要，在压缩边界插入摘要消息（原文保留）。
+  /// [systemPromptTokens] 为系统提示词 + 格式指令占用的 token，计入压缩预算。
+  /// [force] 为 true（手动压缩）时忽略阈值判断，只要存在可压缩的早期消息就执行。
+  /// 压缩失败（网络/API 异常）时静默跳过，不影响本次回复；返回是否完成压缩。
+  Future<bool> _maybeCompressConversation({
     required String conversationId,
     required ApiModel compressModel,
     required int contextLength,
     required double threshold,
     int systemPromptTokens = 0,
+    bool force = false,
   }) async {
     final messages = _messagesMap[conversationId] ?? [];
-    if (messages.isEmpty) return;
+    if (messages.isEmpty) return false;
     final textMessages =
         messages.where((m) => m.type == MessageType.text).toList();
-    if (textMessages.length <= kKeepRecentMessages) return;
+    if (textMessages.length <= kKeepRecentMessages) return false;
 
-    // 历史 + 系统提示词一起判断是否达到压缩阈值
-    if (_estimateTokens(textMessages) + systemPromptTokens <
-        contextLength * threshold) {
-      return;
+    // 发送输入预算（系统提示词 + 摘要起历史）+ 系统提示词一起判断是否达到压缩阈值
+    // （手动压缩时跳过）。与进度条展示的上下文使用量同口径。
+    if (!force &&
+        _estimateSendInputBudget(conversationId,
+                systemTokens: systemPromptTokens) <
+            contextLength * threshold) {
+      return false;
     }
 
     // 确定压缩边界：从尾部数出最近 kKeepRecentMessages 条文本消息，之前的全部压缩
@@ -384,7 +423,7 @@ class ChatProvider extends ChangeNotifier {
         break;
       }
     }
-    if (cutIndex <= 0) return;
+    if (cutIndex <= 0) return false;
     final toCompress = messages.sublist(0, cutIndex);
     final kept = messages.sublist(cutIndex);
 
@@ -400,51 +439,139 @@ class ChatProvider extends ChangeNotifier {
         model: compressModel,
         historyMessages: history,
       );
-      if (summary.isEmpty) return;
-      _messagesMap[conversationId] = [
+      if (summary.isEmpty) return false;
+      // 压缩不删除前文：原文消息完整保留，仅在压缩边界处插入一条摘要消息。
+      // 后续发送上下文从最后一条摘要消息起取（其前原文不再发给模型，界面仍可完整查看）。
+      _messagesMap[conversationId]!.insert(
+        cutIndex,
         Message(
           id: const Uuid().v4(),
           conversationId: conversationId,
-          content: '［已自动压缩更早的 ${toCompress.length} 条消息］\n$summary',
+          content: '［已${force ? '手动' : '自动'}压缩更早的 ${toCompress.length} 条消息］\n$summary',
           type: MessageType.text,
           sender: MessageSender.character,
+          isCompressionSummary: true,
         ),
-        ...kept,
-      ];
+      );
+      // 压缩后参与上下文的消息大幅减少，按「摘要 + 保留消息」重算发送输入预算
+      _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
       _updateConversationLastMessage(conversationId, kept.last.content);
       notifyListeners();
       await _persist();
+      return true;
     } catch (e) {
       debugPrint('[ChatProvider] 会话压缩失败，继续原样发送: $e');
+      return false;
     }
   }
 
-  /// 粗略估算一段文本的 token 数（中文约 1 字符/token，混合按 1.2 估算）
-  static int _estimateTextTokens(String text) =>
-      (text.length / _tokensPerChar).ceil();
+  /// 手动压缩会话（聊天设置页「压缩对话」按钮）：
+  /// 忽略阈值判断，直接压缩更早的历史消息。
+  /// 无可压缩消息或压缩失败时返回 false。
+  Future<bool> compressConversationNow({
+    required String conversationId,
+    required ApiModel compressModel,
+    int contextLength = 8000,
+  }) {
+    return _maybeCompressConversation(
+      conversationId: conversationId,
+      compressModel: compressModel,
+      contextLength: contextLength,
+      threshold: 1.0, // force 模式下不参与判断
+      force: true,
+    );
+  }
 
-  /// 粗略估算文本消息的 token 数
+  /// 估算一段文本的 token 数（委托 LLMService 本地分词估算：
+  /// 中文保守 1 字 ≈ 2 token，英文约 4 字符 ≈ 1 token）
+  static int _estimateTextTokens(String text) => LLMService.estimateTokens(text);
+
+  /// 估算文本消息列表的 token 数（含每条消息的 JSON 结构开销）
   static int _estimateTokens(List<Message> messages) {
     var total = 0;
     for (final m in messages) {
       if (m.type != MessageType.text) continue;
-      total += _estimateTextTokens(m.content);
+      total += LLMService.estimateTokens(m.content) + kPerMessageJsonTokens;
     }
     return total;
   }
 
-  /// 估算某会话当前全部消息占用的 token 数（用于「聊天设置」中展示上下文使用程度）
-  int getContextTokens(String conversationId) {
-    final messages = _messagesMap[conversationId] ?? [];
-    return _estimateTokens(messages);
+  /// 本地分词估算某会话的上下文 token（从最后一条压缩摘要消息起取全部 + 可选额外文本），
+  /// 每条消息计入 JSON 结构开销。作为无真实 usage 记录时的兜底粗估。
+  int _estimateConversationTokens(
+      String conversationId, [List<String> extra = const []]) {
+    return _estimateSendBudget(conversationId, 0, extra);
   }
 
-  /// 从会话记录中取最近 [contextCount] 条文本消息作为对话历史
+  /// 估算会话当前"发送输入预算"（历史部分）：
+  /// 从最后一条压缩摘要消息起，取最近 [contextCount] 条文本消息
+  /// （[contextCount] <= 0 表示从摘要起取全部），每条计入 JSON 结构开销。
+  /// [extra] 为本次提问 / 本次回复等额外文本。
+  int _estimateSendBudget(String conversationId, int contextCount,
+      [List<String> extra = const []]) {
+    final messages = _messagesMap[conversationId] ?? const <Message>[];
+    var start = 0;
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].isCompressionSummary) {
+        start = i;
+        break;
+      }
+    }
+    final from = contextCount > 0 && messages.length - start > contextCount
+        ? messages.length - contextCount
+        : start;
+    var total = 0;
+    for (int i = from; i < messages.length; i++) {
+      final m = messages[i];
+      if (m.type == MessageType.text) {
+        total += LLMService.estimateTokens(m.content) + kPerMessageJsonTokens;
+      }
+    }
+    for (final text in extra) {
+      total += LLMService.estimateTokens(text) + kPerMessageJsonTokens;
+    }
+    return total;
+  }
+
+  /// 估算会话当前"发送输入预算"（进度条口径，即公式的分子）：
+  /// = 系统提示词 + 输出指令（[systemTokens] 或上次记录的缓存）+
+  ///   摘要起全部文本消息历史 + [extra] 额外文本（如当前用户输入）。
+  int _estimateSendInputBudget(String conversationId,
+      {int? systemTokens, List<String> extra = const []}) {
+    final sys = systemTokens ?? (_systemTokens[conversationId] ?? 0);
+    var total = sys + _estimateConversationTokens(conversationId);
+    for (final text in extra) {
+      total += LLMService.estimateTokens(text) + kPerMessageJsonTokens;
+    }
+    return total;
+  }
+
+  /// 获取某会话当前上下文 token 用量（发送输入预算，用于「聊天设置」展示与压缩进度）。
+  /// 有记录时优先返回；无记录时用本地分词估算并缓存。
+  int getContextTokens(String conversationId) {
+    final tracked = _contextTokens[conversationId];
+    if (tracked != null) return tracked;
+    final estimated = _estimateSendInputBudget(conversationId);
+    _contextTokens[conversationId] = estimated;
+    return estimated;
+  }
+
+  /// 从会话记录中取最近 [contextCount] 条文本消息作为对话历史。
+  /// 压缩后原文不删除：历史起点定位到最后一条压缩摘要消息（含），
+  /// 摘要之前的原文已被摘要替代、不再发送给模型。
   List<Map<String, String>> _buildHistory(
       String conversationId, int contextCount) {
     final history = _messagesMap[conversationId] ?? [];
-    final start =
-        history.length > contextCount ? history.length - contextCount : 0;
+    var cutStart = 0;
+    for (var i = history.length - 1; i >= 0; i--) {
+      if (history[i].isCompressionSummary) {
+        cutStart = i;
+        break;
+      }
+    }
+    final start = contextCount > 0 && history.length - contextCount > cutStart
+        ? history.length - contextCount
+        : cutStart;
     final result = <Map<String, String>>[];
     for (int i = start; i < history.length; i++) {
       final m = history[i];
@@ -557,6 +684,8 @@ class ChatProvider extends ChangeNotifier {
     final messages = _messagesMap[conversationId];
     if (messages == null) return;
     messages.removeWhere((m) => m.id == messageId);
+    // 删除消息后按剩余消息重新估算上下文 token
+    _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
     if (messages.isNotEmpty) {
       _updateConversationLastMessage(conversationId, messages.last.content);
     } else {
@@ -578,6 +707,8 @@ class ChatProvider extends ChangeNotifier {
     if (messages == null) return;
 
     messages.removeWhere((m) => m.id == messageId);
+    // 撤回后按剩余消息重新估算上下文 token
+    _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
     if (messages.isNotEmpty) {
       _updateConversationLastMessage(conversationId, messages.last.content);
     } else {
@@ -601,6 +732,9 @@ class ChatProvider extends ChangeNotifier {
     if (messages.isEmpty) return;
     _messagesMap[conversationId] ??= [];
     _messagesMap[conversationId]!.addAll(messages);
+    // 累加导入消息的上下文 token
+    _contextTokens[conversationId] =
+        (_contextTokens[conversationId] ?? 0) + _estimateTokens(messages);
     _updateConversationLastMessage(conversationId, messages.last.content);
     notifyListeners();
     await _persist();
@@ -665,6 +799,7 @@ class ChatProvider extends ChangeNotifier {
   void deleteConversation(String conversationId) {
     _conversations.removeWhere((c) => c.id == conversationId);
     _messagesMap.remove(conversationId);
+    _contextTokens.remove(conversationId);
     notifyListeners();
     _persist();
   }
@@ -674,6 +809,7 @@ class ChatProvider extends ChangeNotifier {
   /// 消息数据会被完全抹除（存储中不再保留该会话的任何消息）。
   void clearMessages(String conversationId) {
     _messagesMap.remove(conversationId);
+    _contextTokens.remove(conversationId);
     final index = _conversations.indexWhere((c) => c.id == conversationId);
     if (index != -1) {
       _conversations[index] = _conversations[index].copyWith(
