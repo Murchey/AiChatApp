@@ -15,6 +15,10 @@ const String kGitHubOwner = 'Murchey';
 const String kGitHubRepo = 'AiChatApp';
 const String kGitHubRepoUrl = 'https://github.com/Murchey/AiChatApp';
 
+/// 角色卡社区项目地址（【我】页面底部展示）
+const String kCharacterCommunityUrl =
+    'https://github.com/Murchey/AiChatCharacterCommunity/';
+
 /// Release 资产命名标准：AiChat-V1.0.0.apk
 String kApkAssetName(String version) => 'AiChat-V$version.apk';
 

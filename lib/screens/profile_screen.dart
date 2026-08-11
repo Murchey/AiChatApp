@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/theme.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
@@ -252,7 +252,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'AiChat',
+                          'GitHub:Murchey/AiChat',
                           style: TextStyle(
                             fontSize: 14,
                             color: context.textSecondaryColor,
@@ -266,7 +266,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ],
                     ),
-                    onTap: _showGitHubRepo,
+                    onTap: () => _openUrl(kGitHubRepoUrl),
+                  ),
+                  CupertinoListTile(
+                    leading: Icon(
+                      CupertinoIcons.person_2,
+                      color: context.accentColor,
+                    ),
+                    title: const Text('角色卡项目地址'),
+                    subtitle: Text(
+                      "GitHub:Murchey/AiChatCharacterCommunity",
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                    trailing: Icon(
+                      CupertinoIcons.chevron_right,
+                      size: 16,
+                      color: context.textSecondaryColor,
+                    ),
+                    onTap: () => _openUrl(kCharacterCommunityUrl),
                   ),
                 ],
               ),
@@ -346,38 +368,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// 弹窗展示项目仓库地址，提供复制按钮
-  Future<void> _showGitHubRepo() async {
-    if (!mounted) return;
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('项目仓库'),
-        content: const Text(
-          kGitHubRepoUrl,
-          textAlign: TextAlign.center,
-        ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () async {
-              await Clipboard.setData(
-                const ClipboardData(text: kGitHubRepoUrl),
-              );
-              if (!ctx.mounted) return;
-              Navigator.pop(ctx);
-              if (!mounted) return;
-              _showTip(context, '仓库地址已复制');
-            },
-            child: const Text('复制'),
-          ),
-        ],
-      ),
-    );
+  /// 调用系统默认浏览器打开链接
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !mounted) return;
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) _showTip(context, '无法打开链接');
   }
 
   /// 检查更新：先展示检查中弹窗，再根据结果弹出对应提示
