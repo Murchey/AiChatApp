@@ -40,4 +40,15 @@ class FilePickerHelper {
     final map = result as Map<dynamic, dynamic>;
     return map['name'] as String? ?? suggestedName;
   }
+
+  /// 调用系统"打开方式"打开本地文件（Android ACTION_VIEW + FileProvider）。
+  /// 返回 null 表示打开成功（已交给其他应用），否则返回错误提示信息。
+  static Future<String?> openFile(String path) async {
+    try {
+      final ok = await _channel.invokeMethod('openFile', {'path': path});
+      return ok == true ? null : '打开文件失败';
+    } on PlatformException catch (e) {
+      return e.message ?? '打开文件失败';
+    }
+  }
 }

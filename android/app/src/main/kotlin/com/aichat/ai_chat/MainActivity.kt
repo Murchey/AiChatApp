@@ -1,8 +1,10 @@
 package com.aichat.ai_chat
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -78,6 +80,24 @@ class MainActivity : FlutterActivity() {
                             }
                         }
                     }
+                    "openFile" -> {
+                        val path = call.argument<String>("path")
+                        if (path == null) {
+                            result.error("NO_PATH", "file path is null", null)
+                        } else {
+                            val file = File(path)
+                            if (!file.exists()) {
+                                result.error("FILE_NOT_FOUND", "file not found: $path", null)
+                            } else {
+                                try {
+                                    openFileWithSystem(file)
+                                    result.success(true)
+                                } catch (e: Exception) {
+                                    result.error("OPEN_FAILED", e.message, null)
+                                }
+                            }
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -96,6 +116,48 @@ class MainActivity : FlutterActivity() {
         }
         if (intent.resolveActivity(packageManager) != null) {
             startActivity(intent)
+        }
+    }
+
+    /// 通过 FileProvider 共享文件并调用系统"打开方式"
+    private fun openFileWithSystem(file: File) {
+        val uri = getShareableUri(file)
+        val ext = file.extension.lowercase()
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        // 直接交给系统解析"打开方式"：有可处理的应用则打开，
+        // 没有则捕获 ActivityNotFoundException 提示用户
+        try {
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            throw Exception("没有应用可以打开该类型的文件")
+        }
+    }
+
+    /// 获取可共享的 content:// URI：
+    /// FileProvider 仅映射 picked_files（cache）与 updates（external-files）目录；
+    /// 文件在其他位置（如聊天导入目录 app_flutter/chat_import_*）时，
+    /// 先复制到缓存共享目录再打开，避免 FileUriExposedException。
+    private fun getShareableUri(file: File): Uri {
+        try {
+            return FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                file
+            )
+        } catch (e: IllegalArgumentException) {
+            val sharedDir = File(cacheDir, "picked_files")
+            if (!sharedDir.exists()) sharedDir.mkdirs()
+            val copy = File(sharedDir, file.name)
+            file.copyTo(copy, overwrite = true)
+            return FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                copy
+            )
         }
     }
 

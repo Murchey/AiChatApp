@@ -31,6 +31,8 @@ class ChatBubble extends StatefulWidget {
   final VoidCallback? onTap;
   /// 点击"合并转发"聊天记录卡片时回调（进入详情页）
   final VoidCallback? onForwardTap;
+  /// 点击文件消息卡片时回调（参数为文件路径，用于打开文件）
+  final Future<void> Function(String filePath)? onFileTap;
 
   const ChatBubble({
     super.key,
@@ -42,6 +44,7 @@ class ChatBubble extends StatefulWidget {
     this.selected = false,
     this.onTap,
     this.onForwardTap,
+    this.onFileTap,
   });
 
   @override
@@ -251,51 +254,55 @@ class _ChatBubbleState extends State<ChatBubble> {
     );
   }
 
-  /// 文件消息显示
+  /// 文件消息显示（点击调用系统"打开方式"打开文件）
   Widget _buildFileContent(BuildContext context) {
     final fileName = widget.message.content.split('/').last;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: context.listBgColor,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            CupertinoIcons.doc_fill,
-            size: 32,
-            color: context.accentColor,
-          ),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  fileName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: context.textPrimaryColor,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '点击打开文件',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-              ],
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => widget.onFileTap?.call(widget.message.content),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: context.listBgColor,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              CupertinoIcons.doc_fill,
+              size: 32,
+              color: context.accentColor,
             ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    fileName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: context.textPrimaryColor,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '点击打开文件',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

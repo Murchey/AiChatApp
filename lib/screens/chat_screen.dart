@@ -991,6 +991,26 @@ class _ChatScreenState extends State<ChatScreen>
         );
   }
 
+  /// 点击文件消息：调用系统"打开方式"打开本地文件，失败时弹提示
+  Future<void> _openFileMessage(String filePath) async {
+    final error = await FilePickerHelper.openFile(filePath);
+    if (!mounted || error == null) return;
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('无法打开文件'),
+        content: Text(error),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // 实时显示名：优先使用角色资料中的备注/昵称
@@ -1137,6 +1157,7 @@ class _ChatScreenState extends State<ChatScreen>
                               userAvatar: userAvatar,
                               characterAvatar: characterAvatar,
                             ),
+                            onFileTap: _selectMode ? null : _openFileMessage,
                             onLongPress: (message, bubbleKey) =>
                                 _showBubbleMenu(message, bubbleKey),
                           ),

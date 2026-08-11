@@ -3,4 +3,6 @@
     <!-- 允许外部文件目录下的 updates 目录共享（用于安装下载的 APK） -->
     <external-files-path name="updates" path="updates/" />
     <external-path name="external" path="." />
+    <!-- 允许缓存目录下的 picked_files 共享（用于打开用户发送的文件） -->
+    <cache-path name="picked_files" path="picked_files/" />
 </paths>
