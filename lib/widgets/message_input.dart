@@ -13,6 +13,9 @@ class MessageInput extends StatefulWidget {
   final Future<bool> Function()? onFeatureDetect; // 功能检测：测试当前模型是否支持图片（返回是否通过）
   final VoidCallback? onRequestReply; // 请求角色回复（对号按钮触发）
   final bool replyEnabled; // 对号按钮是否可点：上一条消息是用户发送时才可点
+  /// 外部传入的图片能力状态：当前模型已检测为视觉模型时为 true（来自持久化缓存），
+  /// 检测过一次后无需重复检测，【相册】【拍照】直接放开
+  final bool imageReady;
   /// 外部可通过此 key 调用 setText / focus
   final GlobalKey<MessageInputState>? inputKey;
 
@@ -28,6 +31,7 @@ class MessageInput extends StatefulWidget {
     this.onFeatureDetect,
     this.onRequestReply,
     this.replyEnabled = true,
+    this.imageReady = false,
   });
 
   @override
@@ -44,7 +48,9 @@ class MessageInputState extends State<MessageInput> {
   final FocusNode _inputFocusNode = FocusNode();
   bool _hasText = false;
   bool _showGrid = false;
-  bool _imageReady = false; // 图片功能是否已检测通过（检测前相册/拍照保持禁用）
+  bool _detectedReady = false; // 本次页面内手动检测通过（相册/拍照可用）
+  // 图片功能是否可用：缓存命中（widget.imageReady）或本次检测通过（_detectedReady）
+  bool get _imageReady => widget.imageReady || _detectedReady;
 
   /// 外部可直接设置输入框内容
   void setText(String text) {
@@ -283,7 +289,7 @@ class MessageInputState extends State<MessageInput> {
           setState(() => _showGrid = false);
           final ok = await widget.onFeatureDetect?.call() ?? false;
           if (mounted) {
-            setState(() => _imageReady = ok);
+            setState(() => _detectedReady = ok);
           }
         },
       ),

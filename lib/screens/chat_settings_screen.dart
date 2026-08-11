@@ -508,7 +508,7 @@ class ChatSettingsScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                '添加模型后，可在聊天输入框的加号面板中使用【功能检测】测试该模型是否支持图片发送，检测通过后【相册】【拍照】才可点击。',
+                '添加模型后，可在聊天输入框的加号面板中使用【功能检测】测试该模型是否支持图片发送；检测通过后【相册】【拍照】即可点击，且检测结果会记住，之后使用该模型时直接放开图片发送，无需重复检测。',
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.5,

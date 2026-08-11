@@ -40,9 +40,12 @@ class _ChatScreenState extends State<ChatScreen>
     with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey<MessageInputState> _inputKey = GlobalKey<MessageInputState>();
+  // 时间标签用的 DateFormat 只创建一次（DateFormat 构造开销较大，长会话频繁重建时明显）
+  static final DateFormat _timeFmt = DateFormat('HH:mm');
+  static final DateFormat _dateFmt = DateFormat('M月d日 HH:mm');
+  static final DateFormat _fullFmt = DateFormat('yyyy年M月d日 HH:mm');
   Message? _quoteMessage;
   OverlayEntry? _menuOverlay;
-  bool _initialScrollDone = false; // 首次进入会话是否已完成定位（避免进入时动画滑动）
   bool _selectMode = false; // 多选转发模式
   final Set<String> _selectedIds = {}; // 多选模式下选中的消息 id
   ChatProvider? _chatProvider; // 生命周期内复用（dispose 中仍需访问）
@@ -89,20 +92,27 @@ class _ChatScreenState extends State<ChatScreen>
     super.dispose();
   }
 
-  /// 滚动到底部。[animate] 为 false 时瞬间定位（首次进入会话用，避免整屏滑动动画）。
+  /// 列表是否已停在底部（reverse 列表 offset 0 即视觉底部）。
+  /// 新消息在 reverse 列表下直接追加到视觉底部，已贴底时无需再滚动。
+  bool _isAtBottom() {
+    if (!_scrollController.hasClients) return true;
+    return _scrollController.position.pixels <= 1;
+  }
+
+  /// 滚动到底部。列表为 reverse: true，offset 0 即视觉底部。
   void _scrollToBottom({bool animate = true}) {
     if (_scrollController.hasClients) {
       if (animate) {
         Future.delayed(const Duration(milliseconds: 100), () {
           if (!_scrollController.hasClients) return;
           _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
+            0,
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOut,
           );
         });
       } else {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        _scrollController.jumpTo(0);
       }
     }
   }
@@ -112,7 +122,7 @@ class _ChatScreenState extends State<ChatScreen>
   void _scrollToBottomWhileKeyboardShows() {
     void follow() {
       if (!mounted || !_scrollController.hasClients) return;
-      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      _scrollController.jumpTo(0);
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) => follow());
@@ -712,11 +722,11 @@ class _ChatScreenState extends State<ChatScreen>
     final day = DateTime(time.year, time.month, time.day);
     String text;
     if (day == today) {
-      text = DateFormat('HH:mm').format(time);
+      text = _timeFmt.format(time);
     } else if (day.year == now.year) {
-      text = DateFormat('M月d日 HH:mm').format(time);
+      text = _dateFmt.format(time);
     } else {
-      text = DateFormat('yyyy年M月d日 HH:mm').format(time);
+      text = _fullFmt.format(time);
     }
     return Center(
       child: Container(
@@ -864,6 +874,8 @@ class _ChatScreenState extends State<ChatScreen>
     try {
       final supported = await LLMService.testImageSupport(model);
       if (!mounted) return supported;
+      // 记住检测结果：视觉模型检测过一次后，聊天页直接放开图片发送
+      await context.read<ApiProvider>().setVisionSupported(model.id, supported);
       _showFeatureResult(
         supported
             ? '「${model.displayName}」支持图片发送，【相册】【拍照】已开启。'
@@ -1029,6 +1041,12 @@ class _ChatScreenState extends State<ChatScreen>
   Widget build(BuildContext context) {
     // 实时显示名：优先使用角色资料中的备注/昵称
     final chatProvider = context.watch<ChatProvider>();
+    // 当前模型是否已检测为视觉模型（检测过一次即记住）：
+    // 命中缓存则直接放开聊天页的图片发送，无需重复检测
+    final api = context.watch<ApiProvider>();
+    final chatSettings = context.watch<ChatSettingsProvider>();
+    final visionReady =
+        api.isVisionSupported(chatSettings.selectedModelId) == true;
     final conversation = chatProvider.conversations
         .where((c) => c.id == widget.conversationId)
         .firstOrNull;
@@ -1046,7 +1064,7 @@ class _ChatScreenState extends State<ChatScreen>
       _keyboardVisible = true;
       if (_scrollController.hasClients) {
         final position = _scrollController.position;
-        if (position.pixels >= position.maxScrollExtent - 1) {
+        if (position.pixels <= 1) {
           _scrollToBottomWhileKeyboardShows();
         }
       }
@@ -1094,12 +1112,13 @@ class _ChatScreenState extends State<ChatScreen>
                     chatProvider.getMessages(widget.conversationId);
 
                 // 消息条数增加（AI 逐条回复等）且界面可见时自动滚动到底部；
-                // 首次进入不触发（由 _initialScrollDone 逻辑做无动画定位）
+                // 首次进入 reverse 列表初始即在底部，不触发滚动；
+                // 已贴底时新消息直接可见，无需再调度滚动
                 if (messages.length != _lastRenderedCount) {
                   final added = _lastRenderedCount >= 0 &&
                       messages.length > _lastRenderedCount;
                   _lastRenderedCount = messages.length;
-                  if (added) _scrollToBottom();
+                  if (added && !_isAtBottom()) _scrollToBottom();
                 }
 
                 // 双方头像（base64）
@@ -1144,24 +1163,21 @@ class _ChatScreenState extends State<ChatScreen>
                   );
                 }
 
-                // 首次进入会话：瞬间定位到底部（不带动画，避免整屏滑动）；
-                // 之后的滚动交给消息渲染逻辑（动画滚动），此处不再重复触发。
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!_initialScrollDone) {
-                    _initialScrollDone = true;
-                    _scrollToBottom(animate: false);
-                  }
-                });
-
+                // 列表使用 reverse: true，首帧即停在底部（最新消息），
+                // 不会出现"从顶部滑到底部"的视觉。
                 return Container(
                   color: context.chatBgColor,
                   child: ListView.builder(
                     controller: _scrollController,
+                    reverse: true,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     itemCount: messages.length,
                     itemBuilder: (context, index) {
-                      final msg = messages[index];
-                      final prev = index > 0 ? messages[index - 1] : null;
+                      // 反向列表：index 0 对应最新一条消息
+                      final msg = messages[messages.length - 1 - index];
+                      final prev = index < messages.length - 1
+                          ? messages[messages.length - 2 - index]
+                          : null;
                       // 与上一条消息间隔超过 10 分钟才显示时间（第一条总是显示）
                       final showTime = prev == null ||
                           msg.createdAt
@@ -1311,6 +1327,7 @@ class _ChatScreenState extends State<ChatScreen>
             onFeatureDetect: _runFeatureDetect,
             onRequestReply: () => _triggerProactiveMessages(replyToUser: true),
             replyEnabled: replyEnabled,
+            imageReady: visionReady,
           ),
           ],
         ],

@@ -62,8 +62,10 @@ class ApiModel {
 class ApiProvider extends ChangeNotifier {
   static const _storageKey = 'api_models_v1';
   static const _compressModelKey = 'api_compress_model';
+  static const _visionKey = 'model_vision_v1'; // 模型 id → 是否支持图片（视觉）
   List<ApiModel> _models = [];
   String? _compressionModelId; // 会话压缩专用模型（null 表示跟随聊天模型）
+  final Map<String, bool> _visionSupport = {}; // 模型图片能力检测结果缓存
 
   List<ApiModel> get models => List.unmodifiable(_models);
 
@@ -118,6 +120,16 @@ class ApiProvider extends ChangeNotifier {
       }
     }
     _compressionModelId = prefs.getString(_compressModelKey);
+    // 加载图片能力检测结果缓存
+    try {
+      final visionStr = prefs.getString(_visionKey);
+      if (visionStr != null) {
+        final map = jsonDecode(visionStr) as Map<String, dynamic>;
+        _visionSupport
+          ..clear()
+          ..addAll(map.map((k, v) => MapEntry(k, v as bool)));
+      }
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -172,7 +184,29 @@ class ApiProvider extends ChangeNotifier {
 
   Future<void> deleteModel(String id) async {
     _models.removeWhere((m) => m.id == id);
+    _visionSupport.remove(id);
     notifyListeners();
     await _persist();
+    await _persistVision();
+  }
+
+  /// 当前模型是否已检测为"支持图片发送"（视觉模型）。
+  /// 未检测过（或检测失败）返回 null，图片按钮保持禁用。
+  bool? isVisionSupported(String? modelId) {
+    if (modelId == null) return null;
+    return _visionSupport[modelId];
+  }
+
+  /// 记录模型图片（视觉）能力检测结果并持久化：
+  /// 检测过一次后，聊天页直接放开图片发送，无需重复检测。
+  Future<void> setVisionSupported(String modelId, bool supported) async {
+    _visionSupport[modelId] = supported;
+    notifyListeners();
+    await _persistVision();
+  }
+
+  Future<void> _persistVision() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_visionKey, jsonEncode(_visionSupport));
   }
 }

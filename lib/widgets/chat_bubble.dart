@@ -309,6 +309,9 @@ class _ChatBubbleState extends State<ChatBubble> {
 
   /// 图片消息显示
   Widget _buildImageContent(BuildContext context) {
+    // 按实际显示尺寸（240 * 屏幕像素密度）解码图片，避免把原始大图全量解码到内存，
+    // 图片消息较多时能显著降低内存占用与滚动卡顿
+    final decodeSize = (240 * MediaQuery.devicePixelRatioOf(context)).ceil();
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: ConstrainedBox(
@@ -316,6 +319,9 @@ class _ChatBubbleState extends State<ChatBubble> {
         child: Image.file(
           File(widget.message.content),
           fit: BoxFit.cover,
+          cacheWidth: decodeSize,
+          cacheHeight: decodeSize,
+          gaplessPlayback: true, // 列表重建时复用上一帧，避免图片闪烁
           errorBuilder: (_, __, ___) => Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
