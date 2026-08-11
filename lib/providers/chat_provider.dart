@@ -57,13 +57,14 @@ class ChatProvider extends ChangeNotifier {
   }
 
   /// 新增角色消息时：若用户不在该会话页面则未读 +1（不单独 notify，由调用方统一触发）
-  void _increaseUnread(String conversationId) {
-    if (_activeConversationId == conversationId) return;
+  int _increaseUnread(String conversationId) {
+    if (_activeConversationId == conversationId) return 0;
     final index = _conversations.indexWhere((c) => c.id == conversationId);
-    if (index == -1) return;
+    if (index == -1) return 0;
     final count = _conversations[index].unreadCount + 1;
     _conversations[index] = _conversations[index].copyWith(unreadCount: count);
     debugPrint('[ChatProvider] 未读+1 $conversationId → $count（active=$_activeConversationId）');
+    return count;
   }
 
   /// 清除错误提示（用户点击关闭后调用）
@@ -468,14 +469,15 @@ class ChatProvider extends ChangeNotifier {
     _updateConversationLastMessage(conversationId, content);
     // 不在该会话页面时记未读并发送系统通知
     if (_activeConversationId != conversationId) {
-      _increaseUnread(conversationId);
+      final unreadCount = _increaseUnread(conversationId);
       final index = _conversations.indexWhere((c) => c.id == conversationId);
       if (index != -1) {
         final conv = _conversations[index];
         NotificationService.instance.showCharacterNotification(
-          notificationId: conversationId.hashCode & 0x7fffffff,
+          conversationId: conversationId,
           characterName: conv.characterName,
           content: content,
+          unreadCount: unreadCount,
           avatarBase64: conv.characterAvatar,
         );
       }

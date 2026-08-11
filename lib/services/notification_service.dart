@@ -46,15 +46,31 @@ class NotificationService {
     _initialized = true;
   }
 
-  /// 发送一条角色新消息通知。[notificationId] 按会话稳定生成，
-  /// 同一会话的多条新消息会更新同一条通知（显示最新内容），避免通知堆积。
+  /// 已分配的通知 id（同一会话稳定同一 id，不同会话之间避免碰撞）
+  final Set<int> _usedIds = {};
+
+  /// 为会话生成稳定且互不冲突的通知 id：
+  /// 以会话 id 哈希为基准，不同角色（不同会话）id 不同，系统通知栏中各自独立成条；
+  /// 若哈希碰撞则线性探测偏移，确保同一进程内各会话 id 唯一。
+  int _notificationIdFor(String conversationId) {
+    var id = conversationId.hashCode & 0x7fffffff;
+    while (_usedIds.contains(id)) {
+      id = (id + 1) & 0x7fffffff;
+    }
+    _usedIds.add(id);
+    return id;
+  }
+
+  /// 发送一条角色新消息通知。正文前标示 [未读n条]。
   Future<void> showCharacterNotification({
-    required int notificationId,
+    required String conversationId,
     required String characterName,
     required String content,
+    required int unreadCount,
     String avatarBase64 = '',
   }) async {
     if (!await _isUnreadNotifyEnabled()) return;
+    final bodyText = unreadCount > 0 ? '[未读$unreadCount条] $content' : content;
 
     // 角色头像（base64）解码为原始图片字节，作为通知大图标
     Uint8List? largeIconBytes;
@@ -74,7 +90,7 @@ class NotificationService {
         importance: Importance.high,
         priority: Priority.high,
         styleInformation: BigTextStyleInformation(
-          content,
+          bodyText,
           contentTitle: characterName,
           summaryText: 'AiChat',
         ),
@@ -84,9 +100,9 @@ class NotificationService {
       ),
     );
     await _plugin.show(
-      id: notificationId,
+      id: _notificationIdFor(conversationId),
       title: characterName,
-      body: content,
+      body: bodyText,
       notificationDetails: details,
     );
   }
