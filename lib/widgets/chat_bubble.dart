@@ -88,13 +88,13 @@ class _ChatBubbleState extends State<ChatBubble> {
                       : null),
               child: Container(
                 key: _bubbleKey,
-                // 图片消息不包裹气泡（透明背景、无内边距），仅多选时显示选中描边
-                padding: isImage
+                // 图片/文件消息不包裹气泡（透明背景、无内边距），仅多选时显示选中描边
+                padding: isImage || isFile
                     ? EdgeInsets.all(widget.selected ? 2 : 0)
                     : const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: isImage
+                  color: isImage || isFile
                       ? CupertinoColors.transparent
                       : (isUser
                           ? context.bubbleSelfColor
@@ -103,7 +103,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                   border: Border.all(
                     color: widget.selected
                         ? context.accentColor
-                        : (isImage
+                        : (isImage || isFile
                             ? CupertinoColors.transparent
                             : context.separatorColor),
                     width: widget.selected ? 1.5 : 0.5,

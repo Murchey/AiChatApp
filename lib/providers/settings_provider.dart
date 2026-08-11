@@ -79,11 +79,14 @@ class SettingsProvider extends ChangeNotifier {
   bool _autoCheckUpdate = true;
   // 更新代理地址（默认第一个内置加速源）
   String _updateProxyUrl = kProxySources.first;
+  // 未读消息发送系统通知
+  bool _unreadNotify = true;
 
   AppThemeMode get themeMode => _themeMode;
   Color get accentColor => _accentColor;
   bool get autoCheckUpdate => _autoCheckUpdate;
   String get updateProxyUrl => _updateProxyUrl;
+  bool get unreadNotify => _unreadNotify;
 
   Color bubbleColor(BubbleColorSlot slot) =>
       _bubbleColors[slot] ?? slot.defaultColor;
@@ -130,6 +133,7 @@ class SettingsProvider extends ChangeNotifier {
     _autoCheckUpdate = prefs.getBool('auto_check_update') ?? true;
     _updateProxyUrl =
         prefs.getString('update_proxy_url') ?? kProxySources.first;
+    _unreadNotify = prefs.getBool('unread_notify') ?? true;
     notifyListeners();
   }
 
@@ -176,6 +180,14 @@ class SettingsProvider extends ChangeNotifier {
     _updateProxyUrl = url;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('update_proxy_url', url);
+    notifyListeners();
+  }
+
+  /// 设置未读消息是否发送系统通知
+  Future<void> setUnreadNotify(bool value) async {
+    _unreadNotify = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('unread_notify', value);
     notifyListeners();
   }
 

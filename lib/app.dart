@@ -5,6 +5,7 @@ import 'config/routes.dart';
 import 'providers/api_provider.dart';
 import 'providers/chat_settings_provider.dart';
 import 'providers/settings_provider.dart';
+import 'services/notification_service.dart';
 
 class AiChatApp extends StatefulWidget {
   const AiChatApp({super.key});
@@ -20,6 +21,8 @@ class _AiChatAppState extends State<AiChatApp> {
     context.read<SettingsProvider>().init();
     context.read<ApiProvider>().init();
     context.read<ChatSettingsProvider>().init();
+    // 初始化系统通知（创建渠道并请求 Android 13+ 通知权限）
+    NotificationService.instance.init();
   }
 
   @override

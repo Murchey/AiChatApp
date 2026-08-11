@@ -357,6 +357,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
+          // 消息通知：角色新消息（未读）发送系统通知
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('消息通知'),
+            children: [
+              CupertinoListTile(
+                title: const Text('未读消息发送系统通知'),
+                subtitle: Text(
+                  settings.unreadNotify
+                      ? '已开启，离开聊天界面时角色新消息将通过系统通知提醒'
+                      : '已关闭',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSwitch(
+                  value: settings.unreadNotify,
+                  onChanged: (v) => settings.setUnreadNotify(v),
+                ),
+              ),
+            ],
+          ),
           // 更新检测：启动时自动检测 + 更新代理地址
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,

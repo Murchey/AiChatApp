@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../models/message.dart';
 import '../models/conversation.dart';
 import '../services/llm_service.dart';
+import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
 import 'api_provider.dart';
 
@@ -465,7 +466,20 @@ class ChatProvider extends ChangeNotifier {
       sender: MessageSender.character,
     ));
     _updateConversationLastMessage(conversationId, content);
-    _increaseUnread(conversationId); // 不在该会话页面时记未读
+    // 不在该会话页面时记未读并发送系统通知
+    if (_activeConversationId != conversationId) {
+      _increaseUnread(conversationId);
+      final index = _conversations.indexWhere((c) => c.id == conversationId);
+      if (index != -1) {
+        final conv = _conversations[index];
+        NotificationService.instance.showCharacterNotification(
+          notificationId: conversationId.hashCode & 0x7fffffff,
+          characterName: conv.characterName,
+          content: content,
+          avatarBase64: conv.characterAvatar,
+        );
+      }
+    }
     notifyListeners();
     _persist();
   }
