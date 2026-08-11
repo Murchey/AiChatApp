@@ -60,7 +60,7 @@ class LLMService {
   static Future<List<String>> generateMessages({
     required ApiModel model,
     required String systemPrompt,
-    List<Map<String, String>> historyMessages = const [],
+    List<Map<String, Object>> historyMessages = const [],
     String outputInstruction = '',
   }) async {
     final raw = await fetchCompletion(
@@ -80,10 +80,77 @@ class LLMService {
     return result;
   }
 
+  /// 发送图片消息：以 OpenAI 兼容的视觉消息格式，把用户选择的图片
+  /// （转 base64 data URL）连同输出指令作为最后一条 user 消息发给模型，
+  /// 让角色"看到"图片后按 JSON 数组格式回复。
+  ///
+  /// [historyMessages] 为最近的文本对话历史（不含本图片），
+  /// [outputInstruction] 复用普通文本的格式强指令。
+  /// 图片读取失败时抛出 [LLMException]（可读提示）。
+  static Future<List<String>> generateVisionReply({
+    required ApiModel model,
+    required String systemPrompt,
+    required List<Map<String, Object>> historyMessages,
+    required String imagePath,
+    required String outputInstruction,
+  }) async {
+    String base64;
+    try {
+      final bytes = await File(imagePath).readAsBytes();
+      base64 = base64Encode(bytes);
+    } catch (_) {
+      throw const LLMException('无法读取图片，请重新选择图片后重试');
+    }
+    final raw = await fetchCompletion(
+      model: model,
+      messages: [
+        {'role': 'system', 'content': systemPrompt},
+        ...historyMessages,
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'text', 'text': outputInstruction.trim()},
+            {
+              'type': 'image_url',
+              'image_url': {
+                'url': 'data:${_imageMime(imagePath)};base64,$base64',
+              },
+            },
+          ],
+        },
+      ],
+      temperature: 0.9,
+      maxTokens: 512,
+    );
+    debugPrint('[LLMService] 模型原始响应: $raw');
+    final result = parseMessages(raw);
+    debugPrint('[LLMService] 解析结果(${result.length}条): $result');
+    return result;
+  }
+
+  /// 按文件扩展名推断图片 MIME（OpenAI 视觉格式要求 data URL 带类型）
+  static String _imageMime(String path) {
+    final ext = path.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'gif':
+        return 'image/gif';
+      default:
+        return 'image/jpeg';
+    }
+  }
+
   /// 调用对话补全 API，返回原始回复文本。失败抛出 [LLMException]。
+  ///
+  /// [messages] 的 content 既可以是字符串（普通文本消息），
+  /// 也可以是 OpenAI 兼容的多模态 part 数组（[{type:text},{type:image_url}]），
+  /// 由 jsonEncode 直接序列化。
   static Future<String> fetchCompletion({
     required ApiModel model,
-    required List<Map<String, String>> messages,
+    required List<Map<String, Object>> messages,
     double temperature = 0.9,
     int maxTokens = 512,
     bool jsonMode = false,
@@ -136,7 +203,7 @@ class LLMService {
                 as Map<String, dynamic>?;
         final content = message?['content'] as String? ?? '';
         if (content.trim().isEmpty) {
-          throw const LLMException('API 返回内容为空');
+          throw const LLMException('API 返回内容为空，请重新点击对话完成按钮');
         }
         return content;
       }

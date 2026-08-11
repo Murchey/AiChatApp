@@ -88,17 +88,24 @@ class _ChatBubbleState extends State<ChatBubble> {
                       : null),
               child: Container(
                 key: _bubbleKey,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                // 图片消息不包裹气泡（透明背景、无内边距），仅多选时显示选中描边
+                padding: isImage
+                    ? EdgeInsets.all(widget.selected ? 2 : 0)
+                    : const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: isUser
-                      ? context.bubbleSelfColor
-                      : context.bubbleOtherColor,
+                  color: isImage
+                      ? CupertinoColors.transparent
+                      : (isUser
+                          ? context.bubbleSelfColor
+                          : context.bubbleOtherColor),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: widget.selected
                         ? context.accentColor
-                        : context.separatorColor,
+                        : (isImage
+                            ? CupertinoColors.transparent
+                            : context.separatorColor),
                     width: widget.selected ? 1.5 : 0.5,
                   ),
                 ),
@@ -108,10 +115,9 @@ class _ChatBubbleState extends State<ChatBubble> {
                     // 引用块
                     if (message.quoteContent.isNotEmpty)
                       _buildQuoteBlock(context, widget.message),
-                    if (isImage) ...[
-                      _buildImageContent(context),
-                      const SizedBox(height: 6),
-                    ] else if (isFile) ...[
+                    if (isImage)
+                      _buildImageContent(context)
+                    else if (isFile) ...[
                       _buildFileContent(context),
                       const SizedBox(height: 6),
                     ] else ...[

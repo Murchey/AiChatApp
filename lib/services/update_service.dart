@@ -72,8 +72,9 @@ class UpdateService {
       if (gitee == null && github == null) return null;
 
       final latestVersion = gitee?.version ?? github!.version;
+      // 更新说明优先抓取 GitHub 仓库 Release 的说明内容
       final releaseNotes =
-          (gitee?.notes.isNotEmpty ?? false) ? gitee!.notes : (github?.notes ?? '');
+          (github?.notes.isNotEmpty ?? false) ? github!.notes : (gitee?.notes ?? '');
 
       if (!_isNewerVersion(latestVersion, currentVersion)) return null;
       return UpdateInfo(

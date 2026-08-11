@@ -852,7 +852,11 @@ class _ChatScreenState extends State<ChatScreen> {
   /// 触发"角色主动发消息/回复"：组装 Prompt（携带最近对话历史）→ 调用 LLM 生成消息数组 → 顺序渲染
   ///
   /// [replyToUser] 为 true 时（输入框对号按钮触发）模型针对用户最近的消息分条回复。
-  Future<void> _triggerProactiveMessages({bool replyToUser = false}) async {
+  /// [imagePath] 非空时表示"发送图片"：图片会以视觉消息传给模型，让角色看到图片后回复。
+  Future<void> _triggerProactiveMessages({
+    bool replyToUser = false,
+    String? imagePath,
+  }) async {
     if (_isProactiveRunning) return;
 
     final chatSettings = context.read<ChatSettingsProvider>();
@@ -912,6 +916,7 @@ class _ChatScreenState extends State<ChatScreen> {
         compressModel: compressModel,
         contextLength: model.contextLength,
         compressThreshold: chatSettings.compressThreshold,
+        imagePath: imagePath,
       );
       if (!mounted) return;
       if (messages.isEmpty) {
@@ -969,15 +974,18 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) setState(() => _proactiveTyping = false);
   }
 
-  /// 选择图片后发送图片消息
-  void _handlePickImage(String imagePath) {
+  /// 选择图片后发送图片消息：先本地插入图片气泡，再把图片传给模型让角色回复
+  Future<void> _handlePickImage(String imagePath) async {
     final chatSettings = context.read<ChatSettingsProvider>();
-    context.read<ChatProvider>().sendImageMessage(
+    await context.read<ChatProvider>().sendImageMessage(
           conversationId: widget.conversationId,
           imagePath: imagePath,
           characterName: widget.characterName,
           contextCount: chatSettings.contextCount,
         );
+    if (!mounted) return;
+    _scrollToBottom();
+    await _triggerProactiveMessages(imagePath: imagePath, replyToUser: true);
   }
 
   /// 选择文件后发送文件消息

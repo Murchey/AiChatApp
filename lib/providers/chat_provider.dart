@@ -147,12 +147,13 @@ class ChatProvider extends ChangeNotifier {
     required String userRelationship,
     required String userNickname,
     bool replyToUser = false,
-    List<Map<String, String>>? historyMessages,
+    List<Map<String, Object>>? historyMessages,
     int contextCount = 10,
     ApiModel? compressModel,
     bool enableCompression = false,
     int contextLength = 8000,
     double compressThreshold = 0.7,
+    String? imagePath, // 非空时以"图片消息"发给模型（OpenAI 视觉格式）
   }) async {
     // 会话压缩：开启压缩且模型上下文已知时，先检查历史长度是否达到阈值
     if (enableCompression && compressModel != null && contextLength > 0) {
@@ -172,15 +173,27 @@ class ChatProvider extends ChangeNotifier {
       replyToUser: replyToUser,
     );
     try {
+      final outputInstruction = PromptBuilder.buildOutputInstruction(
+        characterName: characterName,
+        replyToUser: replyToUser,
+      );
+      final history = historyMessages ??
+          _buildHistory(conversationId, contextCount);
+      // 图片消息走 OpenAI 兼容视觉格式，让角色"看到"图片后回复
+      if (imagePath != null && imagePath.isNotEmpty) {
+        return await LLMService.generateVisionReply(
+          model: model,
+          systemPrompt: prompt,
+          historyMessages: history,
+          imagePath: imagePath,
+          outputInstruction: outputInstruction,
+        );
+      }
       return await LLMService.generateMessages(
         model: model,
         systemPrompt: prompt,
-        historyMessages:
-            historyMessages ?? _buildHistory(conversationId, contextCount),
-        outputInstruction: PromptBuilder.buildOutputInstruction(
-          characterName: characterName,
-          replyToUser: replyToUser,
-        ),
+        historyMessages: history,
+        outputInstruction: outputInstruction,
       );
     } on LLMException catch (e) {
       _lastError = e.message;
