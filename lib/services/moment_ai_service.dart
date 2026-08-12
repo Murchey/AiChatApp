@@ -77,7 +77,14 @@ class MomentAiService {
       var success = false;
       while (!success && totalFailures < maxFailures) {
         try {
-          final decision = await _askCharacter(model, character, moment);
+          final decision = await _askCharacter(
+            model,
+            character,
+            moment,
+            // 累计已失败 4 次后（即第 5 次尝试起），不再发送自定义
+            // temperature，让模型使用默认值（部分模型不支持 temperature 字段）
+            useDefaultTemperature: totalFailures >= 4,
+          );
           await _applyDecision(
             characterProvider,
             notificationProvider,
@@ -113,29 +120,34 @@ class MomentAiService {
   /// 请求单个角色是否点赞 / 评论，返回解析后的决策。
   ///
   /// 使用角色系统提示词作为 system 消息，动态 JSON 与输出格式指令
-  /// 作为最后一条 user 消息；图文动态时附带 base64 图片（视觉消息）。
+  /// 作为最后一条 user 消息（含用户给角色设置的关系）；图文动态时
+  /// 附带 base64 图片（视觉消息）。
   /// 网络 / API / 解析失败均抛出 [LLMException]，由外层计入失败次数。
+  /// [useDefaultTemperature] 为 true 时不发送 temperature 字段，
+  /// 由模型使用自身默认值。
   static Future<MomentDecision> _askCharacter(
     ApiModel model,
     Character character,
-    Moment moment,
-  ) async {
+    Moment moment, {
+    bool useDefaultTemperature = false,
+  }) async {
     final system = character.systemPrompt.trim().isEmpty
         ? '你是「${character.displayName}」，正在浏览朋友圈。'
         : character.systemPrompt;
+    final relationship = character.userRelationship.trim();
     final messages = <Map<String, Object>>[
       {'role': 'system', 'content': system},
       {
         'role': 'user',
         'content': moment.images.isEmpty
-            ? _buildUserPrompt(moment)
-            : _buildVisionUserContent(moment),
+            ? _buildUserPrompt(moment, relationship)
+            : _buildVisionUserContent(moment, relationship),
       },
     ];
     final result = await LLMService.fetchCompletion(
       model: model,
       messages: messages,
-      temperature: 0.9,
+      temperature: useDefaultTemperature ? null : 0.9,
       maxTokens: 300,
       jsonMode: true,
     );
@@ -143,8 +155,8 @@ class MomentAiService {
     return _parseDecision(result.content);
   }
 
-  /// 动态文本部分：JSON 序列化动态 + 输出格式指令
-  static String _buildUserPrompt(Moment moment) {
+  /// 动态文本部分：JSON 序列化动态 + 用户关系 + 输出格式指令
+  static String _buildUserPrompt(Moment moment, String relationship) {
     final json = jsonEncode({
       'content': moment.content,
       'location': moment.location,
@@ -157,19 +169,21 @@ class MomentAiService {
     });
     return '以下是朋友圈主人刚发布的一条朋友圈（JSON 格式）：\n'
         '$json\n\n'
+        '你和朋友圈主人的关系：'
+        '${relationship.isEmpty ? '普通朋友' : relationship}\n\n'
         '请你以当前角色的身份决定互动方式，只输出一个 JSON 对象，'
         '不要输出任何其他文字，不要用代码块包裹。格式：\n'
         '{"like": true或false, "comment": "评论内容"}\n\n'
         '要求：\n'
         '- like：是否要给这条朋友圈点赞（true 点赞 / false 不点赞）\n'
-        '- comment：若想评论，写 5~30 字中文评论，内容符合角色性格与说话习惯；'
-        '不想评论则填空字符串 ""';
+        '- comment：若想评论，写 5~30 字中文评论，内容符合角色性格、'
+        '你与朋友圈主人的关系以及说话习惯；不想评论则填空字符串 ""';
   }
 
   /// 图文动态：文本指令 + 图片（base64 data URL，OpenAI 视觉格式）
-  static Object _buildVisionUserContent(Moment moment) {
+  static Object _buildVisionUserContent(Moment moment, String relationship) {
     final parts = <Map<String, Object>>[
-      {'type': 'text', 'text': _buildUserPrompt(moment)},
+      {'type': 'text', 'text': _buildUserPrompt(moment, relationship)},
     ];
     for (final path in moment.images.take(9)) {
       try {

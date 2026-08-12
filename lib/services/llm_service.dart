@@ -154,7 +154,9 @@ class LLMService {
   static Future<CompletionResult> fetchCompletion({
     required ApiModel model,
     required List<Map<String, Object>> messages,
-    double temperature = 0.9,
+    // null 表示不发送 temperature 字段（部分模型不支持自定义 temperature，
+    // 让模型使用自身默认值），从第 5 次朋友圈互动重试起使用
+    double? temperature = 0.9,
     int maxTokens = 512,
     bool jsonMode = false,
   }) async {
@@ -195,7 +197,7 @@ class LLMService {
     required String url,
     required ApiModel model,
     required List<Map<String, Object>> messages,
-    required double temperature,
+    required double? temperature,
     required int maxTokens,
     required bool jsonMode,
   }) async {
@@ -214,7 +216,7 @@ class LLMService {
         'messages': messages,
         'stream': false,
         'max_tokens': maxTokens,
-        'temperature': temperature,
+        if (temperature != null) 'temperature': temperature,
         if (jsonMode) 'response_format': {'type': 'json_object'},
       })));
 
