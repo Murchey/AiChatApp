@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/character.dart';
 import '../models/character_pack_entry.dart';
 import '../models/moment.dart';
+import '../models/moments_pack_entry.dart';
 
 /// 角色包（.zip）解析与导出服务
 ///
@@ -145,7 +146,7 @@ class CharacterPackService {
       }
     }
 
-    final moments = await _parseMoments(dir, files);
+    final moments = await _extractMoments(dir, files);
 
     return Character(
       id: 'import_${DateTime.now().microsecondsSinceEpoch}',
@@ -165,27 +166,34 @@ class CharacterPackService {
     );
   }
 
-  /// 解析角色目录下的 `moments/moments.json`（朋友圈），并把引用的图片
-  /// 提取到应用文档目录（参考聊天记录导入），返回 [Moment] 列表。
+  /// 解析角色目录下的朋友圈（`moments/moments.json` 或目录内直接放置的
+  /// `moments.json`），并把引用的图片提取到应用文档目录，返回 [Moment] 列表。
   ///
+  /// [charDir] 为 zip 内角色目录的完整路径（如 `Sample1/爱弥斯`）。兼容两种布局：
+  ///   - `角色目录/moments/moments.json` + `角色目录/moments/files/`（角色包内布局）
+  ///   - `角色目录/moments.json` + `角色目录/files/`（朋友圈数据包布局）
   /// 图片缺失或提取失败时保留原相对路径字符串（如 `files/01.jpg`），
   /// 由展示层做容错，不中断整个角色的导入。
-  static Future<List<Moment>> _parseMoments(
-    String dir,
+  static Future<List<Moment>> _extractMoments(
+    String charDir,
     List<ArchiveFile> files,
   ) async {
-    // 定位 moments/moments.json，并建立 包内相对路径 -> 文件 的映射
-    ArchiveFile? jsonFile;
+    final normDir = charDir.replaceAll('\\', '/');
     final fileMap = <String, ArchiveFile>{};
+    ArchiveFile? jsonFile;
+    String? baseDir; // 包含 moments.json 的目录（图片相对路径的基准目录）
     for (final f in files) {
       final name = f.name.replaceAll('\\', '/');
       fileMap[name] = f;
-      if (name.toLowerCase().endsWith('/moments/moments.json') ||
-          name.toLowerCase() == 'moments/moments.json') {
+      if (name == '$normDir/moments/moments.json') {
         jsonFile = f;
+        baseDir = '$normDir/moments';
+      } else if (name == '$normDir/moments.json' && jsonFile == null) {
+        jsonFile = f;
+        baseDir = normDir;
       }
     }
-    if (jsonFile == null) return const [];
+    if (jsonFile == null || baseDir == null) return const [];
 
     final Map<String, dynamic> root;
     try {
@@ -199,7 +207,7 @@ class CharacterPackService {
     // 提取目录：应用文档目录/moment_import_{时间戳}/
     final docDir = await getApplicationDocumentsDirectory();
     final importDir = Directory(
-      '${docDir.path}/moment_import_${DateTime.now().millisecondsSinceEpoch}',
+      '${docDir.path}/moment_import_${DateTime.now().microsecondsSinceEpoch}',
     );
     await importDir.create(recursive: true);
 
@@ -212,7 +220,7 @@ class CharacterPackService {
           .toList() ??
           <String>[]) {
         final norm = rel.replaceAll('\\', '/');
-        final entry = fileMap['$dir/moments/$norm'] ?? fileMap[norm];
+        final entry = fileMap['$baseDir/$norm'] ?? fileMap[norm];
         if (entry != null) {
           try {
             final safeName = _safeFileName(norm.split('/').last);
@@ -240,6 +248,73 @@ class CharacterPackService {
             [],
         createdAt: DateTime.tryParse(map['created_at'] as String? ?? ''),
       ));
+    }
+    return result;
+  }
+
+  /// 解析朋友圈数据包 zip，返回各角色的朋友圈条目。
+  ///
+  /// 兼容两种目录结构（是否带顶层总包名均可）：
+  ///   - `总包名/角色名/moments.json` + `角色名/files/` 图片文件夹（标准导出结构）
+  ///   - `角色名/moments.json` + `角色名/files/` 图片文件夹
+  /// 角色名取角色文件夹名；同名角色文件夹被去重，zip 中无任何
+  /// moments.json 时抛出异常。
+  static Future<List<MomentsPackEntry>> parseMomentsPack(String zipPath) async {
+    final bytes = File(zipPath).readAsBytesSync();
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes);
+    } catch (_) {
+      throw const FormatException('无法解析 zip 文件，请确认选择的是正确的朋友圈数据包');
+    }
+
+    // 修复文件名乱码并收集所有文件
+    final allFiles = <ArchiveFile>[];
+    for (final file in archive) {
+      if (!file.isFile) continue;
+      final name = _fixFileName(file.name.replaceAll('\\', '/'));
+      file.name = name;
+      allFiles.add(file);
+    }
+
+    // 定位每个包含 moments.json 的角色目录（moments.json 直接位于角色文件夹内）
+    final charDirs = <String>{};
+    for (final f in allFiles) {
+      final segs = f.name.split('/');
+      if (segs.last.toLowerCase() != 'moments.json') continue;
+      if (segs.length < 2) continue; // 忽略 zip 根目录下的 moments.json
+      // .../角色名/moments.json
+      charDirs.add(segs.sublist(0, segs.length - 1).join('/'));
+    }
+    if (charDirs.isEmpty) {
+      throw const FormatException('该 zip 中没有找到朋友圈数据（需包含 moments.json 的角色文件夹）');
+    }
+
+    // 所有角色目录位于同一父目录下时，把该层视为总包名并去掉
+    final parents = charDirs.map((d) {
+      final i = d.lastIndexOf('/');
+      return i < 0 ? '' : d.substring(0, i);
+    }).toSet();
+    final stripTop = parents.length == 1 && parents.first.isNotEmpty;
+
+    final result = <MomentsPackEntry>[];
+    final seenNames = <String>{};
+    for (final dir in charDirs) {
+      final path = stripTop && dir.contains('/')
+          ? dir.substring(dir.indexOf('/') + 1)
+          : dir;
+      final charName = path.split('/').last;
+      if (charName.isEmpty || !seenNames.add(charName)) continue;
+      try {
+        final moments = await _extractMoments(dir, allFiles);
+        result.add(MomentsPackEntry(characterName: charName, moments: moments));
+      } catch (e) {
+        result.add(MomentsPackEntry(
+          characterName: charName,
+          moments: const [],
+          error: '$e',
+        ));
+      }
     }
     return result;
   }
@@ -333,6 +408,66 @@ class CharacterPackService {
     return file.path;
   }
 
+  /// 将选中的角色导出为 zip 朋友圈数据包（保存到下载目录），返回保存路径。
+  ///
+  /// 导出结构与导入兼容（可回环导入）：
+  ///   `总包名/角色名/moments.json` + `角色名/files/` 图片文件夹
+  static Future<String> exportMomentsPack(
+    List<Character> characters, {
+    String? saveDirectory,
+  }) async {
+    const packageFolder = 'Moments';
+    final archive = Archive();
+    for (final c in characters) {
+      if (c.moments.isEmpty) continue;
+      final folder = '$packageFolder/${c.displayName}';
+      final exported = <Map<String, dynamic>>[];
+      for (final m in c.moments) {
+        final images = <String>[];
+        for (final img in m.images) {
+          final name = img.split(RegExp(r'[/\\]')).last;
+          if (name.isEmpty) continue;
+          final file = File(img);
+          if (file.existsSync()) {
+            archive.addFile(ArchiveFile.bytes(
+              '$folder/files/$name',
+              file.readAsBytesSync(),
+            ));
+            images.add('files/$name');
+          } else {
+            // 本地图片缺失：保留原字符串（可能是导入时未提取成功的相对路径）
+            images.add(img);
+          }
+        }
+        exported.add({
+          'id': m.id,
+          'content': m.content,
+          'images': images,
+          'likes': m.likes,
+          'comments': m.comments.map((e) => e.toJson()).toList(),
+          'created_at': m.createdAt?.toIso8601String(),
+        });
+      }
+      archive.addFile(ArchiveFile.string(
+        '$folder/moments.json',
+        const JsonEncoder.withIndent('    ').convert({
+          'character_name': c.displayName,
+          'moments': exported,
+        }),
+      ));
+    }
+
+    final zipBytes = ZipEncoder().encode(archive);
+
+    final dir = saveDirectory ?? await _defaultSaveDirectory();
+    final now = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    final fileName = '朋友圈_${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
+    final file = File('$dir/$fileName');
+    await file.writeAsBytes(zipBytes);
+    return file.path;
+  }
+
   static Future<String> _defaultSaveDirectory() async {
     try {
       final dir = await getDownloadsDirectory();
@@ -344,7 +479,6 @@ class CharacterPackService {
     } catch (_) {}
     return Directory.systemTemp.path;
   }
-
   /// 解码文本内容：优先严格 UTF-8，失败尝试 GBK（Windows 中文系统常见），最后按原始字节
   static String _decodeUtf8(List<int>? bytes) {
     if (bytes == null) return '';

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
+import '../models/moment.dart';
 import '../utils/pinyin_util.dart';
 
 class CharacterProvider extends ChangeNotifier {
@@ -191,6 +192,15 @@ class CharacterProvider extends ChangeNotifier {
       region: region,
       userRelationship: userRelationship,
     );
+    notifyListeners();
+    await _persistCharacters();
+  }
+
+  /// 更新角色的朋友圈动态并持久化
+  Future<void> updateMoments(String id, List<Moment> moments) async {
+    final index = _characters.indexWhere((c) => c.id == id);
+    if (index == -1) return;
+    _characters[index] = _characters[index].copyWith(moments: moments);
     notifyListeners();
     await _persistCharacters();
   }

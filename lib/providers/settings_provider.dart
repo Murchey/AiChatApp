@@ -6,6 +6,9 @@ import '../services/update_service.dart';
 /// 明暗模式：跟随系统 / 浅色 / 深色
 enum AppThemeMode { system, light, dark }
 
+/// 全局角色头像框样式：方形 / 仿 QQ 圆形
+enum AvatarFrameStyle { square, circle }
+
 /// 聊天气泡颜色设置项：自己/对方 × 浅色/深色
 enum BubbleColorSlot { selfLight, otherLight, selfDark, otherDark }
 
@@ -81,12 +84,15 @@ class SettingsProvider extends ChangeNotifier {
   String _updateProxyUrl = kProxySources.first;
   // 未读消息发送系统通知
   bool _unreadNotify = true;
+  // 全局角色头像框样式（默认方形）
+  AvatarFrameStyle _avatarFrameStyle = AvatarFrameStyle.square;
 
   AppThemeMode get themeMode => _themeMode;
   Color get accentColor => _accentColor;
   bool get autoCheckUpdate => _autoCheckUpdate;
   String get updateProxyUrl => _updateProxyUrl;
   bool get unreadNotify => _unreadNotify;
+  AvatarFrameStyle get avatarFrameStyle => _avatarFrameStyle;
 
   Color bubbleColor(BubbleColorSlot slot) =>
       _bubbleColors[slot] ?? slot.defaultColor;
@@ -134,6 +140,10 @@ class SettingsProvider extends ChangeNotifier {
     _updateProxyUrl =
         prefs.getString('update_proxy_url') ?? kProxySources.first;
     _unreadNotify = prefs.getBool('unread_notify') ?? true;
+    _avatarFrameStyle = AvatarFrameStyle.values.firstWhere(
+      (s) => s.name == prefs.getString('avatar_frame_style'),
+      orElse: () => AvatarFrameStyle.square,
+    );
     notifyListeners();
   }
 
@@ -188,6 +198,14 @@ class SettingsProvider extends ChangeNotifier {
     _unreadNotify = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('unread_notify', value);
+    notifyListeners();
+  }
+
+  /// 设置全局角色头像框样式（方形 / 圆形）
+  Future<void> setAvatarFrameStyle(AvatarFrameStyle style) async {
+    _avatarFrameStyle = style;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('avatar_frame_style', style.name);
     notifyListeners();
   }
 

@@ -1,9 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 import '../config/theme.dart';
 import '../models/message.dart';
+import '../widgets/character_avatar.dart';
 
 /// 合并转发详情页：展示原始的聊天对话。
 ///
@@ -95,33 +95,7 @@ class ForwardDetailScreen extends StatelessWidget {
   }
 
   Widget _buildAvatar(BuildContext context, String avatarBase64) {
-    if (avatarBase64.isNotEmpty) {
-      return Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          image: DecorationImage(
-            image: MemoryImage(base64Decode(avatarBase64)),
-            fit: BoxFit.cover,
-          ),
-        ),
-      );
-    }
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: context.accentColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        CupertinoIcons.person_fill,
-        size: 22,
-        color: context.accentColor,
-      ),
-    );
+    return CharacterAvatar(base64: avatarBase64, size: 40);
   }
 
   Widget _buildBubble(BuildContext context, ForwardItem item) {

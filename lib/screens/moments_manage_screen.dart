@@ -3,52 +3,52 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
+import '../models/moments_pack_entry.dart';
 import '../providers/character_provider.dart';
 import '../services/character_pack_service.dart';
-import '../utils/character_pack_picker.dart';
+import '../utils/file_picker_helper.dart';
 import '../widgets/character_avatar.dart';
-import 'chat_detail_screen.dart';
-import 'character_import_screen.dart';
+import 'character_detail_screen.dart';
 
-/// 管理当前角色：勾选删除 / 导出角色包 / 添加自定义角色 / 导入角色包
-class CharacterManageScreen extends StatefulWidget {
-  const CharacterManageScreen({super.key});
+/// 管理当前朋友圈：二级菜单页。
+/// 顶部为「导入朋友圈数据包」入口，下方为已有朋友圈的角色列表（可勾选），
+/// 底部「导出选中」将所选角色的全部朋友圈打包为 zip 数据包。
+class MomentsManageScreen extends StatefulWidget {
+  const MomentsManageScreen({super.key});
 
   @override
-  State<CharacterManageScreen> createState() => _CharacterManageScreenState();
+  State<MomentsManageScreen> createState() => _MomentsManageScreenState();
 }
 
-class _CharacterManageScreenState extends State<CharacterManageScreen> {
+class _MomentsManageScreenState extends State<MomentsManageScreen> {
   final Set<String> _selected = {};
   bool _busy = false; // 正在解析/导出中
 
   List<Character> get _selectedCharacters {
     final provider = context.read<CharacterProvider>();
     return provider.characters
-        .where((c) => _selected.contains(c.id))
+        .where((c) => _selected.contains(c.id) && c.moments.isNotEmpty)
         .toList();
   }
 
-  /// 选择 zip 角色包并解析，进入勾选导入页
+  /// 选择 zip 朋友圈数据包并解析导入
   Future<void> _pickAndImportPack() async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final result = await pickAndParseCharacterPack();
-      if (result == null || !mounted) return;
-      if (result.entries.isEmpty) {
-        _showTip('该 zip 中没有找到角色包（需包含 Profile.json 的角色文件夹）');
+      final file = await FilePickerHelper.pickFile();
+      if (file == null || !mounted) return;
+      if (!file.name.toLowerCase().endsWith('.zip')) {
+        _showTip('请选择 .zip 格式的朋友圈数据包文件');
         return;
       }
-      await Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (_) => CharacterImportScreen(
-            entries: result.entries,
-            zipName: result.name,
-          ),
-        ),
-      );
+      final entries = await CharacterPackService.parseMomentsPack(file.path);
+      if (!mounted) return;
+      if (entries.isEmpty) {
+        _showTip('该 zip 中没有找到朋友圈数据（需包含 moments.json 的角色文件夹）');
+        return;
+      }
+      await _confirmImport(entries);
     } catch (e) {
       if (mounted) _showTip('导入失败：$e');
     } finally {
@@ -56,20 +56,100 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
     }
   }
 
-  /// 导出选中的角色为 zip 角色包
+  /// 确认导入：匹配已有角色则更新其朋友圈，未匹配则新建角色
+  Future<void> _confirmImport(List<MomentsPackEntry> entries) async {
+    final valid = entries
+        .where((e) => e.error == null && e.moments.isNotEmpty)
+        .toList();
+    if (valid.isEmpty) {
+      _showTip('该 zip 中没有可导入的朋友圈数据');
+      return;
+    }
+
+    final provider = context.read<CharacterProvider>();
+    final existing = <String, Character>{
+      for (final c in provider.characters) c.displayName: c,
+    };
+    var updateCount = 0;
+    final createNames = <String>[];
+    for (final e in valid) {
+      if (existing.containsKey(e.characterName)) {
+        updateCount++;
+      } else {
+        createNames.add(e.characterName);
+      }
+    }
+
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('导入朋友圈数据'),
+        content: Text(
+          '将导入 ${valid.length} 个角色的朋友圈：'
+          '$updateCount 个更新到已有角色'
+          '${createNames.isEmpty ? '' : '，${createNames.length} 个将新建角色（${createNames.join('、')}）'}。',
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    var count = 0;
+    for (final e in valid) {
+      final hit = existing[e.characterName];
+      if (hit != null) {
+        await provider.updateMoments(hit.id, e.moments);
+      } else {
+        await provider.addCharacter(Character(
+          id: const Uuid().v4(),
+          name: e.characterName,
+          moments: e.moments,
+        ));
+      }
+      count++;
+    }
+    if (!mounted) return;
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('导入成功'),
+        content: Text('已导入 $count 个角色的朋友圈数据'),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 导出选中的角色为 zip 朋友圈数据包
   Future<void> _exportSelected() async {
     final list = _selectedCharacters;
     if (list.isEmpty || _busy) return;
     setState(() => _busy = true);
     try {
-      final path = await CharacterPackService.exportPack(list);
+      final path = await CharacterPackService.exportMomentsPack(list);
       if (!mounted) return;
       showCupertinoDialog(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
           title: const Text('导出成功'),
           content: Text(
-            '已将 ${list.length} 个角色打包为 zip，可分享给他人：\n\n$path',
+            '已将 ${list.length} 个角色的朋友圈打包为 zip，可分享给他人：\n\n$path',
           ),
           actions: [
             CupertinoDialogAction(
@@ -85,73 +165,6 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  /// 删除选中的角色（带确认）
-  Future<void> _confirmDelete() async {
-    final count = _selected.length;
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('删除角色'),
-        content: Text('确定删除选中的 $count 个角色吗？相关聊天记录不会被删除。'),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('取消'),
-            onPressed: () => Navigator.pop(ctx, false),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    await context
-        .read<CharacterProvider>()
-        .removeCharacters(_selected.toList());
-    if (!mounted) return;
-    setState(() => _selected.clear());
-  }
-
-  /// 添加自定义角色（输入名称）
-  Future<void> _addCustomCharacter() async {
-    final controller = TextEditingController();
-    final name = await showCupertinoDialog<String>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('添加自定义角色'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: CupertinoTextField(
-            controller: controller,
-            autofocus: true,
-            maxLength: 20,
-            placeholder: '输入角色名称',
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
-        ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('取消'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () =>
-                Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('创建'),
-          ),
-        ],
-      ),
-    );
-    if (name == null || name.isEmpty || !mounted) return;
-    final provider = context.read<CharacterProvider>();
-    await provider.addCharacter(Character(id: const Uuid().v4(), name: name));
-    if (!mounted) return;
-    _showTip('已创建角色「$name」，点击列表中的角色可编辑头像、提示词等资料');
   }
 
   void _showTip(String message) {
@@ -174,26 +187,32 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<CharacterProvider>();
-    final hasSelection = _selected.isNotEmpty;
+    final momentsCharacters = provider.characters
+        .where((c) => c.moments.isNotEmpty)
+        .toList();
+    final selectedCount = _selected.length;
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: const Text('管理角色'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _addCustomCharacter,
-          child: Text(
-            '添加',
-            style: TextStyle(
-              color: context.accentColor,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
+        middle: const Text('管理朋友圈'),
+        trailing: momentsCharacters.isNotEmpty &&
+                selectedCount < momentsCharacters.length
+            ? CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () {
+                  setState(() {
+                    _selected
+                      ..clear()
+                      ..addAll(momentsCharacters.map((c) => c.id));
+                  });
+                },
+                child: const Text('全选'),
+              )
+            : null,
       ),
       child: Column(
         children: [
-          // 导入角色包入口
+          // 导入朋友圈数据包入口
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
             decoration: BoxDecoration(
@@ -207,9 +226,9 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
                   CupertinoIcons.archivebox,
                   color: context.accentColor,
                 ),
-                title: const Text('导入角色包'),
+                title: const Text('导入朋友圈数据包'),
                 subtitle: Text(
-                  '从 zip 文件导入角色',
+                  '从 zip 文件导入朋友圈数据',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -226,45 +245,43 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
               ),
             ],
           ),
-          // 角色列表
+          // 角色列表（仅展示已有朋友圈的角色，可勾选）
           Expanded(
-            child: provider.characters.isEmpty
+            child: momentsCharacters.isEmpty
                 ? Center(
-                    child: Text(
-                      '暂无角色',
-                      style: TextStyle(color: context.textSecondaryColor),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
+                      child: Text(
+                        '暂无朋友圈数据，点击上方「导入朋友圈数据包」导入',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
                     ),
                   )
                 : ListView.separated(
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: provider.characters.length,
+                    itemCount: momentsCharacters.length,
                     separatorBuilder: (context, index) => Container(
                       height: 0.5,
                       margin: const EdgeInsets.only(left: 100),
                       color: context.separatorColor,
                     ),
                     itemBuilder: (context, index) {
-                      final character = provider.characters[index];
+                      final character = momentsCharacters[index];
                       final isSelected = _selected.contains(character.id);
-                      final subtitle = character.signature.isEmpty
-                          ? (character.description.isEmpty
-                              ? (character.systemPrompt.isEmpty
-                                  ? '点击进入编辑角色资料'
-                                  : character.systemPrompt)
-                              : character.description)
-                          : character.signature;
                       return GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
-                          // 进入角色卡片页，可编辑资料信息与提示词
+                          // 点击角色条目进入其空间页查看朋友圈
                           Navigator.push(
                             context,
                             CupertinoPageRoute(
-                              builder: (_) => ChatDetailScreen(
-                                conversationId: '',
-                                characterName: character.name,
+                              builder: (_) => CharacterDetailScreen(
                                 characterId: character.id,
-                                showChatManage: false,
                               ),
                             ),
                           );
@@ -279,6 +296,7 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
                             children: [
                               // 勾选框（点击只切换选中状态）
                               GestureDetector(
+                                behavior: HitTestBehavior.opaque,
                                 onTap: () {
                                   setState(() {
                                     if (isSelected) {
@@ -288,14 +306,17 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
                                     }
                                   });
                                 },
-                                child: Icon(
-                                  isSelected
-                                      ? CupertinoIcons.checkmark_circle_fill
-                                      : CupertinoIcons.circle,
-                                  size: 24,
-                                  color: isSelected
-                                      ? context.accentColor
-                                      : CupertinoColors.systemGrey,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2),
+                                  child: Icon(
+                                    isSelected
+                                        ? CupertinoIcons.checkmark_circle_fill
+                                        : CupertinoIcons.circle,
+                                    size: 24,
+                                    color: isSelected
+                                        ? context.accentColor
+                                        : CupertinoColors.systemGrey,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -316,9 +337,7 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      subtitle,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                      '${character.moments.length} 条动态',
                                       style: TextStyle(
                                         fontSize: 13,
                                         color: context.textSecondaryColor,
@@ -340,41 +359,21 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
                     },
                   ),
           ),
-          // 底部操作栏
+          // 底部操作栏：导出选中的角色朋友圈
           SafeArea(
             top: false,
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: CupertinoButton.filled(
-                      onPressed: hasSelection ? _confirmDelete : null,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      child: Text(
-                        hasSelection ? '删除选中' : '删除',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+              child: CupertinoButton.filled(
+                onPressed: selectedCount == 0 ? null : _exportSelected,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Text(
+                  selectedCount == 0 ? '导出选中' : '导出选中 ($selectedCount)',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: CupertinoButton.filled(
-                      onPressed: hasSelection ? _exportSelected : null,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      child: Text(
-                        hasSelection ? '导出选中' : '导出',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),

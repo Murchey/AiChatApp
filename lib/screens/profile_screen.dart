@@ -8,11 +8,10 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/update_service.dart';
-import '../utils/character_pack_picker.dart';
 import '../widgets/update_dialogs.dart';
 import 'api_settings_screen.dart';
-import 'character_import_screen.dart';
 import 'character_manage_screen.dart';
+import 'moments_manage_screen.dart';
 import 'profile_edit_screen.dart';
 import 'settings_screen.dart';
 
@@ -145,16 +144,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   CupertinoListTile(
                     leading: Icon(
-                      CupertinoIcons.archivebox,
+                      CupertinoIcons.photo,
                       color: context.accentColor,
                     ),
-                    title: const Text('导入角色包'),
+                    title: const Text('管理当前朋友圈'),
+                    subtitle: Text(
+                      '导入 / 管理朋友圈数据',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
                     trailing: Icon(
                       CupertinoIcons.chevron_right,
                       size: 16,
                       color: context.textSecondaryColor,
                     ),
-                    onTap: () => _importCharacterPack(context),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => const MomentsManageScreen(),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -298,29 +311,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         },
       ),
     );
-  }
-
-  /// 选择 zip 角色包并进入勾选导入页
-  Future<void> _importCharacterPack(BuildContext context) async {
-    try {
-      final result = await pickAndParseCharacterPack();
-      if (result == null || !context.mounted) return;
-      if (result.entries.isEmpty) {
-        _showTip(context, '该 zip 中没有找到角色包（需包含 Profile.json 的角色文件夹）');
-        return;
-      }
-      await Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (_) => CharacterImportScreen(
-            entries: result.entries,
-            zipName: result.name,
-          ),
-        ),
-      );
-    } catch (e) {
-      if (context.mounted) _showTip(context, '导入失败：$e');
-    }
   }
 
   void _showTip(BuildContext context, String message) {

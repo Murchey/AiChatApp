@@ -1,12 +1,8 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import '../config/theme.dart';
 import '../models/message.dart';
-
-/// base64 头像解码缓存：同一个 base64 只解码一次，并复用同一个 [MemoryImage]。
-/// 若每次重建都新建 [MemoryImage]，图片缓存键会随之改变，导致反复解码、头像频闪。
-final Map<String, MemoryImage> _avatarImageCache = {};
+import 'character_avatar.dart';
 
 /// 微信表情代码 → emoji 映射：AI 按输出规则会携带表情包文字（如 [捂脸]），
 /// 渲染时转成真实 emoji 图标，贴近微信聊天观感。未收录的代码原样保留。
@@ -41,17 +37,6 @@ String _renderEmoji(String text) {
     if (code == null) return match[0]!;
     return _emojiCodeMap[code] ?? match[0]!;
   });
-}
-
-/// 按 base64 取缓存的头像 [MemoryImage]，未缓存则解码并存入（容量有上限防膨胀）
-MemoryImage? avatarImageFor(String base64) {
-  if (base64.isEmpty) return null;
-  final cached = _avatarImageCache[base64];
-  if (cached != null) return cached;
-  if (_avatarImageCache.length > 64) _avatarImageCache.clear();
-  final image = MemoryImage(base64Decode(base64));
-  _avatarImageCache[base64] = image;
-  return image;
 }
 
 class ChatBubble extends StatefulWidget {
@@ -412,35 +397,8 @@ class _ChatBubbleState extends State<ChatBubble> {
     );
   }
 
-  /// 方形头像：已设置显示图片，未设置显示默认用户图标
+  /// 头像：跟随全局设置（方形 / 仿 QQ 圆形），未设置时显示默认用户图标
   Widget _buildAvatar(BuildContext context, String avatarBase64) {
-    final avatarImage = avatarImageFor(avatarBase64);
-    if (avatarImage != null) {
-      return Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          image: DecorationImage(
-            image: avatarImage,
-            fit: BoxFit.cover,
-          ),
-        ),
-      );
-    }
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: context.accentColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        CupertinoIcons.person_fill,
-        size: 22,
-        color: context.accentColor,
-      ),
-    );
+    return CharacterAvatar(base64: avatarBase64, size: 40);
   }
 }

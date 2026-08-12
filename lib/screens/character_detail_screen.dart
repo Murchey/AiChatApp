@@ -7,6 +7,7 @@ import '../config/theme.dart';
 import '../models/character.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
+import '../widgets/character_avatar.dart';
 import '../widgets/moment_card.dart';
 
 /// base64 图片解码缓存：同一 base64 只解码一次并复用同一个 [MemoryImage]。
@@ -552,41 +553,18 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
     );
   }
 
-  /// 角色头像：已设置显示图片，未设置显示默认用户图标
+  /// 角色头像：跟随全局设置（方形 / 仿 QQ 圆形），未设置时显示默认用户图标
   Widget _buildAvatar(Character character) {
-    if (character.avatar.isNotEmpty) {
-      return Container(
-        width: 84,
-        height: 84,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: CupertinoColors.white.withValues(alpha: 0.5),
-            width: 2,
-          ),
-          image: DecorationImage(
-            image: _cachedImage(character.avatar),
-            fit: BoxFit.cover,
-          ),
-        ),
-      );
-    }
-    return Container(
-      width: 84,
-      height: 84,
-      decoration: BoxDecoration(
-        color: CupertinoColors.white.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: CupertinoColors.white.withValues(alpha: 0.5),
-          width: 2,
-        ),
-      ),
-      alignment: Alignment.center,
-      child: const Icon(
-        CupertinoIcons.person_fill,
-        size: 44,
-        color: CupertinoColors.white,
+    return CharacterAvatar(
+      base64: character.avatar,
+      size: 84,
+      borderRadius: BorderRadius.circular(16),
+      backgroundColor: CupertinoColors.white.withValues(alpha: 0.3),
+      iconColor: CupertinoColors.white,
+      iconSize: 44,
+      border: Border.all(
+        color: CupertinoColors.white.withValues(alpha: 0.5),
+        width: 2,
       ),
     );
   }

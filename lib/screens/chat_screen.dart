@@ -15,6 +15,7 @@ import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
 import '../utils/file_picker_helper.dart';
 import '../widgets/chat_bubble.dart';
+import '../widgets/character_avatar.dart';
 import '../widgets/message_input.dart';
 import 'chat_detail_screen.dart';
 import 'chat_settings_screen.dart';
@@ -751,31 +752,11 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildConvAvatar(Conversation c) {
-    final avatarImage = avatarImageFor(c.characterAvatar);
-    if (avatarImage != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: Image(
-          image: avatarImage,
-          width: 40,
-          height: 40,
-          fit: BoxFit.cover,
-        ),
-      );
-    }
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: context.accentColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        CupertinoIcons.person_fill,
-        size: 20,
-        color: context.accentColor,
-      ),
+    // 头像框样式跟随全局设置（方形 / 仿 QQ 圆形）
+    return CharacterAvatar(
+      base64: c.characterAvatar,
+      size: 40,
+      borderRadius: BorderRadius.circular(6),
     );
   }
 

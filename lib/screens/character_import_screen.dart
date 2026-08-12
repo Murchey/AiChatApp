@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -6,6 +5,7 @@ import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/character_pack_entry.dart';
 import '../providers/character_provider.dart';
+import '../widgets/character_avatar.dart';
 
 /// 角色包导入二级页：勾选要导入的角色
 class CharacterImportScreen extends StatefulWidget {
@@ -243,31 +243,28 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
   Widget _buildAvatar(CharacterPackEntry entry) {
     final hasError = entry.error != null;
     final avatar = entry.character.avatar;
-    return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        color: context.accentColor.withValues(alpha: 0.15),
-        image: (!hasError && avatar.isNotEmpty)
-            ? DecorationImage(
-                image: MemoryImage(base64Decode(avatar)),
-                fit: BoxFit.cover,
-              )
-            : null,
-      ),
-      alignment: Alignment.center,
-      child: (!hasError && avatar.isNotEmpty)
-          ? null
-          : Icon(
-              hasError
-                  ? CupertinoIcons.exclamationmark_triangle
-                  : CupertinoIcons.person_fill,
-              size: 24,
-              color: hasError
-                  ? CupertinoColors.systemRed
-                  : context.accentColor,
-            ),
+    // 解析失败的目录用红色警示图标标识（不适用全局头像框样式）
+    if (hasError) {
+      return Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: context.accentColor.withValues(alpha: 0.15),
+        ),
+        alignment: Alignment.center,
+        child: const Icon(
+          CupertinoIcons.exclamationmark_triangle,
+          size: 24,
+          color: CupertinoColors.systemRed,
+        ),
+      );
+    }
+    return CharacterAvatar(
+      base64: avatar,
+      size: 52,
+      borderRadius: BorderRadius.circular(10),
+      iconSize: 24,
     );
   }
 }

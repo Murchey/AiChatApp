@@ -1,19 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
-
-/// 头像 base64 缓存：同一 base64 复用同一 MemoryImage，避免 ImageCache 永不命中导致闪动
-final Map<String, MemoryImage> _momentAvatarCache = {};
-
-MemoryImage _cachedAvatar(String base64) {
-  return _momentAvatarCache.putIfAbsent(base64, () {
-    if (_momentAvatarCache.length > 64) _momentAvatarCache.clear();
-    return MemoryImage(base64Decode(base64));
-  });
-}
+import 'character_avatar.dart';
 
 /// 朋友圈卡片：小头像 + 昵称、正文、图片（最多 9 张，3 列网格）、
 /// 点赞/评论、时间。深色朋友圈风格，用于角色空间页与朋友圈页。
@@ -87,34 +77,12 @@ class MomentCard extends StatelessWidget {
     );
   }
 
-  /// 小头像：已设置用图片，未设置用默认用户图标
+  /// 小头像：已设置用图片，未设置用默认用户图标；形状跟随全局设置
   Widget _avatar(BuildContext context) {
-    if (character.avatar.isNotEmpty) {
-      return Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          image: DecorationImage(
-            image: _cachedAvatar(character.avatar),
-            fit: BoxFit.cover,
-          ),
-        ),
-      );
-    }
-    return Container(
-      width: 34,
-      height: 34,
-      decoration: BoxDecoration(
-        color: context.accentColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        CupertinoIcons.person_fill,
-        size: 20,
-        color: context.accentColor,
-      ),
+    return CharacterAvatar(
+      base64: character.avatar,
+      size: 34,
+      iconSize: 20,
     );
   }
 

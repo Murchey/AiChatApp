@@ -8,6 +8,7 @@ import '../models/conversation.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
 import '../services/prompt_builder.dart';
+import '../widgets/character_avatar.dart';
 import 'character_detail_screen.dart';
 
 /// 聊天详情/角色资料：上半部分可编辑角色卡（备注/昵称/个性签名/定位地区），
@@ -332,32 +333,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         onTap: _openCharacterSpace,
         child: Row(
           children: [
-            // 方形头像（点击更换）
+            // 头像（点击更换，形状跟随全局设置）
             GestureDetector(
               onTap: _pickAvatar,
               child: Stack(
                 children: [
-                  Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: context.accentColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                      image: avatar.isNotEmpty
-                          ? DecorationImage(
-                              image: MemoryImage(base64Decode(avatar)),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                    ),
-                    alignment: Alignment.center,
-                    child: avatar.isEmpty
-                        ? Icon(
-                            CupertinoIcons.person_fill,
-                            size: 36,
-                            color: context.accentColor,
-                          )
-                        : null,
+                  CharacterAvatar(
+                    base64: avatar,
+                    size: 72,
+                    borderRadius: BorderRadius.circular(12),
+                    iconSize: 36,
                   ),
                   // 右下角相机角标
                   Positioned(

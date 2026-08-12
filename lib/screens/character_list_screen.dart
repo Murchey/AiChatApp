@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
@@ -6,6 +5,7 @@ import '../config/theme.dart';
 import '../models/character.dart';
 import '../providers/character_provider.dart';
 import '../widgets/alphabet_index_bar.dart';
+import '../widgets/character_avatar.dart';
 
 class CharacterListScreen extends StatefulWidget {
   const CharacterListScreen({super.key});
@@ -223,35 +223,8 @@ class _CharacterListScreenState extends State<CharacterListScreen> {
     );
   }
 
-  /// 角色头像：已设置显示图片，未设置显示默认用户图标
+  /// 角色头像：跟随全局设置（方形 / 仿 QQ 圆形），未设置时显示默认用户图标
   Widget _buildAvatar(BuildContext context, Character character) {
-    if (character.avatar.isNotEmpty) {
-      return Container(
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: context.accentColor.withValues(alpha: 0.15),
-          image: DecorationImage(
-            image: MemoryImage(base64Decode(character.avatar)),
-            fit: BoxFit.cover,
-          ),
-        ),
-      );
-    }
-    return Container(
-      width: 60,
-      height: 60,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: context.accentColor.withValues(alpha: 0.15),
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        CupertinoIcons.person_fill,
-        size: 30,
-        color: context.accentColor,
-      ),
-    );
+    return CharacterAvatar(base64: character.avatar, size: 60);
   }
 }

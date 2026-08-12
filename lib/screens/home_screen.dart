@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
@@ -8,24 +7,10 @@ import '../providers/character_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/update_service.dart';
 import '../widgets/alphabet_index_bar.dart';
+import '../widgets/character_avatar.dart';
 import '../widgets/update_dialogs.dart';
 import 'moments_screen.dart';
 import 'profile_screen.dart';
-
-/// base64 头像解码缓存：同一个 base64 只解码一次，并复用同一个 [MemoryImage]。
-/// 若每次 build 都新建 [MemoryImage]，图片缓存键会随之改变（Dart 的 List ==
-/// 是引用比较），导致 ImageCache 永不命中、反复解码，进出聊天界面时头像频闪。
-final Map<String, MemoryImage> _avatarImageCache = {};
-
-MemoryImage _cachedAvatarImage(String base64) {
-  return _avatarImageCache.putIfAbsent(
-    base64,
-    () {
-      if (_avatarImageCache.length > 64) _avatarImageCache.clear();
-      return MemoryImage(base64Decode(base64));
-    },
-  );
-}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -501,33 +486,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   }
 
   Widget _buildSquareAvatar(BuildContext context, String name, String avatar) {
-    // 未设置头像时显示默认用户图标
-    if (avatar.isEmpty) {
-      return Container(
-        width: 45,
-        height: 45,
-        decoration: BoxDecoration(
-          color: context.accentColor.withValues(alpha: 0.15),
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          CupertinoIcons.person_fill,
-          size: 24,
-          color: context.accentColor,
-        ),
-      );
-    }
-    return Container(
-      width: 45,
-      height: 45,
-      decoration: BoxDecoration(
-        color: context.accentColor.withValues(alpha: 0.15),
-        image: DecorationImage(
-          image: _cachedAvatarImage(avatar),
-          fit: BoxFit.cover,
-        ),
-      ),
-    );
+    // 头像框样式跟随全局设置（方形 / 仿 QQ 圆形）
+    return CharacterAvatar(base64: avatar, size: 45);
   }
 
   String _formatTime(DateTime time) {

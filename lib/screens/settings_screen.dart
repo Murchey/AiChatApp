@@ -51,6 +51,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  String _avatarFrameLabel(AvatarFrameStyle style) {
+    switch (style) {
+      case AvatarFrameStyle.square:
+        return '方形';
+      case AvatarFrameStyle.circle:
+        return '圆形';
+    }
+  }
+
+  /// 弹出角色头像框样式选择（下拉选项框）
+  void _showAvatarFramePicker(BuildContext context, SettingsProvider settings) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('选择角色头像框样式'),
+        message: const Text('全局生效：聊天、通讯录、朋友圈等所有角色头像'),
+        actions: [
+          for (final style in AvatarFrameStyle.values)
+            CupertinoActionSheetAction(
+              isDefaultAction: settings.avatarFrameStyle == style,
+              onPressed: () {
+                settings.setAvatarFrameStyle(style);
+                Navigator.pop(ctx);
+              },
+              child: Text(_avatarFrameLabel(style)),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+  }
+
   /// 代理源展示文案：内置源显示「代理 N」，自定义显示「自定义」
   String _proxyDisplayText(String url) {
     final idx = kProxySources.indexOf(url);
@@ -185,6 +221,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
                 onTap: () => _showThemePicker(context, settings),
+              ),
+              CupertinoListTile(
+                title: const Text('角色头像框样式'),
+                subtitle: Text(
+                  '方形 / 圆形，作用于所有角色头像',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _avatarFrameLabel(settings.avatarFrameStyle),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      CupertinoIcons.chevron_down,
+                      size: 14,
+                      color: context.textSecondaryColor,
+                    ),
+                  ],
+                ),
+                onTap: () => _showAvatarFramePicker(context, settings),
               ),
             ],
           ),
