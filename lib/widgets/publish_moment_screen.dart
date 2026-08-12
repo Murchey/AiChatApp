@@ -1,0 +1,352 @@
+import 'dart:io';
+import 'package:flutter/cupertino.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
+import '../config/theme.dart';
+import '../models/moment.dart';
+import '../providers/character_provider.dart';
+
+/// 发布 / 编辑朋友圈页面：文字 + 标记位置 + 相册多选图片（最多 9 张）。
+///
+/// 未传 [editingMoment] 时为发布模式：图片复制到应用文档目录 `user_moments/`
+/// 下（保存绝对路径，便于展示与数据包导出），写入「自己」账号的朋友圈并持久化。
+/// 传入 [editingMoment] 时为编辑模式：预填已有内容，保存后以编辑后的
+/// [Moment] 通过 `Navigator.pop` 返回（保持 id / 点赞 / 评论 / 时间不变），
+/// 由调用方替换原动态。
+class PublishMomentScreen extends StatefulWidget {
+  final Moment? editingMoment;
+
+  const PublishMomentScreen({super.key, this.editingMoment});
+
+  @override
+  State<PublishMomentScreen> createState() => _PublishMomentScreenState();
+}
+
+class _PublishMomentScreenState extends State<PublishMomentScreen> {
+  static const int _maxImages = 9;
+
+  final TextEditingController _contentController = TextEditingController();
+  final TextEditingController _locationController = TextEditingController();
+  final List<String> _existingPaths = []; // 编辑模式：已有的本地图片路径
+  final List<XFile> _picked = [];
+  bool _saving = false;
+
+  bool get _isEdit => widget.editingMoment != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final editing = widget.editingMoment;
+    if (editing != null) {
+      _contentController.text = editing.content;
+      _locationController.text = editing.location;
+      _existingPaths.addAll(
+        editing.images.where((p) => File(p).existsSync()),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _contentController.dispose();
+    _locationController.dispose();
+    super.dispose();
+  }
+
+  bool get _canSave =>
+      !_saving &&
+      (_contentController.text.trim().isNotEmpty || _picked.isNotEmpty ||
+          _existingPaths.isNotEmpty);
+
+  Future<void> _pickImages() async {
+    if (_existingPaths.length + _picked.length >= _maxImages) return;
+    final files = await ImagePicker().pickMultiImage(
+      maxWidth: 1280,
+      maxHeight: 1280,
+      imageQuality: 80,
+    );
+    if (files.isEmpty || !mounted) return;
+    setState(() {
+      _picked.addAll(files);
+      final total = _existingPaths.length + _picked.length;
+      if (total > _maxImages) {
+        _picked.removeRange(_maxImages - _existingPaths.length, _picked.length);
+      }
+    });
+  }
+
+  void _removeImage(bool isExisting, int index) {
+    setState(() {
+      if (isExisting) {
+        _existingPaths.removeAt(index);
+      } else {
+        _picked.removeAt(index);
+      }
+    });
+  }
+
+  Future<void> _save() async {
+    if (!_canSave) return;
+    setState(() => _saving = true);
+    try {
+      // 新选图片复制到应用文档目录 user_moments/，存绝对路径
+      final newPaths = [..._existingPaths];
+      if (_picked.isNotEmpty) {
+        final docDir = await getApplicationDocumentsDirectory();
+        final dir = Directory('${docDir.path}/user_moments');
+        await dir.create(recursive: true);
+        final ts = DateTime.now().millisecondsSinceEpoch;
+        for (var i = 0; i < _picked.length; i++) {
+          final source = File(_picked[i].path);
+          if (!source.existsSync()) continue;
+          final target = File(
+              '${dir.path}/moment_${ts}_$i.${_extensionOf(_picked[i].path)}');
+          await target.writeAsBytes(source.readAsBytesSync(), flush: true);
+          newPaths.add(target.path);
+        }
+      }
+      if (!mounted) return;
+      final content = _contentController.text.trim();
+      final location = _locationController.text.trim();
+      if (_isEdit) {
+        final old = widget.editingMoment!;
+        // 清理编辑时被移除的旧图片（仅清理"自己"发布目录 user_moments/ 下）
+        final removed = old.images.where((p) => !newPaths.contains(p)).toList();
+        for (final p in removed) {
+          try {
+            if (p.replaceAll('\\', '/').contains('/user_moments/')) {
+              final f = File(p);
+              if (f.existsSync()) f.deleteSync();
+            }
+          } catch (_) {}
+        }
+        Navigator.pop(
+          context,
+          Moment(
+            id: old.id,
+            content: content,
+            location: location,
+            images: newPaths,
+            likes: old.likes,
+            comments: old.comments,
+            createdAt: old.createdAt,
+          ),
+        );
+      } else {
+        await context.read<CharacterProvider>().publishSelfMoment(
+              content: content,
+              images: newPaths,
+              location: location,
+            );
+        if (!mounted) return;
+        Navigator.pop(context, true);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('保存失败'),
+          content: const Text('保存朋友圈时出错，请重试'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  String _extensionOf(String path) {
+    final dot = path.lastIndexOf('.');
+    if (dot < 0 || dot == path.length - 1) return 'jpg';
+    final ext = path.substring(dot + 1).toLowerCase();
+    const allowed = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'};
+    return allowed.contains(ext) ? ext : 'jpg';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canSave = _canSave;
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        leading: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        middle: Text(_isEdit ? '编辑动态' : '发表动态'),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: canSave ? _save : null,
+          child: Text(
+            _saving
+                ? (_isEdit ? '保存中...' : '发表中...')
+                : (_isEdit ? '保存' : '发表'),
+            style: TextStyle(
+              color: canSave
+                  ? context.accentColor
+                  : context.textSecondaryColor,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: CupertinoTextField(
+              controller: _contentController,
+              autofocus: !_isEdit,
+              maxLines: 8,
+              minLines: 4,
+              maxLength: 500,
+              placeholder: '这一刻的想法...',
+              placeholderStyle: TextStyle(color: context.textSecondaryColor),
+              padding: const EdgeInsets.all(12),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildImageGrid(context),
+          const SizedBox(height: 8),
+          Text(
+            '图片最多 $_maxImages 张',
+            style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+          ),
+          const SizedBox(height: 12),
+          // 标记位置（发布页底部填写项）
+          Container(
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Icon(
+                  CupertinoIcons.location_fill,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: CupertinoTextField(
+                    controller: _locationController,
+                    maxLength: 50,
+                    placeholder: '标记位置',
+                    placeholderStyle:
+                        TextStyle(color: context.textSecondaryColor),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: null,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 已选图片 3 列网格（每张可删除）+ 添加按钮
+  Widget _buildImageGrid(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cell = (screenWidth - 32 - 8) / 3;
+    final items = <Widget>[
+      for (var i = 0; i < _existingPaths.length; i++)
+        _buildImageCell(
+          context,
+          cell,
+          Image.file(File(_existingPaths[i]), fit: BoxFit.cover),
+          onRemove: () => _removeImage(true, i),
+        ),
+      for (var i = 0; i < _picked.length; i++)
+        _buildImageCell(
+          context,
+          cell,
+          Image.file(File(_picked[i].path), fit: BoxFit.cover),
+          onRemove: () => _removeImage(false, i),
+        ),
+    ];
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: [
+        ...items,
+        if (_existingPaths.length + _picked.length < _maxImages)
+          GestureDetector(
+            onTap: _pickImages,
+            child: Container(
+              width: cell,
+              height: cell,
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: context.separatorColor),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                CupertinoIcons.add,
+                size: 28,
+                color: context.textSecondaryColor,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildImageCell(
+    BuildContext context,
+    double cell,
+    Widget image, {
+    required VoidCallback onRemove,
+  }) {
+    return SizedBox(
+      width: cell,
+      height: cell,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: image,
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: CupertinoColors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  CupertinoIcons.xmark,
+                  size: 13,
+                  color: CupertinoColors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

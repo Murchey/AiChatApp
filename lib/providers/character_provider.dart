@@ -12,12 +12,22 @@ class CharacterProvider extends ChangeNotifier {
   static const _storageKey = 'characters_v1';
   static const _deletedKey = 'characters_deleted_v1';
 
+  /// 通讯录中固定的"自己"账号 id：不能发起聊天，仅在空间页查看/发布朋友圈
+  static const String selfCharacterId = 'me';
+
   /// 被用户删除的默认角色 id（删除后重启不恢复）
   Set<String> _deletedDefaultIds = {};
 
   List<Character> get characters => _characters;
   Character? get selectedCharacter => _selectedCharacter;
   bool get isLoading => _isLoading;
+
+  /// "自己"账号（昵称/头像/签名取自用户资料，朋友圈本地持久化）
+  Character? get selfCharacter => getCharacterById(selfCharacterId);
+
+  /// 可被管理（删除 / 导出角色包等）的角色：排除固定的"自己"账号
+  List<Character> get manageableCharacters =>
+      _characters.where((c) => c.id != selfCharacterId).toList();
 
   /// 通讯录：按拼音首字母分组排序（类似手机通讯录）
   List<MapEntry<String, List<Character>>> get sortedCharactersGrouped {
@@ -59,6 +69,11 @@ class CharacterProvider extends ChangeNotifier {
         .where((c) => !_deletedDefaultIds.contains(c.id))
         .toList();
     final defaultIds = defaults.map((c) => c.id).toSet();
+    // "自己"账号：资料取自用户资料（昵称/头像/签名），朋友圈从本地恢复
+    final self = _buildSelfCharacter(
+      customMap[selfCharacterId] as Map<String, dynamic>?,
+      prefs,
+    );
     _characters = [
       ...defaults.map((c) {
         final custom = customMap[c.id];
@@ -83,13 +98,53 @@ class CharacterProvider extends ChangeNotifier {
         }
         return c;
       }),
-      // 恢复用户导入/自定义的角色（不在默认角色中）
+      // 恢复用户导入/自定义的角色（不在默认角色中，排除"自己"）
       ...customMap.entries
-           .where((e) => !defaultIds.contains(e.key) && e.value is Map<String, dynamic>)
+           .where((e) =>
+               !defaultIds.contains(e.key) &&
+               e.key != selfCharacterId &&
+               e.value is Map<String, dynamic>)
            .map((e) => Character.fromJson(e.value as Map<String, dynamic>)),
+      if (self != null) self,
     ];
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// 构建"自己"账号：昵称/头像/签名以用户资料为准（用户未设置时回退到
+  /// 本地存储值），朋友圈动态从本地存储恢复。
+  Character? _buildSelfCharacter(
+    Map<String, dynamic>? stored,
+    SharedPreferences prefs,
+  ) {
+    final nickname = (prefs.getString('user_nickname') ?? '').trim();
+    final avatar = prefs.getString('user_avatar') ?? '';
+    final signature = prefs.getString('user_signature') ?? '';
+    if (stored != null) {
+      final base = Character.fromJson(stored);
+      return Character(
+        id: selfCharacterId,
+        name: nickname.isNotEmpty ? nickname : base.name,
+        avatar: avatar.isNotEmpty ? avatar : base.avatar,
+        signature: signature.isNotEmpty ? signature : base.signature,
+        remark: base.remark,
+        region: base.region,
+        background: base.background,
+        description: base.description,
+        personality: base.personality,
+        greeting: base.greeting,
+        systemPrompt: base.systemPrompt,
+        userRelationship: base.userRelationship,
+        tags: base.tags,
+        moments: base.moments,
+      );
+    }
+    return Character(
+      id: selfCharacterId,
+      name: nickname.isNotEmpty ? nickname : '我',
+      avatar: avatar,
+      signature: signature,
+    );
   }
 
   List<Character> _defaultCharacters() {
@@ -205,6 +260,55 @@ class CharacterProvider extends ChangeNotifier {
     await _persistCharacters();
   }
 
+  /// 同步"自己"账号资料（昵称/头像/签名），与用户资料保持一致
+  Future<void> syncSelfFromUser({
+    String? nickname,
+    String? avatar,
+    String? signature,
+  }) async {
+    final index = _characters.indexWhere((c) => c.id == selfCharacterId);
+    final trimmed = nickname?.trim();
+    if (index == -1) {
+      if (trimmed == null || trimmed.isEmpty) return;
+      _characters.add(Character(
+        id: selfCharacterId,
+        name: trimmed,
+        avatar: avatar ?? '',
+        signature: signature ?? '',
+      ));
+    } else {
+      final cur = _characters[index];
+      _characters[index] = cur.copyWith(
+        name: trimmed != null && trimmed.isNotEmpty ? trimmed : cur.name,
+        avatar: avatar,
+        signature: signature,
+      );
+    }
+    notifyListeners();
+    await _persistCharacters();
+  }
+
+  /// 以"自己"身份发布一条朋友圈（新动态置顶显示）
+  Future<void> publishSelfMoment({
+    required String content,
+    required List<String> images,
+    String location = '',
+  }) async {
+    final index = _characters.indexWhere((c) => c.id == selfCharacterId);
+    if (index == -1) return;
+    final moment = Moment(
+      id: 'moment_${DateTime.now().microsecondsSinceEpoch}',
+      content: content.trim(),
+      location: location.trim(),
+      images: images,
+      createdAt: DateTime.now(),
+    );
+    _characters[index] = _characters[index]
+        .copyWith(moments: [moment, ..._characters[index].moments]);
+    notifyListeners();
+    await _persistCharacters();
+  }
+
   /// 新增角色（导入角色包 / 自定义添加）并持久化
   Future<Character> addCharacter(Character character) async {
     _characters.add(character);
@@ -213,9 +317,10 @@ class CharacterProvider extends ChangeNotifier {
     return character;
   }
 
-  /// 批量删除角色并持久化
+  /// 批量删除角色并持久化（"自己"账号不可删除）
   Future<void> removeCharacters(List<String> ids) async {
-    final idSet = ids.toSet();
+    final idSet = ids.where((id) => id != selfCharacterId).toSet();
+    if (idSet.isEmpty) return;
     _characters.removeWhere((c) => idSet.contains(c.id));
     notifyListeners();
     await _persistCharacters();

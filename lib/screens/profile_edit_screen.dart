@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
+import '../providers/character_provider.dart';
 
 /// 用户资料卡编辑页（微信"个人信息"样式）
 class ProfileEditScreen extends StatefulWidget {
@@ -171,12 +172,19 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   Future<void> _save() async {
     final auth = context.read<AuthProvider>();
+    final characters = context.read<CharacterProvider>();
     await auth.updateProfile(
       nickname: _nicknameController.text,
       avatar: _newAvatarBase64,
       region: _regionController.text,
       signature: _signatureController.text,
       gender: _gender,
+    );
+    // 同步"自己"账号资料（昵称/头像/签名），保持通讯录与空间页一致
+    await characters.syncSelfFromUser(
+      nickname: _nicknameController.text,
+      avatar: _newAvatarBase64,
+      signature: _signatureController.text,
     );
     if (mounted) Navigator.pop(context);
   }

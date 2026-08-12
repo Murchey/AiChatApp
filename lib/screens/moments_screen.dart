@@ -5,18 +5,29 @@ import '../models/character.dart';
 import '../models/moment.dart';
 import '../providers/character_provider.dart';
 import '../widgets/moment_card.dart';
+import '../widgets/publish_moment_screen.dart';
 import 'character_detail_screen.dart';
 
-/// 朋友圈页：按发布时间倒序展示全部通讯录好友的朋友圈动态。
-/// 点击某条动态可进入对应角色的空间页。
+/// 朋友圈页：按发布时间倒序展示全部通讯录好友（含"自己"）的朋友圈动态。
+/// 点击某条动态可进入对应角色/自己的空间页；右上角相机按钮可发布朋友圈。
 class MomentsScreen extends StatelessWidget {
   const MomentsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('朋友圈'),
+      navigationBar: CupertinoNavigationBar(
+        middle: const Text('朋友圈'),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () {
+            Navigator.push(
+              context,
+              CupertinoPageRoute(builder: (_) => const PublishMomentScreen()),
+            );
+          },
+          child: const Icon(CupertinoIcons.camera_fill),
+        ),
       ),
       backgroundColor: context.momentsBgColor,
       child: Consumer<CharacterProvider>(

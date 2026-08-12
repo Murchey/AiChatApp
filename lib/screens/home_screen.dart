@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
+import '../models/character.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/settings_provider.dart';
@@ -296,7 +297,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
             return const Center(child: CupertinoActivityIndicator());
           }
 
-          if (provider.characters.isEmpty) {
+          final self = provider.selfCharacter;
+          if (provider.manageableCharacters.isEmpty && self == null) {
             return Center(
               child: Text(
                 '暂无可用角色',
@@ -305,8 +307,16 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
             );
           }
 
-          // 按拼音首字母分组排序（类似手机通讯录）
-          final groups = provider.sortedCharactersGrouped;
+          // 按拼音首字母分组排序（类似手机通讯录，排除固定的"自己"）
+          final groups = provider.sortedCharactersGrouped
+              .map((g) => MapEntry(
+                    g.key,
+                    g.value
+                        .where((c) => c.id != CharacterProvider.selfCharacterId)
+                        .toList(),
+                  ))
+              .where((g) => g.value.isNotEmpty)
+              .toList();
           final availableLetters = groups.map((g) => g.key).toSet();
           for (final group in groups) {
             _sectionKeys.putIfAbsent(group.key, () => GlobalKey());
@@ -320,6 +330,15 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 child: ListView(
                   padding: const EdgeInsets.only(right: 28),
                   children: [
+                    // 顶部固定的"自己"账号：不能发起聊天，进入自己的空间页
+                    if (self != null) ...[
+                      _buildSelfTile(context, self),
+                      Container(
+                        height: 0.5,
+                        margin: const EdgeInsets.only(left: 61),
+                        color: context.separatorColor,
+                      ),
+                    ],
                     for (final group in groups) ...[
                       // 字母标题
                       Container(
@@ -443,6 +462,48 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           );
         },
       ),
+    );
+  }
+
+  /// 通讯录顶部的"自己"账号条目：不能发起聊天，点击进入自己的空间页查看/发布朋友圈
+  Widget _buildSelfTile(BuildContext context, Character self) {
+    return CupertinoListTile(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      // 同消息列表：显式放宽 leading 尺寸约束
+      leadingSize: 45,
+      leading: _buildSquareAvatar(context, self.name, self.avatar),
+      title: Text(
+        self.name,
+        style: TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w500,
+          color: context.textPrimaryColor,
+        ),
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          self.signature.isEmpty ? '我的朋友圈' : self.signature,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 14,
+            color: context.textSecondaryColor,
+          ),
+        ),
+      ),
+      trailing: Icon(
+        CupertinoIcons.chevron_right,
+        size: 16,
+        color: context.textSecondaryColor,
+      ),
+      onTap: () {
+        Navigator.pushNamed(
+          context,
+          AppRoutes.characterDetail,
+          arguments: CharacterProvider.selfCharacterId,
+        );
+      },
     );
   }
 

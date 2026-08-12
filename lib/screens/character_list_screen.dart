@@ -76,7 +76,8 @@ class _CharacterListScreenState extends State<CharacterListScreen> {
             return const Center(child: CupertinoActivityIndicator());
           }
 
-          if (provider.characters.isEmpty) {
+          final self = provider.selfCharacter;
+          if (provider.manageableCharacters.isEmpty && self == null) {
             return Center(
               child: Text(
                 '暂无可用角色',
@@ -85,8 +86,16 @@ class _CharacterListScreenState extends State<CharacterListScreen> {
             );
           }
 
-          // 按拼音首字母分组排序
-          final groups = provider.sortedCharactersGrouped;
+          // 按拼音首字母分组排序（类似手机通讯录，排除固定的"自己"）
+          final groups = provider.sortedCharactersGrouped
+              .map((g) => MapEntry(
+                    g.key,
+                    g.value
+                        .where((c) => c.id != CharacterProvider.selfCharacterId)
+                        .toList(),
+                  ))
+              .where((g) => g.value.isNotEmpty)
+              .toList();
           // 获取有数据的字母
           final availableLetters = groups.map((g) => g.key).toSet();
           // 为每个分组标题创建 GlobalKey
@@ -102,6 +111,15 @@ class _CharacterListScreenState extends State<CharacterListScreen> {
                 child: ListView(
                   padding: const EdgeInsets.only(right: 28),
                   children: [
+                    // 顶部固定的"自己"账号：不能发起聊天，进入自己的空间页
+                    if (self != null) ...[
+                      _buildSelfTile(context, self),
+                      Container(
+                        height: 0.5,
+                        margin: const EdgeInsets.only(left: 76),
+                        color: context.separatorColor,
+                      ),
+                    ],
                     for (final group in groups) ...[
                       // 字母标题
                       Container(
@@ -220,6 +238,47 @@ class _CharacterListScreenState extends State<CharacterListScreen> {
           );
         },
       ),
+    );
+  }
+
+  /// 通讯录顶部的"自己"账号条目：不能发起聊天，点击进入自己的空间页查看/发布朋友圈
+  Widget _buildSelfTile(BuildContext context, Character self) {
+    return CupertinoListTile(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      leading: _buildAvatar(context, self),
+      title: Text(
+        self.name,
+        style: TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w500,
+          color: context.textPrimaryColor,
+        ),
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          self.signature.isEmpty ? '我的朋友圈' : self.signature,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.4,
+            color: context.textSecondaryColor,
+          ),
+        ),
+      ),
+      trailing: Icon(
+        CupertinoIcons.chevron_right,
+        size: 16,
+        color: context.textSecondaryColor,
+      ),
+      onTap: () {
+        Navigator.pushNamed(
+          context,
+          AppRoutes.characterDetail,
+          arguments: CharacterProvider.selfCharacterId,
+        );
+      },
     );
   }
 

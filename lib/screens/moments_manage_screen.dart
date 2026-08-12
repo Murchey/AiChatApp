@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -167,6 +168,50 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
     }
   }
 
+  /// 删除选中角色的全部朋友圈数据（带确认，角色本身与聊天记录不受影响）
+  Future<void> _confirmDelete() async {
+    final count = _selected.length;
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('删除朋友圈数据'),
+        content: Text('确定删除选中的 $count 个角色的全部朋友圈数据吗？角色与聊天记录不会受影响。'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final provider = context.read<CharacterProvider>();
+    for (final id in _selected) {
+      final list = provider.characters.where((c) => c.id == id).toList();
+      if (list.isEmpty) continue;
+      // 清理该角色朋友圈在 user_moments/ 下的图片文件
+      for (final m in list.first.moments) {
+        for (final p in m.images) {
+          try {
+            if (p.replaceAll('\\', '/').contains('/user_moments/')) {
+              final f = File(p);
+              if (f.existsSync()) f.deleteSync();
+            }
+          } catch (_) {}
+        }
+      }
+      await provider.updateMoments(id, []);
+    }
+    if (!mounted) return;
+    setState(() => _selected.clear());
+    _showTip('已删除 $count 个角色的朋友圈数据');
+  }
+
   void _showTip(String message) {
     showCupertinoDialog(
       context: context,
@@ -282,6 +327,8 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
                             CupertinoPageRoute(
                               builder: (_) => CharacterDetailScreen(
                                 characterId: character.id,
+                                // 管理模式下允许编辑/删除任意角色的动态与评论
+                                manageMode: true,
                               ),
                             ),
                           );
@@ -327,7 +374,10 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      character.displayName,
+                                      character.id ==
+                                              CharacterProvider.selfCharacterId
+                                          ? '${character.displayName}（自己）'
+                                          : character.displayName,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
@@ -359,21 +409,41 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
                     },
                   ),
           ),
-          // 底部操作栏：导出选中的角色朋友圈
+          // 底部操作栏：删除选中 / 导出选中的角色朋友圈
           SafeArea(
             top: false,
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: CupertinoButton.filled(
-                onPressed: selectedCount == 0 ? null : _exportSelected,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Text(
-                  selectedCount == 0 ? '导出选中' : '导出选中 ($selectedCount)',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: CupertinoButton.filled(
+                      onPressed: selectedCount == 0 ? null : _confirmDelete,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      child: Text(
+                        selectedCount == 0 ? '删除' : '删除选中',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: CupertinoButton.filled(
+                      onPressed: selectedCount == 0 ? null : _exportSelected,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      child: Text(
+                        selectedCount == 0 ? '导出选中' : '导出选中 ($selectedCount)',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

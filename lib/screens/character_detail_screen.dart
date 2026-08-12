@@ -5,10 +5,12 @@ import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
+import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/moment_card.dart';
+import '../widgets/publish_moment_screen.dart';
 
 /// base64 图片解码缓存：同一 base64 只解码一次并复用同一个 [MemoryImage]。
 /// 若每次重建都新建 [MemoryImage]，ImageCache 永不命中（Dart 的 List ==
@@ -27,7 +29,15 @@ MemoryImage _cachedImage(String base64) {
 class CharacterDetailScreen extends StatefulWidget {
   final String characterId;
 
-  const CharacterDetailScreen({super.key, required this.characterId});
+  /// 管理模式（从「管理朋友圈」进入）：朋友圈卡片菜单与评论
+  /// 对所有角色开放【编辑】【删除】，便于数据维护。
+  final bool manageMode;
+
+  const CharacterDetailScreen({
+    super.key,
+    required this.characterId,
+    this.manageMode = false,
+  });
 
   @override
   State<CharacterDetailScreen> createState() => _CharacterDetailScreenState();
@@ -50,6 +60,8 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
   Future<void> _pickAvatar(Character character) async {
     final picker = ImagePicker();
     final chatProvider = context.read<ChatProvider>();
+    final characterProvider = context.read<CharacterProvider>();
+    final authProvider = context.read<AuthProvider>();
     final file = await picker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 500,
@@ -60,14 +72,17 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
     final bytes = await file.readAsBytes();
     if (!mounted) return;
     final characterId = character.id;
-    await context
-        .read<CharacterProvider>()
-        .updateAvatar(characterId, base64Encode(bytes));
-    // 同步会话快照，首页消息列表头像实时更新
-    chatProvider.updateCharacterAvatar(
-      characterId,
-      base64Encode(bytes),
-    );
+    await characterProvider.updateAvatar(characterId, base64Encode(bytes));
+    if (widget.characterId == CharacterProvider.selfCharacterId) {
+      // "自己"的头像与个人资料头像保持一致
+      await authProvider.updateProfile(avatar: base64Encode(bytes));
+    } else {
+      // 同步会话快照，首页消息列表头像实时更新
+      chatProvider.updateCharacterAvatar(
+        characterId,
+        base64Encode(bytes),
+      );
+    }
   }
 
   /// 头像选择弹窗
@@ -154,6 +169,10 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
           );
         }
 
+        // 评论输入时软键盘拉起：隐藏头部背景图与悬浮按钮，
+        // 让朋友圈列表占满可用空间（键盘收回后恢复）
+        final keyboardUp = MediaQuery.of(context).viewInsets.bottom > 0;
+
         return CupertinoPageScaffold(
           navigationBar: CupertinoNavigationBar(
             middle: Text(character.name),
@@ -163,17 +182,19 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
               Column(
                 children: [
                   // 头部：背景图 + 骑跨交界处的头像 + 左侧昵称/签名
-                  _buildHeader(character),
+                  if (!keyboardUp) _buildHeader(character),
                   // 朋友圈：黑色背景，覆盖屏幕下半部分，内容可滚动
                   Expanded(child: _buildMomentsPanel(character)),
                 ],
               ),
-              // 悬浮发送按钮（无背景面板，右下角）
-              Positioned(
-                right: 20,
-                bottom: 28,
-                child: _buildFloatingSendButton(character, chatProvider),
-              ),
+              // 悬浮按钮（无背景面板，右下角）：
+              // 其他角色为聊天入口；"自己"不能发起聊天，改为发布朋友圈
+              if (!keyboardUp)
+                Positioned(
+                  right: 20,
+                  bottom: 28,
+                  child: _buildFloatingButton(character, chatProvider),
+                ),
             ],
           ),
         );
@@ -196,6 +217,41 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
         _coverDragOffset = 0;
       }
     });
+  }
+
+  /// 右下角悬浮按钮：非"自己"为聊天入口；"自己"不能发起聊天，改为发布朋友圈
+  Widget _buildFloatingButton(Character character, ChatProvider chatProvider) {
+    if (widget.characterId == CharacterProvider.selfCharacterId) {
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            CupertinoPageRoute(builder: (_) => const PublishMomentScreen()),
+          );
+        },
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: context.accentColor,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: CupertinoColors.black.withValues(alpha: 0.25),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Icon(
+            CupertinoIcons.camera_fill,
+            size: 26,
+            color: CupertinoColors.white,
+          ),
+        ),
+      );
+    }
+    return _buildFloatingSendButton(character, chatProvider);
   }
 
   /// 悬浮发送按钮：圆形，右下角，无背景面板。点击进入聊天
@@ -497,7 +553,10 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
                 height: 90,
                 child: Center(
                   child: Text(
-                    '这里将展示角色的朋友圈动态',
+                    widget.characterId == CharacterProvider.selfCharacterId
+                        ? '还没有发布过朋友圈，点击右下角相机按钮发布第一条'
+                        : '这里将展示角色的朋友圈动态',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,
                       color: CupertinoColors.systemGrey.withValues(alpha: 0.8),
@@ -509,7 +568,11 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
               ...moments.map(
                 (m) => Padding(
                   padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
-                  child: MomentCard(character: character, moment: m),
+                  child: MomentCard(
+                    character: character,
+                    moment: m,
+                    manageMode: widget.manageMode,
+                  ),
                 ),
               ),
             // 角色资料卡片（跟随滚动，黑色背景上使用白色标题）

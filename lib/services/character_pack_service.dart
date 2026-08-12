@@ -237,6 +237,7 @@ class CharacterPackService {
       result.add(Moment(
         id: map['id'] as String? ?? '',
         content: map['content'] as String? ?? '',
+        location: map['location'] as String? ?? '',
         images: localImages,
         likes: (map['likes'] as List<dynamic>?)
                 ?.map((e) => e.toString())
@@ -381,6 +382,7 @@ class CharacterPackService {
           exported.add({
             'id': m.id,
             'content': m.content,
+            'location': m.location,
             'images': images,
             'likes': m.likes,
             'comments': m.comments.map((e) => e.toJson()).toList(),
@@ -442,6 +444,7 @@ class CharacterPackService {
         exported.add({
           'id': m.id,
           'content': m.content,
+          'location': m.location,
           'images': images,
           'likes': m.likes,
           'comments': m.comments.map((e) => e.toJson()).toList(),

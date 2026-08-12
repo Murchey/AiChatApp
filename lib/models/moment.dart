@@ -22,6 +22,7 @@ class MomentComment {
 class Moment {
   final String id;
   final String content;
+  final String location; // 标记位置（如：北京市 · 朝阳区）
   final List<String> images;
   final List<String> likes;
   final List<MomentComment> comments;
@@ -30,6 +31,7 @@ class Moment {
   const Moment({
     required this.id,
     this.content = '',
+    this.location = '',
     this.images = const [],
     this.likes = const [],
     this.comments = const [],
@@ -40,6 +42,7 @@ class Moment {
     return Moment(
       id: json['id'] as String? ?? '',
       content: json['content'] as String? ?? '',
+      location: json['location'] as String? ?? '',
       images: (json['images'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
@@ -60,6 +63,7 @@ class Moment {
     return {
       'id': id,
       'content': content,
+      'location': location,
       'images': images,
       'likes': likes,
       'comments': comments.map((e) => e.toJson()).toList(),

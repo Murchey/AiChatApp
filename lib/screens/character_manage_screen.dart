@@ -24,7 +24,7 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
 
   List<Character> get _selectedCharacters {
     final provider = context.read<CharacterProvider>();
-    return provider.characters
+    return provider.manageableCharacters
         .where((c) => _selected.contains(c.id))
         .toList();
   }
@@ -226,9 +226,9 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
               ),
             ],
           ),
-          // 角色列表
+          // 角色列表（不含固定的"自己"账号）
           Expanded(
-            child: provider.characters.isEmpty
+            child: provider.manageableCharacters.isEmpty
                 ? Center(
                     child: Text(
                       '暂无角色',
@@ -237,14 +237,14 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
                   )
                 : ListView.separated(
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: provider.characters.length,
+                    itemCount: provider.manageableCharacters.length,
                     separatorBuilder: (context, index) => Container(
                       height: 0.5,
                       margin: const EdgeInsets.only(left: 100),
                       color: context.separatorColor,
                     ),
                     itemBuilder: (context, index) {
-                      final character = provider.characters[index];
+                      final character = provider.manageableCharacters[index];
                       final isSelected = _selected.contains(character.id);
                       final subtitle = character.signature.isEmpty
                           ? (character.description.isEmpty

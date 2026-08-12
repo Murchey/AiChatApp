@@ -398,6 +398,19 @@ class _ChatScreenState extends State<ChatScreen>
           },
         ),
       );
+      // 删除角色消息：移除后不再作为后续对话的上下文
+      items.add(
+        _menuItem(
+          icon: CupertinoIcons.delete,
+          label: '删除',
+          onTap: () {
+            _closeMenu();
+            context
+                .read<ChatProvider>()
+                .deleteMessage(widget.conversationId, message.id);
+          },
+        ),
+      );
     }
 
     items.add(
