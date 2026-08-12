@@ -15,6 +15,7 @@ import 'character_manage_screen.dart';
 import 'moments_manage_screen.dart';
 import 'profile_edit_screen.dart';
 import 'settings_screen.dart';
+import 'workshop_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -167,6 +168,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         context,
                         CupertinoPageRoute(
                           builder: (_) => const MomentsManageScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  CupertinoListTile(
+                    leading: Icon(
+                      CupertinoIcons.hammer_fill,
+                      color: context.accentColor,
+                    ),
+                    title: const Text('创意工坊'),
+                    subtitle: Text(
+                      '从仓库下载导入角色包 / 游戏包',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                    trailing: Icon(
+                      CupertinoIcons.chevron_right,
+                      size: 16,
+                      color: context.textSecondaryColor,
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => const WorkshopScreen(),
                         ),
                       );
                     },

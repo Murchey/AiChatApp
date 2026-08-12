@@ -138,6 +138,10 @@ class ChatProvider extends ChangeNotifier {
         _contextTokens[id] = _estimateSendInputBudget(id);
       }
     });
+    // 加载完成后通知监听者重建界面：
+    // 否则首页在 init 完成前先渲染一次（会话为空 → 显示"暂无会话"），
+    // 数据就绪后没有重建通知，列表会一直停留在空状态。
+    notifyListeners();
   }
 
   /// 保存会话与聊天记录到本地（持久化）
@@ -875,6 +879,32 @@ class ChatProvider extends ChangeNotifier {
       if (_conversations[i].characterId == characterId &&
           _conversations[i].characterAvatar != avatar) {
         _conversations[i] = _conversations[i].copyWith(characterAvatar: avatar);
+        changed = true;
+      }
+    }
+    if (changed) {
+      notifyListeners();
+      _persist();
+    }
+  }
+
+  /// 重新关联孤儿会话：角色删除后重新导入同名角色时，
+  /// 把仍指向旧角色 id 的会话重新指向新角色，并刷新名称/头像快照。
+  /// 仅调整会话指向，不覆盖任何聊天记录。
+  void relinkConversation({
+    required String oldCharacterId,
+    required String newCharacterId,
+    required String name,
+    String avatar = '',
+  }) {
+    var changed = false;
+    for (int i = 0; i < _conversations.length; i++) {
+      if (_conversations[i].characterId == oldCharacterId) {
+        _conversations[i] = _conversations[i].copyWith(
+          characterId: newCharacterId,
+          characterName: name,
+          characterAvatar: avatar,
+        );
         changed = true;
       }
     }

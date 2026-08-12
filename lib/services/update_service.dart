@@ -67,7 +67,8 @@ class UpdateService {
 
   /// 检查最新 Release 是否有新版本，无更新/失败返回 null。
   ///
-  /// 检测顺序：Gitee（国内直连，首选）→ GitHub（备用，可通过 [proxyUrl] 加速）。
+  /// 检测顺序：Gitee（国内直连，首选）→ GitHub（备用）。
+  /// 版本检测均直连官方 API；[proxyUrl] 仅用于下载新版 APK 时加速。
   /// 两个源都返回各自 Release 的 APK 直链，由更新弹窗的"下载源"选项卡选择。
   static Future<UpdateInfo?> checkForUpdate({String proxyUrl = ''}) async {
     try {
@@ -78,13 +79,11 @@ class UpdateService {
       final gitee = await _fetchRelease(
         apiUrl: 'https://gitee.com/api/v5/repos/$kGiteeOwner/$kGiteeRepo/releases/latest',
         downloadPrefix: '$kGiteeRepoUrl/releases/download',
-        proxyUrl: '',
       );
-      // 2. GitHub 最新 Release（可选代理加速）
+      // 2. GitHub 最新 Release（版本检测直连 API，代理仅用于后续 APK 下载加速）
       final github = await _fetchRelease(
         apiUrl: 'https://api.github.com/repos/$kGitHubOwner/$kGitHubRepo/releases/latest',
         downloadPrefix: '$kGitHubRepoUrl/releases/download',
-        proxyUrl: proxyUrl,
       );
 
       if (gitee == null && github == null) return null;
@@ -109,17 +108,15 @@ class UpdateService {
   }
 
   /// 请求单个源的最新 Release，解析出版本号、更新说明与 APK 直链。
+  /// 通过官方 API 直连（代理仅用于 APK 下载，不用于版本检测）。
   /// 失败（网络/非 200/无 tag）返回 null。
   static Future<({String version, String notes, String downloadUrl})?> _fetchRelease({
     required String apiUrl,
     required String downloadPrefix,
-    required String proxyUrl,
   }) async {
     try {
-      var url = apiUrl;
-      if (proxyUrl.isNotEmpty) url = '$proxyUrl$url';
       final resp = await http
-          .get(Uri.parse(url), headers: {'Accept': 'application/json'})
+          .get(Uri.parse(apiUrl), headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 10));
       if (resp.statusCode != 200) return null;
 

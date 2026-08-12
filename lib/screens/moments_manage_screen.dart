@@ -7,6 +7,7 @@ import '../models/character.dart';
 import '../models/moments_pack_entry.dart';
 import '../providers/character_provider.dart';
 import '../services/character_pack_service.dart';
+import '../utils/conversation_relink.dart';
 import '../utils/file_picker_helper.dart';
 import '../widgets/character_avatar.dart';
 import 'character_detail_screen.dart';
@@ -112,11 +113,16 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
       if (hit != null) {
         await provider.updateMoments(hit.id, e.moments);
       } else {
-        await provider.addCharacter(Character(
+        final character = Character(
           id: const Uuid().v4(),
           name: e.characterName,
           moments: e.moments,
-        ));
+        );
+        await provider.addCharacter(character);
+        // 角色删除后重新导入：把指向旧角色的孤儿会话重新关联到新角色
+        if (mounted) {
+          relinkOrphanedConversations(context: context, character: character);
+        }
       }
       count++;
     }

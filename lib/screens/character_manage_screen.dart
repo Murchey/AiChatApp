@@ -6,6 +6,7 @@ import '../models/character.dart';
 import '../providers/character_provider.dart';
 import '../services/character_pack_service.dart';
 import '../utils/character_pack_picker.dart';
+import '../utils/conversation_relink.dart';
 import '../widgets/character_avatar.dart';
 import 'chat_detail_screen.dart';
 import 'character_import_screen.dart';
@@ -149,8 +150,11 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
     );
     if (name == null || name.isEmpty || !mounted) return;
     final provider = context.read<CharacterProvider>();
-    await provider.addCharacter(Character(id: const Uuid().v4(), name: name));
+    final character = Character(id: const Uuid().v4(), name: name);
+    await provider.addCharacter(character);
     if (!mounted) return;
+    // 删除后重新添加同名角色：把指向旧角色的孤儿会话重新关联到新角色
+    relinkOrphanedConversations(context: context, character: character);
     _showTip('已创建角色「$name」，点击列表中的角色可编辑头像、提示词等资料');
   }
 

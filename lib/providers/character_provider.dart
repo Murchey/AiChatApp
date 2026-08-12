@@ -375,6 +375,28 @@ class CharacterProvider extends ChangeNotifier {
     return character;
   }
 
+  /// 按名称查找角色（用于重名判断 / 覆盖导入定位目标）
+  Character? findCharacterByName(String name) {
+    final trimmed = name.trim();
+    for (final c in _characters) {
+      if (c.name.trim() == trimmed) return c;
+    }
+    return null;
+  }
+
+  /// 用导入的数据覆盖现有角色（保留 id，聊天记录不受影响）：
+  /// 替换资料、提示词、朋友圈等除聊天记录外的全部角色卡数据。
+  Future<void> overwriteCharacter(Character character) async {
+    final index = _characters.indexWhere((c) => c.id == character.id);
+    if (index == -1) {
+      _characters.add(character);
+    } else {
+      _characters[index] = character;
+    }
+    notifyListeners();
+    await _persistCharacters();
+  }
+
   /// 新建朋友圈展示范围分组（初始为空，联系人后续在分组管理页编辑）
   Future<VisibilityGroup> addVisibilityGroup(String name) async {
     final group = VisibilityGroup(
