@@ -58,15 +58,14 @@ class AppTheme {
       barBackgroundColor: isDark ? AppColors.navBarDark : AppColors.navBarLight,
       textTheme: CupertinoTextThemeData(
         primaryColor: accent,
+        // 不指定 fontFamily：直接使用各手机平台的系统字体
         textStyle: TextStyle(
-          fontFamily: '.SF Pro Text',
           fontSize: 16,
           color: isDark
               ? AppColors.textPrimaryDark
               : AppColors.textPrimaryLight,
         ),
         navTitleTextStyle: TextStyle(
-          fontFamily: '.SF Pro Display',
           fontSize: 17,
           fontWeight: FontWeight.w600,
           color: isDark
