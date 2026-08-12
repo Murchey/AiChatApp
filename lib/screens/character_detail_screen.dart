@@ -388,6 +388,28 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
                       ),
               ),
             ),
+            // 背景图底部与朋友圈区交接处：黑色渐变蒙版，
+            // 提升骑跨交界处的昵称 / 个性签名可读性（文字为白色）
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: (coverHeight * 0.35).clamp(72.0, 190.0),
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        CupertinoColors.black.withValues(alpha: 0.0),
+                        CupertinoColors.black.withValues(alpha: 0.55),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
             // 更换封面按钮：仅在拉到底部（固定展开）时显示在背景图右下角
             if (_coverExpanded)
               Positioned(
