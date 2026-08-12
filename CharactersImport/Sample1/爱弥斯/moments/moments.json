@@ -1,0 +1,29 @@
+{
+    "character_name": "爱弥斯",
+    "moments": [
+        {
+            "id": "m1",
+            "content": "这小手机怎么这么好玩~睡觉耽误玩手机，玩手机耽误睡觉。",
+            "images": ["files/01.jpg"],
+            "likes": ["千咲", "琳奈", "漂泊者"],
+            "comments": [
+                { "sender": "爱弥斯她老冯", "content": "不许玩了，快睡觉" },
+                { "sender": "琳奈", "content": "姐们你太坑了" }
+            ],
+            "created_at": "2026-08-11T23:00:00.000"
+        },
+        {
+            "id": "m2",
+            "content": "老爹老妈的合影~还有老妈和我的合影~",
+            "images": ["files/02.jpg", "files/03.jpg"],
+            "likes": ["漂泊者", "千咲", "莫宁", "琳奈", "西格莉卡"],
+            "comments": [
+                { "sender": "莫宁", "content": "漂泊者这身很漂亮" },
+                { "sender": "千咲", "content": "漂泊者这身很漂亮" },
+                { "sender": "琳奈", "content": "漂泊者这身很漂亮" },
+                { "sender": "西格莉卡", "content": "漂泊者这身很漂亮" }
+            ],
+            "created_at": "2026-08-05T22:30:00.000"
+        }
+    ]
+}

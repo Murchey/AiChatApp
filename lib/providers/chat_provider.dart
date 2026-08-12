@@ -864,4 +864,21 @@ class ChatProvider extends ChangeNotifier {
       _persist();
     }
   }
+
+  /// 同步角色头像到其所有会话（首页消息列表头像实时更新）。
+  /// 会话保存的是创建时的 characterAvatar 快照，角色更换头像后需手动同步。
+  void updateCharacterAvatar(String characterId, String avatar) {
+    var changed = false;
+    for (int i = 0; i < _conversations.length; i++) {
+      if (_conversations[i].characterId == characterId &&
+          _conversations[i].characterAvatar != avatar) {
+        _conversations[i] = _conversations[i].copyWith(characterAvatar: avatar);
+        changed = true;
+      }
+    }
+    if (changed) {
+      notifyListeners();
+      _persist();
+    }
+  }
 }

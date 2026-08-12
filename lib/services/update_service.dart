@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Gitee 仓库信息（国内下载源，更新时优先选择）
 const String kGiteeOwner = 'Murchey';
@@ -50,6 +51,18 @@ class UpdateInfo {
 /// 3. 通过原生 FileProvider 触发系统安装（[installApk]）
 class UpdateService {
   static const MethodChannel _channel = MethodChannel('com.aichat.ai_chat/files');
+  static const _ignoredVersionKey = 'update_ignored_version_v1';
+
+  /// 记住忽略的版本号（用户点「不再提醒」后，该版本不再弹更新提示）
+  static Future<void> ignoreVersion(String version) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_ignoredVersionKey, version);
+  }
+
+  static Future<bool> _isVersionIgnored(String version) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_ignoredVersionKey) == version;
+  }
 
   /// 检查最新 Release 是否有新版本，无更新/失败返回 null。
   ///
@@ -81,6 +94,8 @@ class UpdateService {
           (github?.notes.isNotEmpty ?? false) ? github!.notes : (gitee?.notes ?? '');
 
       if (!_isNewerVersion(latestVersion, currentVersion)) return null;
+      // 用户点过「不再提醒」的版本不再弹出
+      if (await _isVersionIgnored(latestVersion)) return null;
       return UpdateInfo(
         latestVersion: latestVersion,
         releaseNotes: releaseNotes,

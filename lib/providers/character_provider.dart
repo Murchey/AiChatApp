@@ -69,6 +69,7 @@ class CharacterProvider extends ChangeNotifier {
             signature: custom['signature'] as String? ?? c.signature,
             region: custom['region'] as String? ?? c.region,
             avatar: custom['avatar'] as String? ?? c.avatar,
+            background: custom['background'] as String? ?? c.background,
             description: custom['description'] as String? ?? c.description,
             personality: custom['personality'] as String? ?? c.personality,
             greeting: custom['greeting'] as String? ?? c.greeting,
@@ -158,6 +159,16 @@ class CharacterProvider extends ChangeNotifier {
     final index = _characters.indexWhere((c) => c.id == id);
     if (index == -1) return;
     _characters[index] = _characters[index].copyWith(avatar: avatarBase64);
+    notifyListeners();
+    await _persistCharacters();
+  }
+
+  /// 更新角色详情页背景图并持久化
+  Future<void> updateBackground(String id, String backgroundBase64) async {
+    final index = _characters.indexWhere((c) => c.id == id);
+    if (index == -1) return;
+    _characters[index] =
+        _characters[index].copyWith(background: backgroundBase64);
     notifyListeners();
     await _persistCharacters();
   }

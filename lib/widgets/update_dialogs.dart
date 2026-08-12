@@ -129,6 +129,14 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
       ),
       actions: [
         CupertinoDialogAction(
+          onPressed: () async {
+            // 记住忽略该版本，下次启动不再弹出
+            await UpdateService.ignoreVersion(_info.latestVersion);
+            if (context.mounted) Navigator.pop(context);
+          },
+          child: const Text('不再提醒'),
+        ),
+        CupertinoDialogAction(
           onPressed: () => Navigator.pop(context),
           child: const Text('取消'),
         ),

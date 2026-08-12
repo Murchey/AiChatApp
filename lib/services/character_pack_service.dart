@@ -6,6 +6,7 @@ import 'package:gbk_codec/gbk_codec.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/character.dart';
 import '../models/character_pack_entry.dart';
+import '../models/moment.dart';
 
 /// 角色包（.zip）解析与导出服务
 ///
@@ -14,7 +15,10 @@ import '../models/character_pack_entry.dart';
 ///     ├── 角色A/
 ///     │   ├── Profile.json     角色资料（name/location/gender/signature 或完整字段）
 ///     │   ├── Prompt.txt       角色提示词（systemPrompt）
-///     │   └── ProfilePicture.jpg  角色头像
+///     │   ├── ProfilePicture.jpg  角色头像
+///     │   └── moments/         角色朋友圈（可选）
+///     │       ├── moments.json 朋友圈记录（character_name + moments 数组）
+///     │       └── files/       朋友圈引用的图片（images 相对路径引用）
 ///     └── 角色B/
 ///         └── ...
 class CharacterPackService {
@@ -52,8 +56,16 @@ class CharacterPackService {
       final folderName = entry.key.split('/').last;
       if (folderName.isEmpty || !seenFolders.add(folderName)) continue;
 
+      // 收集该角色目录下的全部文件（含子目录 moments/、files/ 等嵌套文件）
+      final allFiles = <ArchiveFile>[
+        ...entry.value,
+        for (final other in dirFiles.entries)
+          if (other.key.startsWith('${entry.key}/')) ...other.value,
+      ];
+
       try {
-        final character = _parseCharacter(entry.key, entry.value, profileFile);
+        final character =
+            await _parseCharacter(entry.key, allFiles, profileFile);
         result.add(CharacterPackEntry(folderName: folderName, character: character));
       } catch (e) {
         result.add(CharacterPackEntry(
@@ -67,11 +79,11 @@ class CharacterPackService {
   }
 
   /// 解析单个角色目录
-  static Character _parseCharacter(
+  static Future<Character> _parseCharacter(
     String dir,
     List<ArchiveFile> files,
     ArchiveFile profileFile,
-  ) {
+  ) async {
     final profileJson = _decodeUtf8(profileFile.content);
     final Map<String, dynamic> data;
     try {
@@ -83,18 +95,42 @@ class CharacterPackService {
     String str(String key, [String def = '']) =>
         (data[key] as String?)?.trim() ?? def;
 
-    // 头像：优先 Profile.json 中内嵌的 avatar，其次目录内的图片文件
+    // 角色目录内「直接子文件」的相对路径（不含子目录，如 moments/ 下的图片）
+    bool isImage(String name) =>
+        name.endsWith('.jpg') ||
+        name.endsWith('.jpeg') ||
+        name.endsWith('.png') ||
+        name.endsWith('.webp') ||
+        name.endsWith('.gif') ||
+        name.endsWith('.bmp');
+
+    // 头像：优先 Profile.json 中内嵌的 avatar，其次 ProfilePicture.jpg，
+    // 再其次角色目录内任意图片（仅直接子文件，避免误取 moments 图片）
     var avatar = str('avatar');
     if (avatar.isEmpty) {
       for (final f in files) {
-        final name = f.name.split('/').last.toLowerCase();
-        if (name.endsWith('.jpg') ||
-            name.endsWith('.jpeg') ||
-            name.endsWith('.png') ||
-            name.endsWith('.webp') ||
-            name.endsWith('.gif') ||
-            name.endsWith('.bmp')) {
+        if (f.name.split('/').last.toLowerCase() == 'profilepicture.jpg') {
           avatar = base64Encode(f.content as List<int>);
+          break;
+        }
+      }
+    }
+    if (avatar.isEmpty) {
+      for (final f in files) {
+        if (f.name.startsWith('$dir/') && !f.name.substring(dir.length + 1).contains('/') &&
+            isImage(f.name.split('/').last.toLowerCase())) {
+          avatar = base64Encode(f.content as List<int>);
+          break;
+        }
+      }
+    }
+
+    // 背景图：优先 Profile.json 中内嵌的 background，其次 ProfileBackground.jpg
+    var background = str('background');
+    if (background.isEmpty) {
+      for (final f in files) {
+        if (f.name.split('/').last.toLowerCase() == 'profilebackground.jpg') {
+          background = base64Encode(f.content as List<int>);
           break;
         }
       }
@@ -109,6 +145,8 @@ class CharacterPackService {
       }
     }
 
+    final moments = await _parseMoments(dir, files);
+
     return Character(
       id: 'import_${DateTime.now().microsecondsSinceEpoch}',
       name: str('name', dir.split('/').last),
@@ -116,13 +154,94 @@ class CharacterPackService {
       signature: str('signature'),
       region: str('region', str('location')),
       avatar: avatar,
+      background: background,
       description: str('description'),
       personality: str('personality'),
       greeting: str('greeting'),
       systemPrompt: systemPrompt,
       userRelationship: str('user_relationship'),
       tags: (data['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      moments: moments,
     );
+  }
+
+  /// 解析角色目录下的 `moments/moments.json`（朋友圈），并把引用的图片
+  /// 提取到应用文档目录（参考聊天记录导入），返回 [Moment] 列表。
+  ///
+  /// 图片缺失或提取失败时保留原相对路径字符串（如 `files/01.jpg`），
+  /// 由展示层做容错，不中断整个角色的导入。
+  static Future<List<Moment>> _parseMoments(
+    String dir,
+    List<ArchiveFile> files,
+  ) async {
+    // 定位 moments/moments.json，并建立 包内相对路径 -> 文件 的映射
+    ArchiveFile? jsonFile;
+    final fileMap = <String, ArchiveFile>{};
+    for (final f in files) {
+      final name = f.name.replaceAll('\\', '/');
+      fileMap[name] = f;
+      if (name.toLowerCase().endsWith('/moments/moments.json') ||
+          name.toLowerCase() == 'moments/moments.json') {
+        jsonFile = f;
+      }
+    }
+    if (jsonFile == null) return const [];
+
+    final Map<String, dynamic> root;
+    try {
+      root = jsonDecode(_decodeUtf8(jsonFile.content)) as Map<String, dynamic>;
+    } catch (_) {
+      return const [];
+    }
+    final rawMoments = root['moments'] as List<dynamic>? ?? [];
+    if (rawMoments.isEmpty) return const [];
+
+    // 提取目录：应用文档目录/moment_import_{时间戳}/
+    final docDir = await getApplicationDocumentsDirectory();
+    final importDir = Directory(
+      '${docDir.path}/moment_import_${DateTime.now().millisecondsSinceEpoch}',
+    );
+    await importDir.create(recursive: true);
+
+    final result = <Moment>[];
+    for (final raw in rawMoments) {
+      final map = raw as Map<String, dynamic>;
+      final localImages = <String>[];
+      for (final rel in (map['images'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList() ??
+          <String>[]) {
+        final norm = rel.replaceAll('\\', '/');
+        final entry = fileMap['$dir/moments/$norm'] ?? fileMap[norm];
+        if (entry != null) {
+          try {
+            final safeName = _safeFileName(norm.split('/').last);
+            final target = File('${importDir.path}/$safeName');
+            await target.writeAsBytes(entry.content as List<int>, flush: true);
+            localImages.add(target.path);
+          } catch (_) {
+            localImages.add(rel);
+          }
+        } else {
+          localImages.add(rel);
+        }
+      }
+      result.add(Moment(
+        id: map['id'] as String? ?? '',
+        content: map['content'] as String? ?? '',
+        images: localImages,
+        likes: (map['likes'] as List<dynamic>?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            [],
+        comments: (map['comments'] as List<dynamic>?)
+                ?.map((e) => MomentComment.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            [],
+        createdAt: DateTime.tryParse(map['created_at'] as String? ?? ''),
+      ));
+    }
+    return result;
   }
 
   /// 将选中的角色导出为 zip 角色包（保存到下载目录），返回保存路径
@@ -155,6 +274,50 @@ class CharacterPackService {
         archive.addFile(ArchiveFile.bytes(
           '$folder/ProfilePicture.jpg',
           Uint8List.fromList(base64Decode(c.avatar)),
+        ));
+      }
+      // 背景图：ProfileBackground.jpg
+      if (c.background.isNotEmpty) {
+        archive.addFile(ArchiveFile.bytes(
+          '$folder/ProfileBackground.jpg',
+          Uint8List.fromList(base64Decode(c.background)),
+        ));
+      }
+      // 朋友圈：moments/moments.json + 引用的图片文件（相对路径引用）
+      if (c.moments.isNotEmpty) {
+        final exported = <Map<String, dynamic>>[];
+        for (final m in c.moments) {
+          final images = <String>[];
+          for (final img in m.images) {
+            final name = img.split(RegExp(r'[/\\]')).last;
+            if (name.isEmpty) continue;
+            final file = File(img);
+            if (file.existsSync()) {
+              archive.addFile(ArchiveFile.bytes(
+                '$folder/moments/files/$name',
+                file.readAsBytesSync(),
+              ));
+              images.add('files/$name');
+            } else {
+              // 本地图片缺失：保留原字符串（可能是导入时未提取成功的相对路径）
+              images.add(img);
+            }
+          }
+          exported.add({
+            'id': m.id,
+            'content': m.content,
+            'images': images,
+            'likes': m.likes,
+            'comments': m.comments.map((e) => e.toJson()).toList(),
+            'created_at': m.createdAt?.toIso8601String(),
+          });
+        }
+        archive.addFile(ArchiveFile.string(
+          '$folder/moments/moments.json',
+          const JsonEncoder.withIndent('    ').convert({
+            'character_name': c.displayName,
+            'moments': exported,
+          }),
         ));
       }
     }
@@ -192,6 +355,15 @@ class CharacterPackService {
       return gbk_bytes.decode(bytes);
     } catch (_) {}
     return String.fromCharCodes(bytes);
+  }
+
+  /// 防止导入时出现空名 / '.' / '..' 等非法文件名
+  static String _safeFileName(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == '.' || trimmed == '..') {
+      return 'file_${DateTime.now().millisecondsSinceEpoch}';
+    }
+    return trimmed;
   }
 
   /// 修复 zip 文件名的 GBK 乱码（archive 包按 UTF-8/latin1 解码导致）

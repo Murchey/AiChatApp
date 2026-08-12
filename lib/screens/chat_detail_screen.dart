@@ -92,6 +92,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final characterId = _characterId;
     if (characterId.isEmpty) return;
     final provider = context.read<CharacterProvider>();
+    final chatProvider = context.read<ChatProvider>();
     final picker = ImagePicker();
     final file = await picker.pickImage(
       source: ImageSource.gallery,
@@ -102,6 +103,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (file == null || !mounted) return;
     final bytes = await file.readAsBytes();
     await provider.updateAvatar(characterId, base64Encode(bytes));
+    // 同步会话快照，首页消息列表头像实时更新
+    chatProvider.updateCharacterAvatar(characterId, base64Encode(bytes));
     if (!mounted) return;
     showCupertinoDialog(
       context: context,

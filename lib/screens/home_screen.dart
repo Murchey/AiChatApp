@@ -11,6 +11,21 @@ import '../widgets/alphabet_index_bar.dart';
 import '../widgets/update_dialogs.dart';
 import 'profile_screen.dart';
 
+/// base64 头像解码缓存：同一个 base64 只解码一次，并复用同一个 [MemoryImage]。
+/// 若每次 build 都新建 [MemoryImage]，图片缓存键会随之改变（Dart 的 List ==
+/// 是引用比较），导致 ImageCache 永不命中、反复解码，进出聊天界面时头像频闪。
+final Map<String, MemoryImage> _avatarImageCache = {};
+
+MemoryImage _cachedAvatarImage(String base64) {
+  return _avatarImageCache.putIfAbsent(
+    base64,
+    () {
+      if (_avatarImageCache.length > 64) _avatarImageCache.clear();
+      return MemoryImage(base64Decode(base64));
+    },
+  );
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -191,7 +206,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
               itemCount: chatProvider.conversations.length,
               separatorBuilder: (_, __) => Container(
                 height: 0.5,
-                margin: const EdgeInsets.only(left: 80),
+                margin: const EdgeInsets.only(left: 57),
                 color: context.separatorColor,
               ),
               itemBuilder: (context, index) {
@@ -201,6 +216,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                     horizontal: 16,
                     vertical: 10,
                   ),
+                  // CupertinoListTile 默认把 leading 约束在 28×28，
+                  // 必须显式指定与头像一致的尺寸，否则头像被压缩
+                  leadingSize: 45,
                   leading: Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -335,6 +353,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                             horizontal: 16,
                             vertical: 10,
                           ),
+                          // 同消息列表：显式放宽 leading 尺寸约束
+                          leadingSize: 45,
                           leading: _buildSquareAvatar(
                             context,
                             character.name,
@@ -376,7 +396,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                         ),
                       Container(
                         height: 0.5,
-                        margin: const EdgeInsets.only(left: 84),
+                        margin: const EdgeInsets.only(left: 61),
                         color: context.separatorColor,
                       ),
                     ],
@@ -477,26 +497,26 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     // 未设置头像时显示默认用户图标
     if (avatar.isEmpty) {
       return Container(
-        width: 68,
-        height: 68,
+        width: 45,
+        height: 45,
         decoration: BoxDecoration(
           color: context.accentColor.withValues(alpha: 0.15),
         ),
         alignment: Alignment.center,
         child: Icon(
           CupertinoIcons.person_fill,
-          size: 34,
+          size: 24,
           color: context.accentColor,
         ),
       );
     }
     return Container(
-      width: 68,
-      height: 68,
+      width: 45,
+      height: 45,
       decoration: BoxDecoration(
         color: context.accentColor.withValues(alpha: 0.15),
         image: DecorationImage(
-          image: MemoryImage(base64Decode(avatar)),
+          image: _cachedAvatarImage(avatar),
           fit: BoxFit.cover,
         ),
       ),
