@@ -119,6 +119,12 @@ class CharacterProvider extends ChangeNotifier {
            .map((e) => Character.fromJson(e.value as Map<String, dynamic>)),
       if (self != null) self,
     ];
+    // 归一化动态 id：历史数据（如导入的数据包）中可能存在重复/缺失 id，
+    // 会破坏"按 id 更新"（点赞 / 评论 / 编辑 / AI 互动）逻辑导致互相覆盖，
+    // 加载时统一重新生成，保证每个角色内动态 id 唯一
+    _characters = _characters
+        .map((c) => c.copyWith(moments: _dedupeMomentIds(c.moments)))
+        .toList();
     // 恢复朋友圈展示范围分组
     try {
       final groupsStr = prefs.getString(_visibilityGroupsKey);
@@ -131,6 +137,31 @@ class CharacterProvider extends ChangeNotifier {
     } catch (_) {}
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// 去重动态 id：空 id 或列表内重复的 id 重新生成，
+  /// 返回 id 全唯一的动态列表（其余字段保持不变）。
+  List<Moment> _dedupeMomentIds(List<Moment> moments) {
+    final seen = <String>{};
+    var count = 0;
+    return moments.map((m) {
+      var id = m.id;
+      if (id.isEmpty || !seen.add(id)) {
+        id = 'moment_${DateTime.now().microsecondsSinceEpoch}_$count';
+        seen.add(id);
+      }
+      count++;
+      return Moment(
+        id: id,
+        content: m.content,
+        location: m.location,
+        visibility: m.visibility,
+        images: m.images,
+        likes: m.likes,
+        comments: m.comments,
+        createdAt: m.createdAt,
+      );
+    }).toList();
   }
 
   /// 构建"自己"账号：昵称/头像/签名以用户资料为准（用户未设置时回退到

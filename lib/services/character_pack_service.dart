@@ -212,8 +212,17 @@ class CharacterPackService {
     await importDir.create(recursive: true);
 
     final result = <Moment>[];
+    // 保证导入的动态 id 唯一：数据包中可能重复/缺失 id（会导致
+    // 点赞、编辑等"按 id 更新"操作时多条动态互相覆盖），重复时自动重新生成
+    final seenIds = <String>{};
     for (final raw in rawMoments) {
       final map = raw as Map<String, dynamic>;
+      var momentId = map['id'] as String? ?? '';
+      if (momentId.isEmpty || !seenIds.add(momentId)) {
+        momentId =
+            'import_${DateTime.now().microsecondsSinceEpoch}_${result.length}';
+        seenIds.add(momentId);
+      }
       final localImages = <String>[];
       for (final rel in (map['images'] as List<dynamic>?)
           ?.map((e) => e.toString())
@@ -235,7 +244,7 @@ class CharacterPackService {
         }
       }
       result.add(Moment(
-        id: map['id'] as String? ?? '',
+        id: momentId,
         content: map['content'] as String? ?? '',
         location: map['location'] as String? ?? '',
         visibility: map['visibility'] as String? ?? 'all',
