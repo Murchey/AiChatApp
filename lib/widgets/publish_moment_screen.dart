@@ -5,14 +5,16 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/moment.dart';
+import '../models/visibility_group.dart';
 import '../providers/character_provider.dart';
+import '../screens/moment_visibility_screen.dart';
 
 /// 发布 / 编辑朋友圈页面：文字 + 标记位置 + 相册多选图片（最多 9 张）。
 ///
 /// 未传 [editingMoment] 时为发布模式：图片复制到应用文档目录 `user_moments/`
 /// 下（保存绝对路径，便于展示与数据包导出），写入「自己」账号的朋友圈并持久化。
-/// 传入 [editingMoment] 时为编辑模式：预填已有内容，保存后以编辑后的
-/// [Moment] 通过 `Navigator.pop` 返回（保持 id / 点赞 / 评论 / 时间不变），
+/// 传入 [editingMoment] 时为编辑模式：预填已有内容，可修改发布时间，
+/// 保存后以编辑后的 [Moment] 通过 `Navigator.pop` 返回（保持 id / 点赞 / 评论不变），
 /// 由调用方替换原动态。
 class PublishMomentScreen extends StatefulWidget {
   final Moment? editingMoment;
@@ -30,6 +32,8 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
   final TextEditingController _locationController = TextEditingController();
   final List<String> _existingPaths = []; // 编辑模式：已有的本地图片路径
   final List<XFile> _picked = [];
+  String _visibilityId = VisibilityScope.all; // 展示范围（默认全部角色可见）
+  DateTime? _createdAt; // 编辑模式：发布日期（默认沿用原时间）
   bool _saving = false;
 
   bool get _isEdit => widget.editingMoment != null;
@@ -41,6 +45,8 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
     if (editing != null) {
       _contentController.text = editing.content;
       _locationController.text = editing.location;
+      _visibilityId = editing.visibility;
+      _createdAt = editing.createdAt;
       _existingPaths.addAll(
         editing.images.where((p) => File(p).existsSync()),
       );
@@ -127,10 +133,11 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
             id: old.id,
             content: content,
             location: location,
+            visibility: _visibilityId,
             images: newPaths,
             likes: old.likes,
             comments: old.comments,
-            createdAt: old.createdAt,
+            createdAt: _createdAt ?? old.createdAt,
           ),
         );
       } else {
@@ -138,6 +145,7 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
               content: content,
               images: newPaths,
               location: location,
+              visibility: _visibilityId,
             );
         if (!mounted) return;
         Navigator.pop(context, true);
@@ -169,6 +177,86 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
     final ext = path.substring(dot + 1).toLowerCase();
     const allowed = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'};
     return allowed.contains(ext) ? ext : 'jpg';
+  }
+
+  /// 当前展示范围的显示文案（分组被删除后回退到全部角色可见）
+  String get _visibilityLabel {
+    if (_visibilityId == VisibilityScope.onlyMe) return '仅自己可见';
+    if (_visibilityId == VisibilityScope.all) return '全部角色可见';
+    final groups = context.read<CharacterProvider>().visibilityGroups;
+    for (final g in groups) {
+      if (g.id == _visibilityId) return g.name;
+    }
+    return '全部角色可见';
+  }
+
+  /// 打开展示范围选择页（固定选项 + 自定义分组）
+  Future<void> _openVisibility() async {
+    final id = await Navigator.push<String>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => MomentVisibilityScreen(selectedId: _visibilityId),
+      ),
+    );
+    if (id == null || !mounted) return;
+    setState(() => _visibilityId = id);
+  }
+
+  /// 编辑模式：弹出底部日期选择器修改发布日期
+  Future<void> _pickCreatedAt() async {
+    final initial = _createdAt ?? DateTime.now();
+    DateTime? picked = initial;
+    final result = await showCupertinoModalPopup<DateTime>(
+      context: context,
+      barrierColor: CupertinoColors.black.withValues(alpha: 0.3),
+      builder: (ctx) => Container(
+        height: 300,
+        color: context.listBgColor,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 44,
+              child: Row(
+                children: [
+                  CupertinoButton(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('取消'),
+                  ),
+                  const Spacer(),
+                  CupertinoButton(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    onPressed: () => Navigator.pop(ctx, picked),
+                    child: const Text(
+                      '完成',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.dateAndTime,
+                initialDateTime: initial,
+                minimumDate: DateTime(2000, 1, 1),
+                maximumDate: DateTime.now(), // 不允许晚于当前时间
+                backgroundColor: context.listBgColor,
+                onDateTimeChanged: (d) => picked = d,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _createdAt = result);
+  }
+
+  String _formatDateTime(DateTime t) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)} '
+        '${two(t.hour)}:${two(t.minute)}';
   }
 
   @override
@@ -255,6 +343,94 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          // 展示范围：点击进入选择页（仅自己可见 / 全部角色可见 / 自定义分组）
+          Container(
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _openVisibility,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      CupertinoIcons.eye,
+                      size: 16,
+                      color: context.textSecondaryColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _visibilityLabel,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      CupertinoIcons.chevron_right,
+                      size: 16,
+                      color: context.textSecondaryColor,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_isEdit) ...[
+            const SizedBox(height: 12),
+            // 编辑模式：发布日期（点击弹出日期选择器修改）
+            Container(
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _pickCreatedAt,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        CupertinoIcons.calendar,
+                        size: 16,
+                        color: context.textSecondaryColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _createdAt == null
+                              ? '未设置日期'
+                              : _formatDateTime(_createdAt!),
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        CupertinoIcons.chevron_right,
+                        size: 16,
+                        color: context.textSecondaryColor,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

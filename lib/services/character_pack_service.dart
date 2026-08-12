@@ -238,6 +238,7 @@ class CharacterPackService {
         id: map['id'] as String? ?? '',
         content: map['content'] as String? ?? '',
         location: map['location'] as String? ?? '',
+        visibility: map['visibility'] as String? ?? 'all',
         images: localImages,
         likes: (map['likes'] as List<dynamic>?)
                 ?.map((e) => e.toString())
@@ -383,6 +384,7 @@ class CharacterPackService {
             'id': m.id,
             'content': m.content,
             'location': m.location,
+            'visibility': m.visibility,
             'images': images,
             'likes': m.likes,
             'comments': m.comments.map((e) => e.toJson()).toList(),
@@ -445,6 +447,7 @@ class CharacterPackService {
           'id': m.id,
           'content': m.content,
           'location': m.location,
+          'visibility': m.visibility,
           'images': images,
           'likes': m.likes,
           'comments': m.comments.map((e) => e.toJson()).toList(),

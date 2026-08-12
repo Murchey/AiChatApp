@@ -326,6 +326,7 @@ class _MomentCardState extends State<MomentCard> {
           id: moment.id,
           content: moment.content,
           location: moment.location,
+          visibility: moment.visibility,
           images: moment.images,
           likes: likes ?? moment.likes,
           comments: comments ?? moment.comments,
@@ -343,7 +344,11 @@ class _MomentCardState extends State<MomentCard> {
   Future<void> _toggleLike() async {
     final name = _myName;
     if (name.isEmpty) return;
-    final likes = [...moment.likes];
+    // 点赞去重：先清理历史数据中重复的昵称，再执行点赞/取消切换
+    final likes = <String>[];
+    for (final n in moment.likes) {
+      if (!likes.contains(n)) likes.add(n);
+    }
     if (likes.contains(name)) {
       likes.remove(name);
     } else {
@@ -608,7 +613,12 @@ class _MomentCardState extends State<MomentCard> {
 
   /// 点赞 + 评论区：浅底块内先点赞昵称，再逐条评论（昵称蓝色）
   Widget _interactions(BuildContext context) {
-    final hasLikes = moment.likes.isNotEmpty;
+    // 点赞去重：相同昵称只展示一个赞
+    final likeNames = <String>[];
+    for (final n in moment.likes) {
+      if (!likeNames.contains(n)) likeNames.add(n);
+    }
+    final hasLikes = likeNames.isNotEmpty;
     final hasComments = moment.comments.isNotEmpty;
     if (!hasLikes && !hasComments) return const SizedBox.shrink();
     return Container(
@@ -633,7 +643,7 @@ class _MomentCardState extends State<MomentCard> {
                 const SizedBox(width: 5),
                 Expanded(
                   child: Text(
-                    moment.likes.join('、'),
+                    likeNames.join('、'),
                     style: const TextStyle(
                       fontSize: 12.5,
                       color: Color(0xFF8FB8E8),

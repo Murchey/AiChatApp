@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
+import '../models/visibility_group.dart';
 import '../utils/pinyin_util.dart';
 
 class CharacterProvider extends ChangeNotifier {
@@ -11,9 +12,13 @@ class CharacterProvider extends ChangeNotifier {
   bool _isLoading = false;
   static const _storageKey = 'characters_v1';
   static const _deletedKey = 'characters_deleted_v1';
+  static const _visibilityGroupsKey = 'visibility_groups_v1';
 
   /// 通讯录中固定的"自己"账号 id：不能发起聊天，仅在空间页查看/发布朋友圈
   static const String selfCharacterId = 'me';
+
+  /// 朋友圈展示范围自定义分组
+  List<VisibilityGroup> _visibilityGroups = [];
 
   /// 被用户删除的默认角色 id（删除后重启不恢复）
   Set<String> _deletedDefaultIds = {};
@@ -24,6 +29,9 @@ class CharacterProvider extends ChangeNotifier {
 
   /// "自己"账号（昵称/头像/签名取自用户资料，朋友圈本地持久化）
   Character? get selfCharacter => getCharacterById(selfCharacterId);
+
+  /// 朋友圈展示范围自定义分组（不含固定选项【仅自己可见】【全部角色可见】）
+  List<VisibilityGroup> get visibilityGroups => _visibilityGroups;
 
   /// 可被管理（删除 / 导出角色包等）的角色：排除固定的"自己"账号
   List<Character> get manageableCharacters =>
@@ -107,6 +115,16 @@ class CharacterProvider extends ChangeNotifier {
            .map((e) => Character.fromJson(e.value as Map<String, dynamic>)),
       if (self != null) self,
     ];
+    // 恢复朋友圈展示范围分组
+    try {
+      final groupsStr = prefs.getString(_visibilityGroupsKey);
+      if (groupsStr != null) {
+        final list = jsonDecode(groupsStr) as List<dynamic>;
+        _visibilityGroups = list
+            .map((e) => VisibilityGroup.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+    } catch (_) {}
     _isLoading = false;
     notifyListeners();
   }
@@ -293,6 +311,7 @@ class CharacterProvider extends ChangeNotifier {
     required String content,
     required List<String> images,
     String location = '',
+    String visibility = 'all',
   }) async {
     final index = _characters.indexWhere((c) => c.id == selfCharacterId);
     if (index == -1) return;
@@ -300,6 +319,7 @@ class CharacterProvider extends ChangeNotifier {
       id: 'moment_${DateTime.now().microsecondsSinceEpoch}',
       content: content.trim(),
       location: location.trim(),
+      visibility: visibility,
       images: images,
       createdAt: DateTime.now(),
     );
@@ -315,6 +335,34 @@ class CharacterProvider extends ChangeNotifier {
     notifyListeners();
     await _persistCharacters();
     return character;
+  }
+
+  /// 新建朋友圈展示范围分组（初始为空，联系人后续在分组管理页编辑）
+  Future<VisibilityGroup> addVisibilityGroup(String name) async {
+    final group = VisibilityGroup(
+      id: 'group_${DateTime.now().microsecondsSinceEpoch}',
+      name: name.trim(),
+    );
+    _visibilityGroups.add(group);
+    notifyListeners();
+    await _persistVisibilityGroups();
+    return group;
+  }
+
+  /// 更新分组（名称 / 联系人）并持久化
+  Future<void> updateVisibilityGroup(VisibilityGroup group) async {
+    final index = _visibilityGroups.indexWhere((g) => g.id == group.id);
+    if (index == -1) return;
+    _visibilityGroups[index] = group;
+    notifyListeners();
+    await _persistVisibilityGroups();
+  }
+
+  /// 删除分组并持久化
+  Future<void> removeVisibilityGroup(String id) async {
+    _visibilityGroups.removeWhere((g) => g.id == id);
+    notifyListeners();
+    await _persistVisibilityGroups();
   }
 
   /// 批量删除角色并持久化（"自己"账号不可删除）
@@ -341,5 +389,13 @@ class CharacterProvider extends ChangeNotifier {
       for (final c in _characters) c.id: c.toJson(),
     };
     await prefs.setString(_storageKey, jsonEncode(map));
+  }
+
+  Future<void> _persistVisibilityGroups() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _visibilityGroupsKey,
+      jsonEncode(_visibilityGroups.map((g) => g.toJson()).toList()),
+    );
   }
 }

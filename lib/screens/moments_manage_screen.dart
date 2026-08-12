@@ -232,9 +232,13 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<CharacterProvider>();
-    final momentsCharacters = provider.characters
-        .where((c) => c.moments.isNotEmpty)
-        .toList();
+    // 列表最上方固定显示"自己"的朋友圈，其余角色按通讯录顺序排列
+    final self = provider.selfCharacter;
+    final momentsCharacters = <Character>[
+      if (self != null && self.moments.isNotEmpty) self,
+      ...provider.characters.where((c) =>
+          c.moments.isNotEmpty && c.id != CharacterProvider.selfCharacterId),
+    ];
     final selectedCount = _selected.length;
 
     return CupertinoPageScaffold(
