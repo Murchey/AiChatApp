@@ -1,14 +1,13 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
-import '../models/moment.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
+import '../widgets/moment_card.dart';
 
 /// base64 图片解码缓存：同一 base64 只解码一次并复用同一个 [MemoryImage]。
 /// 若每次重建都新建 [MemoryImage]，ImageCache 永不命中（Dart 的 List ==
@@ -506,7 +505,12 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
                 ),
               )
             else
-              ...moments.map((m) => _buildMomentCard(character, m)),
+              ...moments.map(
+                (m) => Padding(
+                  padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
+                  child: MomentCard(character: character, moment: m),
+                ),
+              ),
             // 角色资料卡片（跟随滚动，黑色背景上使用白色标题）
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -546,256 +550,6 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
         ),
       ),
     );
-  }
-
-  /// 单条朋友圈卡片：小头像 + 昵称、正文、图片、点赞/评论、时间
-  Widget _buildMomentCard(Character character, Moment moment) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF202024),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildMomentAvatar(character),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  character.displayName,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: CupertinoColors.white,
-                  ),
-                ),
-                if (moment.content.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    moment.content,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      height: 1.4,
-                      color: CupertinoColors.white,
-                    ),
-                  ),
-                ],
-                if (moment.images.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _buildMomentImages(moment.images),
-                ],
-                if (moment.likes.isNotEmpty || moment.comments.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _buildMomentInteractions(moment),
-                ],
-                const SizedBox(height: 6),
-                Text(
-                  _formatMomentTime(moment.createdAt),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: CupertinoColors.systemGrey.withValues(alpha: 0.8),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 朋友圈小头像：已设置用图片，未设置用默认用户图标
-  Widget _buildMomentAvatar(Character character) {
-    if (character.avatar.isNotEmpty) {
-      return Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          image: DecorationImage(
-            image: _cachedImage(character.avatar),
-            fit: BoxFit.cover,
-          ),
-        ),
-      );
-    }
-    return Container(
-      width: 34,
-      height: 34,
-      decoration: BoxDecoration(
-        color: CupertinoColors.white.withValues(alpha: 0.25),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      alignment: Alignment.center,
-      child: const Icon(
-        CupertinoIcons.person_fill,
-        size: 20,
-        color: CupertinoColors.white,
-      ),
-    );
-  }
-
-  /// 朋友圈图片：最多展示 9 张，1 张大图、多张 3 列网格（对齐微信朋友圈）；
-  /// 图片缺失时只显示文字占位。点击图片全屏预览。
-  Widget _buildMomentImages(List<String> paths) {
-    final shown = paths.where((p) => File(p).existsSync()).take(9).toList();
-    if (shown.isEmpty) {
-      return Text(
-        '图片加载失败',
-        style: TextStyle(
-          fontSize: 12,
-          color: CupertinoColors.systemGrey.withValues(alpha: 0.7),
-        ),
-      );
-    }
-    if (shown.length == 1) {
-      return GestureDetector(
-        onTap: () => _previewImage(shown.first),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            width: double.infinity,
-            height: 150,
-            child: Image(
-              image: FileImage(File(shown.first)),
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-            ),
-          ),
-        ),
-      );
-    }
-    // 多图：3 列网格，单格按卡片内可用宽度均分
-    final screenWidth = MediaQuery.of(context).size.width;
-    final cell = (screenWidth - 32 - 24 - 34 - 10 - 8) / 3;
-    return Wrap(
-      spacing: 4,
-      runSpacing: 4,
-      children: shown.map((p) {
-        return GestureDetector(
-          onTap: () => _previewImage(p),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              width: cell,
-              height: cell,
-              child: Image(
-                image: FileImage(File(p)),
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  /// 点赞 + 评论区：浅底块内先点赞昵称，再逐条评论（昵称蓝色）
-  Widget _buildMomentInteractions(Moment moment) {
-    final hasLikes = moment.likes.isNotEmpty;
-    final hasComments = moment.comments.isNotEmpty;
-    if (!hasLikes && !hasComments) return const SizedBox.shrink();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF18181A),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (hasLikes) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  CupertinoIcons.heart_fill,
-                  size: 13,
-                  color: Color(0xFFFA5151),
-                ),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    moment.likes.join('、'),
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: Color(0xFF8FB8E8),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (hasComments) const SizedBox(height: 6),
-          ],
-          if (hasComments)
-            ...moment.comments.map(
-              (c) => Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '${c.sender}：',
-                        style: const TextStyle(color: Color(0xFF8FB8E8)),
-                      ),
-                      TextSpan(text: c.content),
-                    ],
-                  ),
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    height: 1.4,
-                    color: CupertinoColors.white,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// 全屏预览朋友圈图片（点击任意位置关闭）
-  void _previewImage(String path) {
-    if (!File(path).existsSync()) return;
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierColor: CupertinoColors.black.withValues(alpha: 0.9),
-        barrierDismissible: true,
-        pageBuilder: (_, __, ___) => GestureDetector(
-          onTap: () => Navigator.of(context).pop(),
-          child: Center(
-            child: InteractiveViewer(
-              maxScale: 4,
-              child: Image.file(File(path)),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 朋友圈时间显示：今天/昨天显示时分，同一年省略年份
-  String _formatMomentTime(DateTime? time) {
-    if (time == null) return '';
-    final now = DateTime.now();
-    final d = time.toLocal();
-    final today = DateTime(now.year, now.month, now.day);
-    final day = DateTime(d.year, d.month, d.day);
-    String two(int n) => n.toString().padLeft(2, '0');
-    final hm = '${two(d.hour)}:${two(d.minute)}';
-    final diff = today.difference(day).inDays;
-    if (diff == 0) return '今天 $hm';
-    if (diff == 1) return '昨天 $hm';
-    if (d.year == now.year) return '${two(d.month)}-${two(d.day)} $hm';
-    return '${d.year}-${two(d.month)}-${two(d.day)} $hm';
   }
 
   /// 角色头像：已设置显示图片，未设置显示默认用户图标

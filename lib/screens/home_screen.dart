@@ -9,6 +9,7 @@ import '../providers/settings_provider.dart';
 import '../services/update_service.dart';
 import '../widgets/alphabet_index_bar.dart';
 import '../widgets/update_dialogs.dart';
+import 'moments_screen.dart';
 import 'profile_screen.dart';
 
 /// base64 头像解码缓存：同一个 base64 只解码一次，并复用同一个 [MemoryImage]。
@@ -161,6 +162,10 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 label: '通讯录',
               ),
               const BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.photo),
+                label: '朋友圈',
+              ),
+              const BottomNavigationBarItem(
                 icon: Icon(CupertinoIcons.person_crop_circle),
                 label: '我',
               ),
@@ -172,6 +177,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 return _buildChatList();
               case 1:
                 return _buildCharacterList();
+              case 2:
+                return const MomentsScreen();
               default:
                 return const ProfileScreen();
             }
