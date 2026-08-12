@@ -15,6 +15,7 @@ class ChatProvider extends ChangeNotifier {
   static const _conversationsKey = 'chat_conversations_v1';
   static const _messagesKey = 'chat_messages_v1';
   static const _contextTokensKey = 'chat_context_tokens_v1'; // 各会话上下文 token 累计值
+  static const _systemTokensKey = 'chat_system_tokens_v1'; // 各会话系统提示词 + 输出指令 token（持久化，重启恢复）
 
   // 会话压缩参数
   static const int kKeepRecentMessages = 20; // 压缩时保留的最近消息条数
@@ -118,6 +119,25 @@ class ChatProvider extends ChangeNotifier {
               (k, v) => MapEntry(k, (v as num).toInt())));
       }
     } catch (_) {}
+    // 加载各会话系统提示词 + 输出指令 token（纯内存态重启即丢，
+    // 若不恢复，重启后发送消息乐观更新时会漏掉系统提示词这一大头）
+    try {
+      final sysStr = prefs.getString(_systemTokensKey);
+      if (sysStr != null) {
+        final map = jsonDecode(sysStr) as Map<String, dynamic>;
+        _systemTokens
+          ..clear()
+          ..addAll(map.map(
+              (k, v) => MapEntry(k, (v as num).toInt())));
+      }
+    } catch (_) {}
+    // 系统提示词恢复后，用「系统提示词 + 摘要起全部历史」重算各会话上下文，
+    // 覆盖重启前可能不含系统提示词的旧快照
+    _systemTokens.forEach((id, _) {
+      if (_messagesMap.containsKey(id)) {
+        _contextTokens[id] = _estimateSendInputBudget(id);
+      }
+    });
   }
 
   /// 保存会话与聊天记录到本地（持久化）
@@ -139,6 +159,7 @@ class ChatProvider extends ChangeNotifier {
       ),
     );
     await prefs.setString(_contextTokensKey, jsonEncode(_contextTokens));
+    await prefs.setString(_systemTokensKey, jsonEncode(_systemTokens));
   }
 
   Conversation getOrCreateConversation({
@@ -555,6 +576,12 @@ class ChatProvider extends ChangeNotifier {
     _contextTokens[conversationId] = estimated;
     return estimated;
   }
+
+  /// 该会话是否已有系统提示词 token 记录。
+  /// 升级迁移提示用：无记录说明本进程内从未触发过 AI 回复，
+  /// 上下文统计会暂时漏掉系统提示词，触发一次回复后自动校正。
+  bool hasSystemTokensRecord(String conversationId) =>
+      _systemTokens.containsKey(conversationId);
 
   /// 从会话记录中取最近 [contextCount] 条文本消息作为对话历史。
   /// 压缩后原文不删除：历史起点定位到最后一条压缩摘要消息（含），

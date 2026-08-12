@@ -45,6 +45,9 @@ class ChatSettingsScreen extends StatelessWidget {
     final usage = contextLength > 0 ? (tokens / contextLength) : 0.0;
     final threshold = settings.compressThreshold;
     final overThreshold = contextLength > 0 && usage >= threshold;
+    // 升级迁移提示：本会话从未触发过 AI 回复时无系统提示词记录，
+    // 统计暂时不含系统提示词，触发一次回复后自动校正
+    final missingSystem = !chat.hasSystemTokensRecord(conversationId!);
     final fmt = NumberFormat.decimalPattern();
 
     return CupertinoListSection.insetGrouped(
@@ -149,6 +152,17 @@ class ChatSettingsScreen extends StatelessWidget {
                   color: context.textSecondaryColor,
                 ),
               ),
+              if (missingSystem) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  '提示：本会话尚未触发过 AI 回复，统计暂时不含系统提示词；'
+                  '触发一次 AI 回复后自动校正。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: CupertinoColors.systemOrange,
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               // 手动压缩对话按钮
               SizedBox(

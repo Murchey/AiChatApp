@@ -8,6 +8,41 @@ import '../models/message.dart';
 /// 若每次重建都新建 [MemoryImage]，图片缓存键会随之改变，导致反复解码、头像频闪。
 final Map<String, MemoryImage> _avatarImageCache = {};
 
+/// 微信表情代码 → emoji 映射：AI 按输出规则会携带表情包文字（如 [捂脸]），
+/// 渲染时转成真实 emoji 图标，贴近微信聊天观感。未收录的代码原样保留。
+const Map<String, String> _emojiCodeMap = {
+  '微笑': '😊', '呲牙': '😁', '得意': '😎', '愉快': '😄', '偷笑': '😏',
+  '坏笑': '😏', '憨笑': '😊', '害羞': '😳', '可爱': '🥰', '捂脸': '🤦',
+  '笑哭': '😂', '大笑': '😂', '流泪': '😭', '大哭': '😭', '委屈': '😢',
+  '快哭了': '😢', '难过': '😞', '尴尬': '😅', '冷汗': '😰', '流汗': '😓',
+  '擦汗': '😓', '发呆': '😳', '晕': '😵', '衰': '😩', '鄙视': '🙄',
+  '白眼': '🙄', '傲慢': '😤', '发怒': '😡', '咒骂': '🤬', '怄火': '😠',
+  '惊讶': '😱', '惊恐': '😨', '吓': '😱', '疑问': '❓', '闭嘴': '🤐',
+  '嘘': '🤫', '睡': '😴', '困': '😪', '哈欠': '🥱', '饥饿': '😋',
+  '吐': '🤮', '抠鼻': '🤏', '骷髅': '💀', '猪头': '🐷', '炸弹': '💣',
+  '菜刀': '🔪', '刀': '🔪', '西瓜': '🍉', '啤酒': '🍺', '咖啡': '☕',
+  '饭': '🍚', '蛋糕': '🎂', '玫瑰': '🌹', '凋谢': '🥀', '爱心': '❤️',
+  '心碎': '💔', '嘴唇': '👄', '亲亲': '😘', '飞吻': '😘', '拥抱': '🤗',
+  '强': '👍', '弱': '👎', '差劲': '👎', '握手': '🤝', '抱拳': '🙏',
+  '胜利': '✌️', '拳头': '👊', '敲打': '👊', '鼓掌': '👏', '再见': '👋',
+  'OK': '👌', 'NO': '🙅', '勾引': '👉', '奋斗': '💪', '给力': '💪',
+  '磕头': '🙇', '月亮': '🌙', '太阳': '☀️', '闪电': '⚡', '礼物': '🎁',
+  '篮球': '🏀', '足球': '⚽', '乒乓': '🏓', '瓢虫': '🐞', '便便': '💩',
+};
+
+/// 匹配 [表情名] 形式的微信表情代码（名字 1~8 个字）
+final RegExp _emojiCodePattern = RegExp(r'\[([^\[\]]{1,8})\]');
+
+/// 将消息正文中的表情代码替换为对应 emoji，未收录的代码原样保留
+String _renderEmoji(String text) {
+  if (text.isEmpty || !text.contains('[')) return text;
+  return text.replaceAllMapped(_emojiCodePattern, (match) {
+    final code = match.group(1);
+    if (code == null) return match[0]!;
+    return _emojiCodeMap[code] ?? match[0]!;
+  });
+}
+
 /// 按 base64 取缓存的头像 [MemoryImage]，未缓存则解码并存入（容量有上限防膨胀）
 MemoryImage? avatarImageFor(String base64) {
   if (base64.isEmpty) return null;
@@ -125,7 +160,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                       const SizedBox(height: 6),
                     ] else ...[
                       Text(
-                        message.content,
+                        _renderEmoji(message.content),
                         style: TextStyle(
                           fontSize: 16,
                           height: 1.4,
