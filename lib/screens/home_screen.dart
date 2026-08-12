@@ -22,7 +22,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with RouteAware {
-  final CupertinoTabController _tabController = CupertinoTabController();
+  // 主内容横向滑动手势控制：与底部 tab 双向联动
+  final PageController _pageController = PageController();
+  int _currentTab = 0;
 
   // 通讯录字母导航状态
   final Map<String, GlobalKey> _sectionKeys = {};
@@ -52,8 +54,25 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    _tabController.dispose();
+    _pageController.dispose();
     super.dispose();
+  }
+
+  /// 主内容滑动结束后同步底部 tab 高亮
+  void _onPageChanged(int index) {
+    if (_currentTab == index) return;
+    setState(() => _currentTab = index);
+  }
+
+  /// 底部 tab 点击切换时，同步滑动主内容 PageView
+  void _onTabTap(int index) {
+    if (_currentTab == index) return;
+    setState(() => _currentTab = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+    );
   }
 
   /// 从聊天等二级页面返回主页时，强制刷新底部导航栏未读角标。
@@ -129,52 +148,61 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
         // 朋友圈互动通知未读 → 底部「朋友圈」tab 显示红点
         final momentsUnread =
             context.watch<MomentNotificationProvider>().hasUnread;
-        return CupertinoTabScaffold(
-          controller: _tabController,
-          tabBar: CupertinoTabBar(
-            backgroundColor: context.navBarColor,
-            activeColor: context.accentColor,
-            inactiveColor: context.textSecondaryColor,
-            border: Border(
-              top: BorderSide(color: context.separatorColor, width: 0.5),
+        return Column(
+          children: [
+            // 主内容：四个导航页，支持触摸横向滑动切换（与底部 tab 联动）
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: _onPageChanged,
+                children: [
+                  _buildChatList(),
+                  _buildCharacterList(),
+                  const MomentsScreen(),
+                  const ProfileScreen(),
+                ],
+              ),
             ),
-            items: [
-              BottomNavigationBarItem(
-                icon: _buildTabIcon(CupertinoIcons.chat_bubble, totalUnread),
-                activeIcon: _buildTabIcon(
-                  CupertinoIcons.chat_bubble_fill,
-                  totalUnread,
+            CupertinoTabBar(
+              currentIndex: _currentTab,
+              onTap: _onTabTap,
+              backgroundColor: context.navBarColor,
+              activeColor: context.accentColor,
+              inactiveColor: context.textSecondaryColor,
+              border: Border(
+                top: BorderSide(color: context.separatorColor, width: 0.5),
+              ),
+              items: [
+                BottomNavigationBarItem(
+                  icon: _buildTabIcon(CupertinoIcons.chat_bubble, totalUnread),
+                  activeIcon: _buildTabIcon(
+                    CupertinoIcons.chat_bubble_fill,
+                    totalUnread,
+                  ),
+                  label: 'AiChat',
                 ),
-                label: 'AiChat',
-              ),
-              const BottomNavigationBarItem(
-                icon: Icon(CupertinoIcons.person_2),
-                label: '通讯录',
-              ),
-              BottomNavigationBarItem(
-                icon: _buildMomentsTabIcon(momentsUnread, CupertinoIcons.photo),
-                activeIcon:
-                    _buildMomentsTabIcon(momentsUnread, CupertinoIcons.photo),
-                label: '朋友圈',
-              ),
-              const BottomNavigationBarItem(
-                icon: Icon(CupertinoIcons.person_crop_circle),
-                label: '我',
-              ),
-            ],
-          ),
-          tabBuilder: (context, index) {
-            switch (index) {
-              case 0:
-                return _buildChatList();
-              case 1:
-                return _buildCharacterList();
-              case 2:
-                return const MomentsScreen();
-              default:
-                return const ProfileScreen();
-            }
-          },
+                const BottomNavigationBarItem(
+                  icon: Icon(CupertinoIcons.person_2),
+                  label: '通讯录',
+                ),
+                BottomNavigationBarItem(
+                  icon: _buildMomentsTabIcon(
+                    momentsUnread,
+                    CupertinoIcons.photo,
+                  ),
+                  activeIcon: _buildMomentsTabIcon(
+                    momentsUnread,
+                    CupertinoIcons.photo,
+                  ),
+                  label: '朋友圈',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(CupertinoIcons.person_crop_circle),
+                  label: '我',
+                ),
+              ],
+            ),
+          ],
         );
       },
     );
@@ -374,11 +402,11 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                           leadingSize: 45,
                           leading: _buildSquareAvatar(
                             context,
-                            character.name,
+                            character.displayName,
                             character.avatar,
                           ),
                           title: Text(
-                            character.name,
+                            _contactName(character),
                             style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w500,
@@ -471,15 +499,22 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     );
   }
 
+  /// 通讯录显示名：有备注时显示「备注（昵称）」，无备注仅显示昵称
+  String _contactName(Character character) {
+    final remark = character.remark.trim();
+    if (remark.isEmpty) return character.name;
+    return '$remark（${character.name}）';
+  }
+
   /// 通讯录顶部的"自己"账号条目：不能发起聊天，点击进入自己的空间页查看/发布朋友圈
   Widget _buildSelfTile(BuildContext context, Character self) {
     return CupertinoListTile(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       // 同消息列表：显式放宽 leading 尺寸约束
       leadingSize: 45,
-      leading: _buildSquareAvatar(context, self.name, self.avatar),
+      leading: _buildSquareAvatar(context, self.displayName, self.avatar),
       title: Text(
-        self.name,
+        _contactName(self),
         style: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w500,

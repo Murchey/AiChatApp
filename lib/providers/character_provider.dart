@@ -38,18 +38,22 @@ class CharacterProvider extends ChangeNotifier {
       _characters.where((c) => c.id != selfCharacterId).toList();
 
   /// 通讯录：按拼音首字母分组排序（类似手机通讯录）
+  ///
+  /// 排序依据为 [Character.displayName]（备注优先，无备注用昵称），
+  /// 使"角色备注在通讯录生效"。
   List<MapEntry<String, List<Character>>> get sortedCharactersGrouped {
     final sorted = List<Character>.from(_characters)
       ..sort((a, b) {
-        final la = PinyinUtil.firstLetter(a.name);
-        final lb = PinyinUtil.firstLetter(b.name);
+        final la = PinyinUtil.firstLetter(a.displayName);
+        final lb = PinyinUtil.firstLetter(b.displayName);
         if (la != lb) return la.compareTo(lb);
-        return PinyinUtil.fullPinyin(a.name).compareTo(PinyinUtil.fullPinyin(b.name));
+        return PinyinUtil.fullPinyin(a.displayName)
+            .compareTo(PinyinUtil.fullPinyin(b.displayName));
       });
 
     final groups = <String, List<Character>>{};
     for (final c in sorted) {
-      final letter = PinyinUtil.firstLetter(c.name);
+      final letter = PinyinUtil.firstLetter(c.displayName);
       groups.putIfAbsent(letter, () => []).add(c);
     }
     return groups.entries.toList();
