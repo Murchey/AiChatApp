@@ -603,11 +603,13 @@ class _ChatScreenState extends State<ChatScreen>
             .getCharacterById(conversation.characterId)
         : null;
     final sourceName = character?.displayName ?? widget.characterName;
+    final sourceAvatar = character?.avatar ?? '';
 
     if (merge) {
       await chatProvider.forwardMerged(
         conversationId: target.id,
         sourceName: sourceName,
+        sourceAvatar: sourceAvatar,
         messages: messages,
       );
     } else {

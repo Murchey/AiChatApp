@@ -679,6 +679,7 @@ class ChatProvider extends ChangeNotifier {
   Future<void> forwardMerged({
     required String conversationId,
     required String sourceName,
+    String sourceAvatar = '',
     required List<Message> messages,
   }) async {
     if (messages.isEmpty) return;
@@ -692,6 +693,7 @@ class ChatProvider extends ChangeNotifier {
                   ? 'file'
                   : 'text',
           createdAt: m.createdAt,
+          characterAvatar: m.isFromUser ? '' : sourceAvatar,
         )).toList();
     _messagesMap[conversationId] ??= [];
     _messagesMap[conversationId]!.add(Message(

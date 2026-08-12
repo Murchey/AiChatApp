@@ -44,7 +44,12 @@ class ForwardDetailScreen extends StatelessWidget {
   }
 
   Widget _buildItem(BuildContext context, ForwardItem item, bool showAvatar) {
-    final avatar = item.isUser ? userAvatar : characterAvatar;
+    // 优先使用源会话角色头像（转发时已固化），旧数据回退到当前传入的头像
+    final avatar = item.isUser
+        ? userAvatar
+        : (item.characterAvatar.isNotEmpty
+            ? item.characterAvatar
+            : characterAvatar);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       child: Column(

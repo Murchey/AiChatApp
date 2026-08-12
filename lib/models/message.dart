@@ -9,6 +9,7 @@ class ForwardItem {
   final String content;
   final String type; // 'text' | 'image' | 'file'
   final DateTime createdAt;
+  final String characterAvatar; // 源会话角色的头像（base64，转发时固化，防止在目标会话中显示错乱）
 
   const ForwardItem({
     required this.senderName,
@@ -16,6 +17,7 @@ class ForwardItem {
     required this.content,
     this.type = 'text',
     required this.createdAt,
+    this.characterAvatar = '',
   });
 
   Map<String, dynamic> toJson() => {
@@ -24,6 +26,7 @@ class ForwardItem {
         'content': content,
         'type': type,
         'created_at': createdAt.toIso8601String(),
+        'character_avatar': characterAvatar,
       };
 
   factory ForwardItem.fromJson(Map<String, dynamic> json) => ForwardItem(
@@ -32,6 +35,7 @@ class ForwardItem {
         content: json['content'] as String? ?? '',
         type: json['type'] as String? ?? 'text',
         createdAt: DateTime.parse(json['created_at'] as String),
+        characterAvatar: json['character_avatar'] as String? ?? '',
       );
 }
 
