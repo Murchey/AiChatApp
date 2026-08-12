@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dev_log_service.dart';
 
 /// 系统通知服务：角色在用户离开聊天界面时发来新消息，
 /// 向系统通知栏推送一条包含角色名称、消息内容与角色头像的通知。
@@ -70,6 +71,8 @@ class NotificationService {
     String avatarBase64 = '',
   }) async {
     if (!await _isUnreadNotifyEnabled()) return;
+    // 开发者模式：软件通知实时写入开发者日志（「我」页底部文本框）
+    DevLogService.instance.log('[通知] $characterName：$content');
     final bodyText = unreadCount > 0 ? '[未读$unreadCount条] $content' : content;
 
     // 角色头像（base64）解码为原始图片字节，作为通知大图标

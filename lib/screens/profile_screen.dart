@@ -7,6 +7,7 @@ import '../config/theme.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/dev_log_service.dart';
 import '../services/update_service.dart';
 import '../widgets/update_dialogs.dart';
 import 'api_settings_screen.dart';
@@ -47,6 +48,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Consumer<AuthProvider>(
         builder: (context, auth, _) {
           final user = auth.user;
+          final settings = context.watch<SettingsProvider>();
           return ListView(
             children: [
               // 资料卡（微信个人页样式：方形头像靠左）
@@ -305,11 +307,90 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ],
               ),
+              // 开发者模式：底部实时显示软件通知与朋友圈 AI 互动日志
+              if (settings.developerMode) _buildDevLogPanel(context),
               const SizedBox(height: 32),
             ],
           );
         },
       ),
+    );
+  }
+
+  /// 开发者模式下的日志文本框：实时展示软件通知与朋友圈 AI 互动日志
+  Widget _buildDevLogPanel(BuildContext context) {
+    return ListenableBuilder(
+      listenable: DevLogService.instance,
+      builder: (context, _) {
+        final lines = DevLogService.instance.lines;
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+          decoration: BoxDecoration(
+            color: context.listBgColor,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '开发者日志',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: DevLogService.instance.clear,
+                      child: Text(
+                        '清空',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                height: 260,
+                width: double.infinity,
+                color: const Color(0xFF0D1117),
+                child: lines.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                          '暂无日志',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF8B949E)),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: lines.length,
+                        itemBuilder: (context, i) => Text(
+                          lines[i],
+                          style: const TextStyle(
+                            fontSize: 11,
+                            height: 1.5,
+                            color: Color(0xFFC9D1D9),
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

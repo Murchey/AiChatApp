@@ -5,6 +5,7 @@ import '../config/theme.dart';
 import '../models/character.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/moment_notification_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/update_service.dart';
 import '../widgets/alphabet_index_bar.dart';
@@ -125,6 +126,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           0,
           (sum, c) => sum + c.unreadCount,
         );
+        // 朋友圈互动通知未读 → 底部「朋友圈」tab 显示红点
+        final momentsUnread =
+            context.watch<MomentNotificationProvider>().hasUnread;
         return CupertinoTabScaffold(
           controller: _tabController,
           tabBar: CupertinoTabBar(
@@ -147,8 +151,10 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 icon: Icon(CupertinoIcons.person_2),
                 label: '通讯录',
               ),
-              const BottomNavigationBarItem(
-                icon: Icon(CupertinoIcons.photo),
+              BottomNavigationBarItem(
+                icon: _buildMomentsTabIcon(momentsUnread, CupertinoIcons.photo),
+                activeIcon:
+                    _buildMomentsTabIcon(momentsUnread, CupertinoIcons.photo),
                 label: '朋友圈',
               ),
               const BottomNavigationBarItem(
@@ -518,6 +524,33 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
             right: -10,
             top: -6,
             child: _buildUnreadBadge(totalUnread, context.scaffoldColor),
+          ),
+      ],
+    );
+  }
+
+  /// 朋友圈 tab 图标：存在未读互动通知时右上角显示红点
+  Widget _buildMomentsTabIcon(bool hasUnread, IconData icon) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon),
+        if (hasUnread)
+          Positioned(
+            right: -7,
+            top: -6,
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                color: CupertinoColors.systemRed,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: context.navBarColor,
+                  width: 1.2,
+                ),
+              ),
+            ),
           ),
       ],
     );

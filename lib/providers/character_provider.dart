@@ -306,15 +306,17 @@ class CharacterProvider extends ChangeNotifier {
     await _persistCharacters();
   }
 
-  /// 以"自己"身份发布一条朋友圈（新动态置顶显示）
-  Future<void> publishSelfMoment({
+  /// 以"自己"身份发布一条朋友圈（新动态置顶显示），返回发布成功的动态。
+  Future<Moment> publishSelfMoment({
     required String content,
     required List<String> images,
     String location = '',
     String visibility = 'all',
   }) async {
     final index = _characters.indexWhere((c) => c.id == selfCharacterId);
-    if (index == -1) return;
+    if (index == -1) {
+      throw StateError('self character not found');
+    }
     final moment = Moment(
       id: 'moment_${DateTime.now().microsecondsSinceEpoch}',
       content: content.trim(),
@@ -327,6 +329,7 @@ class CharacterProvider extends ChangeNotifier {
         .copyWith(moments: [moment, ..._characters[index].moments]);
     notifyListeners();
     await _persistCharacters();
+    return moment;
   }
 
   /// 新增角色（导入角色包 / 自定义添加）并持久化

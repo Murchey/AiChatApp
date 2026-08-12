@@ -4,20 +4,59 @@ import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
 import '../providers/character_provider.dart';
+import '../providers/moment_notification_provider.dart';
 import '../widgets/moment_card.dart';
 import '../widgets/publish_moment_screen.dart';
 import 'character_detail_screen.dart';
+import 'moment_notifications_screen.dart';
 
 /// 朋友圈页：按发布时间倒序展示全部通讯录好友（含"自己"）的朋友圈动态。
-/// 点击某条动态可进入对应角色/自己的空间页；右上角相机按钮可发布朋友圈。
+/// 点击某条动态可进入对应角色/自己的空间页；右上角相机按钮可发布朋友圈；
+/// 左上角铃铛图标查看角色互动通知（带未读红点角标）。
 class MomentsScreen extends StatelessWidget {
   const MomentsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final notifications = context.watch<MomentNotificationProvider>();
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('朋友圈'),
+        leading: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () {
+            Navigator.push(
+              context,
+              CupertinoPageRoute(
+                builder: (_) => const MomentNotificationsScreen(),
+              ),
+            );
+          },
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(CupertinoIcons.bell),
+              // 未读互动通知红点
+              if (notifications.hasUnread)
+                Positioned(
+                  right: -3,
+                  top: -3,
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.systemRed,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: context.navBarColor,
+                        width: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: () {

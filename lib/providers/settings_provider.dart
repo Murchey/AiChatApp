@@ -84,6 +84,8 @@ class SettingsProvider extends ChangeNotifier {
   String _updateProxyUrl = kProxySources.first;
   // 未读消息发送系统通知
   bool _unreadNotify = true;
+  // 开发者模式（在「我」页底部显示通知与日志文本框）
+  bool _developerMode = false;
   // 全局角色头像框样式（默认方形）
   AvatarFrameStyle _avatarFrameStyle = AvatarFrameStyle.square;
 
@@ -92,6 +94,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get autoCheckUpdate => _autoCheckUpdate;
   String get updateProxyUrl => _updateProxyUrl;
   bool get unreadNotify => _unreadNotify;
+  bool get developerMode => _developerMode;
   AvatarFrameStyle get avatarFrameStyle => _avatarFrameStyle;
 
   Color bubbleColor(BubbleColorSlot slot) =>
@@ -140,6 +143,7 @@ class SettingsProvider extends ChangeNotifier {
     _updateProxyUrl =
         prefs.getString('update_proxy_url') ?? kProxySources.first;
     _unreadNotify = prefs.getBool('unread_notify') ?? true;
+    _developerMode = prefs.getBool('developer_mode') ?? false;
     _avatarFrameStyle = AvatarFrameStyle.values.firstWhere(
       (s) => s.name == prefs.getString('avatar_frame_style'),
       orElse: () => AvatarFrameStyle.square,
@@ -198,6 +202,14 @@ class SettingsProvider extends ChangeNotifier {
     _unreadNotify = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('unread_notify', value);
+    notifyListeners();
+  }
+
+  /// 设置开发者模式开关（开启后「我」页底部显示通知与日志文本框）
+  Future<void> setDeveloperMode(bool value) async {
+    _developerMode = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('developer_mode', value);
     notifyListeners();
   }
 

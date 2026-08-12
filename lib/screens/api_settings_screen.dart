@@ -27,6 +27,110 @@ class ApiSettingsScreen extends StatelessWidget {
     return '${model.displayName}（${model.modelName}）';
   }
 
+  /// 朋友圈互动模型显示文案
+  String _momentModelLabel(ApiProvider api) {
+    if (api.momentModelId == null) return '未设置';
+    final model = api.getModelById(api.momentModelId);
+    if (model == null) return '未设置';
+    return '${model.displayName}（${model.modelName}）';
+  }
+
+  /// 弹出朋友圈互动模型的选取（未设置 / 已配置模型）
+  ///
+  /// 使用可滚动选项列表：用户添加大量模型时也能正常显示全部选项
+  void _showMomentModelPicker(BuildContext context) {
+    final api = context.read<ApiProvider>();
+    final items = <({String? id, String label})>[
+      (id: null, label: '未设置'),
+      for (final m in api.models) (id: m.id, label: m.displayName),
+    ];
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.6,
+          ),
+          margin: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+          decoration: BoxDecoration(
+            color: context.scaffoldColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  children: [
+                    Text(
+                      '读取朋友圈的模型',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: context.textPrimaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '发布朋友圈后由该模型决定角色是否点赞/评论',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(height: 0.5, color: context.separatorColor),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final item in items)
+                      CupertinoListTile(
+                        onTap: () {
+                          api.setMomentModel(item.id);
+                          Navigator.pop(ctx);
+                        },
+                        title: Text(
+                          item.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                        trailing: item.id == api.momentModelId
+                            ? Icon(
+                                CupertinoIcons.check_mark,
+                                color: context.accentColor,
+                              )
+                            : null,
+                      ),
+                  ],
+                ),
+              ),
+              Container(height: 0.5, color: context.separatorColor),
+              CupertinoButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  '取消',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 弹出压缩会话模型的选取（跟随聊天模型 / 已配置模型）
   ///
   /// 使用可滚动选项列表：用户添加大量模型时也能正常显示全部选项
@@ -303,6 +407,39 @@ class ApiSettingsScreen extends StatelessWidget {
                   color: context.textSecondaryColor,
                 ),
                 onTap: () => _showCompressionModelPicker(context),
+              ),
+            ],
+          ),
+          // 朋友圈互动专用模型
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('朋友圈互动'),
+            children: [
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.bell_fill,
+                  color: context.accentColor,
+                ),
+                title: const Text('读取朋友圈的模型'),
+                subtitle: Text(
+                  _momentModelLabel(api),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => _showMomentModelPicker(context),
               ),
             ],
           ),

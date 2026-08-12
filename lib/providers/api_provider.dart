@@ -62,14 +62,18 @@ class ApiModel {
 class ApiProvider extends ChangeNotifier {
   static const _storageKey = 'api_models_v1';
   static const _compressModelKey = 'api_compress_model';
+  static const _momentModelKey = 'api_moment_model';
   static const _visionKey = 'model_vision_v1'; // 模型 id → 是否支持图片（视觉）
   List<ApiModel> _models = [];
   String? _compressionModelId; // 会话压缩专用模型（null 表示跟随聊天模型）
+  String? _momentModelId; // 朋友圈互动（读取点赞/评论）专用模型（null 表示未设置）
   final Map<String, bool> _visionSupport = {}; // 模型图片能力检测结果缓存
 
   List<ApiModel> get models => List.unmodifiable(_models);
 
   String? get compressionModelId => _compressionModelId;
+
+  String? get momentModelId => _momentModelId;
 
   ApiModel? getModelById(String? id) {
     if (id == null) return null;
@@ -120,6 +124,7 @@ class ApiProvider extends ChangeNotifier {
       }
     }
     _compressionModelId = prefs.getString(_compressModelKey);
+    _momentModelId = prefs.getString(_momentModelKey);
     // 加载图片能力检测结果缓存
     try {
       final visionStr = prefs.getString(_visionKey);
@@ -142,6 +147,18 @@ class ApiProvider extends ChangeNotifier {
       await prefs.remove(_compressModelKey);
     } else {
       await prefs.setString(_compressModelKey, modelId);
+    }
+  }
+
+  /// 设置朋友圈互动专用模型（null 表示未设置，发布后不自动互动）
+  Future<void> setMomentModel(String? modelId) async {
+    _momentModelId = modelId;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (modelId == null) {
+      await prefs.remove(_momentModelKey);
+    } else {
+      await prefs.setString(_momentModelKey, modelId);
     }
   }
 
@@ -185,9 +202,13 @@ class ApiProvider extends ChangeNotifier {
   Future<void> deleteModel(String id) async {
     _models.removeWhere((m) => m.id == id);
     _visionSupport.remove(id);
+    // 若删除的是当前选中的压缩/朋友圈模型，同步重置选择
+    if (_compressionModelId == id) _compressionModelId = null;
+    if (_momentModelId == id) _momentModelId = null;
     notifyListeners();
     await _persist();
     await _persistVision();
+    await _persistModelSelection();
   }
 
   /// 当前模型是否已检测为"支持图片发送"（视觉模型）。
@@ -208,5 +229,20 @@ class ApiProvider extends ChangeNotifier {
   Future<void> _persistVision() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_visionKey, jsonEncode(_visionSupport));
+  }
+
+  /// 持久化压缩 / 朋友圈模型的当前选择（删除模型后重置时需要）
+  Future<void> _persistModelSelection() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_compressionModelId == null) {
+      await prefs.remove(_compressModelKey);
+    } else {
+      await prefs.setString(_compressModelKey, _compressionModelId!);
+    }
+    if (_momentModelId == null) {
+      await prefs.remove(_momentModelKey);
+    } else {
+      await prefs.setString(_momentModelKey, _momentModelId!);
+    }
   }
 }

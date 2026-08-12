@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,8 +7,13 @@ import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/moment.dart';
 import '../models/visibility_group.dart';
+import '../providers/api_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/moment_notification_provider.dart';
 import '../screens/moment_visibility_screen.dart';
+import '../services/dev_log_service.dart';
+import '../services/moment_ai_service.dart';
+import '../utils/app_toast.dart';
 
 /// 发布 / 编辑朋友圈页面：文字 + 标记位置 + 相册多选图片（最多 9 张）。
 ///
@@ -127,28 +133,49 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
             }
           } catch (_) {}
         }
-        Navigator.pop(
-          context,
-          Moment(
-            id: old.id,
-            content: content,
-            location: location,
-            visibility: _visibilityId,
-            images: newPaths,
-            likes: old.likes,
-            comments: old.comments,
-            createdAt: _createdAt ?? old.createdAt,
-          ),
+        final characterProvider = context.read<CharacterProvider>();
+        final api = context.read<ApiProvider>();
+        final notificationProvider =
+            context.read<MomentNotificationProvider>();
+        final edited = Moment(
+          id: old.id,
+          content: content,
+          location: location,
+          visibility: _visibilityId,
+          images: newPaths,
+          likes: old.likes,
+          comments: old.comments,
+          createdAt: _createdAt ?? old.createdAt,
+        );
+        Navigator.pop(context, edited);
+        // 重新编辑等效于重新发布：重新触发 AI 互动
+        // （按新的展示范围遍历可见角色，重新请求点赞/评论）
+        _startAiEngagement(
+          characterProvider: characterProvider,
+          api: api,
+          notificationProvider: notificationProvider,
+          moment: edited,
         );
       } else {
-        await context.read<CharacterProvider>().publishSelfMoment(
-              content: content,
-              images: newPaths,
-              location: location,
-              visibility: _visibilityId,
-            );
+        final characterProvider = context.read<CharacterProvider>();
+        final api = context.read<ApiProvider>();
+        final notificationProvider =
+            context.read<MomentNotificationProvider>();
+        final moment = await characterProvider.publishSelfMoment(
+          content: content,
+          images: newPaths,
+          location: location,
+          visibility: _visibilityId,
+        );
         if (!mounted) return;
+        // 先返回朋友圈列表，再后台启动 AI 互动（含非多模态提示弹窗）
         Navigator.pop(context, true);
+        _startAiEngagement(
+          characterProvider: characterProvider,
+          api: api,
+          notificationProvider: notificationProvider,
+          moment: moment,
+        );
       }
     } catch (_) {
       if (!mounted) return;
@@ -177,6 +204,64 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
     final ext = path.substring(dot + 1).toLowerCase();
     const allowed = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'};
     return allowed.contains(ext) ? ext : 'jpg';
+  }
+
+  /// 发布成功后后台启动朋友圈 AI 互动：
+  /// 遍历展示范围内可见角色，请求模型决定是否点赞/评论。
+  /// 未配置「朋友圈互动」模型时 Toast 提示；图文动态但模型非多模态时
+  /// 弹窗提示 AI 回复可能效果不佳（互动仍继续尝试）。
+  void _startAiEngagement({
+    required CharacterProvider characterProvider,
+    required ApiProvider api,
+    required MomentNotificationProvider notificationProvider,
+    required Moment moment,
+  }) {
+    final model = api.getModelById(api.momentModelId);
+    final characters =
+        MomentAiService.visibleCharacters(characterProvider, moment.visibility);
+    if (model == null) {
+      const msg = '请先在「API 设置」中配置「朋友圈互动」模型';
+      DevLogService.instance.log(msg);
+      showAppToast(msg);
+      return;
+    }
+    if (characters.isEmpty) {
+      DevLogService.instance.log('朋友圈互动：展示范围内没有可见角色，跳过');
+      return;
+    }
+
+    // 图文动态但模型未检测为多模态 → 弹窗提示 AI 回复可能效果不佳
+    final visionSupported = api.isVisionSupported(api.momentModelId);
+    if (moment.images.isNotEmpty && visionSupported != true) {
+      final rootCtx = appNavigatorKey.currentContext;
+      if (rootCtx != null) {
+        showCupertinoDialog<void>(
+          context: rootCtx,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('提示'),
+            content: const Text(
+              '当前「朋友圈互动」模型可能不支持图片，AI 回复效果可能不佳。',
+            ),
+            actions: [
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('知道了'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+
+    // 后台启动互动（不阻塞界面）
+    unawaited(MomentAiService.run(
+      characterProvider: characterProvider,
+      apiProvider: api,
+      notificationProvider: notificationProvider,
+      moment: moment,
+      characters: characters,
+    ));
   }
 
   /// 当前展示范围的显示文案（分组被删除后回退到全部角色可见）

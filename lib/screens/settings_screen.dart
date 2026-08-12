@@ -449,6 +449,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
+          // 开发者模式：开启后在「我」页底部显示通知与日志文本框
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('开发者'),
+            children: [
+              CupertinoListTile(
+                title: const Text('开发者模式'),
+                subtitle: Text(
+                  settings.developerMode
+                      ? '已开启，「我」页底部显示软件通知与朋友圈 AI 互动日志'
+                      : '已关闭',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSwitch(
+                  value: settings.developerMode,
+                  onChanged: (v) => settings.setDeveloperMode(v),
+                ),
+              ),
+            ],
+          ),
           // 更新检测：启动时自动检测 + 更新代理地址
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,

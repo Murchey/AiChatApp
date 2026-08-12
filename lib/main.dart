@@ -6,6 +6,7 @@ import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/chat_settings_provider.dart';
 import 'providers/character_provider.dart';
+import 'providers/moment_notification_provider.dart';
 import 'providers/settings_provider.dart';
 
 void main() {
@@ -18,6 +19,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => CharacterProvider()),
         ChangeNotifierProvider(create: (_) => ApiProvider()),
         ChangeNotifierProvider(create: (_) => ChatSettingsProvider()),
+        ChangeNotifierProvider(create: (_) => MomentNotificationProvider()),
       ],
       child: const AiChatApp(),
     ),
