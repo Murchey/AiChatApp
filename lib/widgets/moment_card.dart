@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
+import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
 
@@ -31,13 +32,13 @@ class MomentCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF202024),
+        color: context.momentCardColor,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _avatar(),
+          _avatar(context),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -45,20 +46,20 @@ class MomentCard extends StatelessWidget {
               children: [
                 Text(
                   character.displayName,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: CupertinoColors.white,
+                    color: context.textPrimaryColor,
                   ),
                 ),
                 if (moment.content.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
                     moment.content,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 15,
                       height: 1.4,
-                      color: CupertinoColors.white,
+                      color: context.textPrimaryColor,
                     ),
                   ),
                 ],
@@ -68,14 +69,14 @@ class MomentCard extends StatelessWidget {
                 ],
                 if (moment.likes.isNotEmpty || moment.comments.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  _interactions(),
+                  _interactions(context),
                 ],
                 const SizedBox(height: 6),
                 Text(
                   _formatTime(moment.createdAt),
                   style: TextStyle(
                     fontSize: 11,
-                    color: CupertinoColors.systemGrey.withValues(alpha: 0.8),
+                    color: context.textSecondaryColor,
                   ),
                 ),
               ],
@@ -87,7 +88,7 @@ class MomentCard extends StatelessWidget {
   }
 
   /// 小头像：已设置用图片，未设置用默认用户图标
-  Widget _avatar() {
+  Widget _avatar(BuildContext context) {
     if (character.avatar.isNotEmpty) {
       return Container(
         width: 34,
@@ -105,14 +106,14 @@ class MomentCard extends StatelessWidget {
       width: 34,
       height: 34,
       decoration: BoxDecoration(
-        color: CupertinoColors.white.withValues(alpha: 0.25),
+        color: context.accentColor.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(8),
       ),
       alignment: Alignment.center,
-      child: const Icon(
+      child: Icon(
         CupertinoIcons.person_fill,
         size: 20,
-        color: CupertinoColors.white,
+        color: context.accentColor,
       ),
     );
   }
@@ -126,7 +127,7 @@ class MomentCard extends StatelessWidget {
         '图片加载失败',
         style: TextStyle(
           fontSize: 12,
-          color: CupertinoColors.systemGrey.withValues(alpha: 0.7),
+          color: context.textSecondaryColor,
         ),
       );
     }
@@ -174,7 +175,7 @@ class MomentCard extends StatelessWidget {
   }
 
   /// 点赞 + 评论区：浅底块内先点赞昵称，再逐条评论（昵称蓝色）
-  Widget _interactions() {
+  Widget _interactions(BuildContext context) {
     final hasLikes = moment.likes.isNotEmpty;
     final hasComments = moment.comments.isNotEmpty;
     if (!hasLikes && !hasComments) return const SizedBox.shrink();
@@ -182,7 +183,7 @@ class MomentCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF18181A),
+        color: context.momentBlockColor,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -225,10 +226,10 @@ class MomentCard extends StatelessWidget {
                       TextSpan(text: c.content),
                     ],
                   ),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12.5,
                     height: 1.4,
-                    color: CupertinoColors.white,
+                    color: context.textPrimaryColor,
                   ),
                 ),
               ),

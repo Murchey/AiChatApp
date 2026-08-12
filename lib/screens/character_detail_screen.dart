@@ -423,7 +423,7 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
   Widget _buildMomentsPanel(Character character) {
     final moments = character.moments;
     return Container(
-      color: const Color(0xFF18181A),
+      color: context.momentsBgColor,
       // 朋友圈滚到顶部后继续下拉（过度滚动）时，驱动背景图自然展开；
       // 上滑浏览内容时，背景图从常态 40% 逐步收缩到页面 25%
       child: NotificationListener<ScrollNotification>(
@@ -468,22 +468,22 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
           padding: const EdgeInsets.only(top: 8, bottom: 100),
           children: [
             // 朋友圈标题栏
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
                   Icon(
                     CupertinoIcons.circle_grid_3x3_fill,
                     size: 16,
-                    color: CupertinoColors.systemGrey,
+                    color: context.textSecondaryColor,
                   ),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Text(
                     '朋友圈',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: CupertinoColors.systemGrey,
+                      color: context.textSecondaryColor,
                     ),
                   ),
                 ],
@@ -523,7 +523,7 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: CupertinoColors.white.withValues(alpha: 0.9),
+                        color: context.textPrimaryColor,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -536,7 +536,7 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: CupertinoColors.white.withValues(alpha: 0.9),
+                        color: context.textPrimaryColor,
                       ),
                     ),
                     const SizedBox(height: 8),

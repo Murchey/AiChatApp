@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
+import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
 import '../providers/character_provider.dart';
@@ -17,7 +18,7 @@ class MomentsScreen extends StatelessWidget {
       navigationBar: const CupertinoNavigationBar(
         middle: Text('朋友圈'),
       ),
-      backgroundColor: const Color(0xFF18181A),
+      backgroundColor: context.momentsBgColor,
       child: Consumer<CharacterProvider>(
         builder: (context, provider, _) {
           // 聚合所有角色的动态（含无时间字段的排到最后）
@@ -42,7 +43,7 @@ class MomentsScreen extends StatelessWidget {
                 '暂无朋友圈动态',
                 style: TextStyle(
                   fontSize: 14,
-                  color: CupertinoColors.systemGrey.withValues(alpha: 0.8),
+                  color: context.textSecondaryColor,
                 ),
               ),
             );

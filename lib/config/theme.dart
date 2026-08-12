@@ -40,6 +40,14 @@ class AppColors {
     Color(0xFFFF9500), // 活力橙
     Color(0xFFAF52DE), // 神秘紫
   ];
+
+  // 朋友圈（深色卡片风格，浅色模式改用浅灰底）
+  static const momentsBgLight = Color(0xFFEDEDED); // 朋友圈页面/面板背景
+  static const momentsBgDark = Color(0xFF18181A);
+  static const momentCardLight = Color(0xFFFFFFFF); // 朋友圈卡片背景
+  static const momentCardDark = Color(0xFF202024);
+  static const momentBlockLight = Color(0xFFF2F2F2); // 点赞/评论浅底块
+  static const momentBlockDark = Color(0xFF18181A);
 }
 
 class AppTheme {
@@ -131,4 +139,16 @@ extension AppThemeX on BuildContext {
 
   Color get separatorColor =>
       isDark ? CupertinoColors.white.withValues(alpha: 0.1) : CupertinoColors.systemGrey5;
+
+  /// 朋友圈页面/面板背景
+  Color get momentsBgColor =>
+      isDark ? AppColors.momentsBgDark : AppColors.momentsBgLight;
+
+  /// 朋友圈卡片背景
+  Color get momentCardColor =>
+      isDark ? AppColors.momentCardDark : AppColors.momentCardLight;
+
+  /// 朋友圈点赞/评论浅底块背景
+  Color get momentBlockColor =>
+      isDark ? AppColors.momentBlockDark : AppColors.momentBlockLight;
 }
