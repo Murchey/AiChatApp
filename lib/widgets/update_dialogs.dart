@@ -134,7 +134,7 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
             await UpdateService.ignoreVersion(_info.latestVersion);
             if (context.mounted) Navigator.pop(context);
           },
-          child: const Text('不再提醒'),
+          child: const Text('不再提醒（仅本版本）'),
         ),
         CupertinoDialogAction(
           onPressed: () => Navigator.pop(context),
@@ -224,14 +224,11 @@ class _DownloadDialogState extends State<_DownloadDialog> {
       setState(() => _failed = true);
       return;
     }
-    // 下载完成：关闭弹窗并启动系统安装
+    // 下载完成：关闭弹窗并启动系统安装。
+    // 注意：不要在此时清理安装包——系统安装器在用户确认「安装」时才会
+    // 真正读取文件，提前删除会报"找不到文件"；残留包由下次启动时兜底清理。
     Navigator.of(context).pop();
     await UpdateService.installApk(path);
-    // 稍作延迟再清理安装包，避免系统安装器仍在读取文件；
-    // 若本次删除失败，新版本下次启动时也会兜底清理
-    Future.delayed(const Duration(seconds: 5), () {
-      UpdateService.cleanupDownloadedApks();
-    });
   }
 
   @override

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -172,7 +173,8 @@ class UpdateService {
       final dir = await getExternalStorageDirectory();
       final updatesDir = Directory('${dir?.path}/updates');
       if (!updatesDir.existsSync()) updatesDir.createSync(recursive: true);
-      final file = File('${updatesDir.path}/${kApkAssetName(version)}');
+      final fileName = kApkAssetName(version);
+      final file = File('${updatesDir.path}/$fileName');
 
       // 已存在完整文件则跳过下载
       if (file.existsSync() && file.lengthSync() > 0) return file.path;
@@ -182,9 +184,12 @@ class UpdateService {
       final resp = await http.Client().send(request);
       if (resp.statusCode != 200) return null;
 
+      // 先写入 .part 临时文件，下载完整后再改名发布；
+      // 避免上次中断留下的半截安装包被误判为"已完整"而跳过重新下载
+      final tmp = File('${updatesDir.path}/$fileName.part');
       final total = resp.contentLength;
       var received = 0;
-      final sink = file.openWrite();
+      final sink = tmp.openWrite();
       try {
         await for (final chunk in resp.stream) {
           sink.add(chunk);
@@ -197,7 +202,13 @@ class UpdateService {
         await sink.close();
       }
 
-      if (file.lengthSync() == 0) return null;
+      if (tmp.lengthSync() == 0) {
+        tmp.deleteSync();
+        return null;
+      }
+      // 覆盖旧文件并发布为正式安装包
+      if (file.existsSync()) file.deleteSync();
+      tmp.renameSync(file.path);
       return file.path;
     } catch (_) {
       return null;
@@ -208,12 +219,15 @@ class UpdateService {
   static Future<void> installApk(String path) async {
     try {
       await _channel.invokeMethod('installApk', {'path': path});
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[UpdateService] 触发系统安装失败: $e');
+    }
   }
 
-  /// 清理更新目录中残留的安装包（.apk）。
-  /// 安装完成后调用，或新版本每次启动时兜底清理，
-  /// 避免安装包长期占用缓存空间。
+  /// 清理更新目录中残留的安装包（.apk 与中断下载的 .part）。
+  /// 在应用每次启动时兜底调用，避免安装包长期占用缓存空间。
+  /// 注意：不要在启动系统安装后立即清理——安装器在用户确认时才会读取
+  /// 文件，提前删除会导致"找不到文件"安装失败。
   static Future<void> cleanupDownloadedApks() async {
     try {
       final dir = await getExternalStorageDirectory();
@@ -222,7 +236,8 @@ class UpdateService {
       if (!updatesDir.existsSync()) return;
       for (final entry in updatesDir.listSync()) {
         if (entry is! File) continue;
-        if (!entry.path.toLowerCase().endsWith('.apk')) continue;
+        final name = entry.path.toLowerCase();
+        if (!name.endsWith('.apk') && !name.endsWith('.part')) continue;
         try {
           entry.deleteSync();
         } catch (_) {

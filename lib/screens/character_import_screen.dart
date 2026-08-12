@@ -39,10 +39,30 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
     final provider = context.read<CharacterProvider>();
     const uuid = Uuid();
     var count = 0;
+    // 已存在角色的名称集合：同名角色不允许直接导入，需先改名
+    final usedNames = provider.characters
+        .map((c) => c.name.trim())
+        .where((n) => n.isNotEmpty)
+        .toSet();
+
     for (final entry in widget.entries) {
       if (!_selected.contains(entry.folderName) || entry.error != null) continue;
-      // 重新生成 id，避免与已导入角色冲突
-      final json = entry.character.toJson()..['id'] = uuid.v4();
+
+      var name = entry.character.name.trim();
+      // 与已有角色重名：弹出输入框让用户重新命名，取消则跳过该角色
+      if (usedNames.contains(name)) {
+        if (!mounted) return;
+        final newName = await _promptRename(context, name, usedNames);
+        if (!mounted) return;
+        if (newName == null) continue;
+        name = newName;
+      }
+      usedNames.add(name);
+
+      // 重新生成 id，避免与已导入角色冲突；重名角色写入修改后的名称
+      final json = entry.character.toJson()
+        ..['id'] = uuid.v4()
+        ..['name'] = name;
       await provider.addCharacter(Character.fromJson(json));
       count++;
     }
@@ -66,11 +86,25 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
     );
   }
 
+  /// 弹出改名输入框：返回用户确认的新名称，用户取消返回 null。
+  Future<String?> _promptRename(
+    BuildContext context,
+    String originalName,
+    Set<String> usedNames,
+  ) {
+    return showCupertinoDialog<String>(
+      context: context,
+      builder: (_) => _RenameDialog(
+        originalName: originalName,
+        usedNames: usedNames,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final validCount = widget.entries.where((e) => e.error == null).length;
     final selectedCount = _selected.length;
-
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('选择导入的角色'),
@@ -234,6 +268,97 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
                   ? CupertinoColors.systemRed
                   : context.accentColor,
             ),
+    );
+  }
+}
+
+/// 同名角色改名输入框：校验非空且不与已有名称冲突，输入非法时保持弹窗提示。
+class _RenameDialog extends StatefulWidget {
+  final String originalName;
+  final Set<String> usedNames;
+
+  const _RenameDialog({
+    required this.originalName,
+    required this.usedNames,
+  });
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final TextEditingController _controller;
+  String? _hint;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.originalName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _controller.text.trim();
+    if (name.isEmpty) {
+      setState(() => _hint = '名称不能为空');
+      return;
+    }
+    if (widget.usedNames.contains(name)) {
+      setState(() => _hint = '该名称已被使用，请更换一个');
+      return;
+    }
+    Navigator.pop(context, name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoAlertDialog(
+      title: const Text('修改角色名称'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            '已有同名角色，请为即将导入的角色重新命名',
+            style: TextStyle(fontSize: 13, height: 1.4),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          CupertinoTextField(
+            controller: _controller,
+            autofocus: true,
+            onChanged: (_) {
+              if (_hint != null) setState(() => _hint = null);
+            },
+            onSubmitted: (_) => _submit(),
+          ),
+          if (_hint != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _hint!,
+              style: const TextStyle(
+                fontSize: 12,
+                color: CupertinoColors.systemRed,
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        CupertinoDialogAction(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        CupertinoDialogAction(
+          isDefaultAction: true,
+          onPressed: _submit,
+          child: const Text('确定'),
+        ),
+      ],
     );
   }
 }
