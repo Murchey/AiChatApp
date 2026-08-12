@@ -8,6 +8,7 @@ import '../models/conversation.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
 import '../services/prompt_builder.dart';
+import 'character_detail_screen.dart';
 
 /// 聊天详情/角色资料：上半部分可编辑角色卡（备注/昵称/个性签名/定位地区），
 /// 中部聊天管理（聊天场景），最下方折叠的提示词设置 panel。
@@ -325,114 +326,131 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         color: context.listBgColor,
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Row(
-        children: [
-          // 方形头像（点击更换）
-          GestureDetector(
-            onTap: _pickAvatar,
-            child: Stack(
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: context.accentColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                    image: avatar.isNotEmpty
-                        ? DecorationImage(
-                            image: MemoryImage(base64Decode(avatar)),
-                            fit: BoxFit.cover,
+      // 点击角色栏目（头像除外）进入通讯录角色空间页
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _openCharacterSpace,
+        child: Row(
+          children: [
+            // 方形头像（点击更换）
+            GestureDetector(
+              onTap: _pickAvatar,
+              child: Stack(
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: context.accentColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      image: avatar.isNotEmpty
+                          ? DecorationImage(
+                              image: MemoryImage(base64Decode(avatar)),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    alignment: Alignment.center,
+                    child: avatar.isEmpty
+                        ? Icon(
+                            CupertinoIcons.person_fill,
+                            size: 36,
+                            color: context.accentColor,
                           )
                         : null,
                   ),
-                  alignment: Alignment.center,
-                  child: avatar.isEmpty
-                      ? Icon(
-                          CupertinoIcons.person_fill,
-                          size: 36,
-                          color: context.accentColor,
-                        )
-                      : null,
-                ),
-                // 右下角相机角标
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: context.accentColor,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: context.listBgColor,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: const Icon(
-                      CupertinoIcons.camera_fill,
-                      size: 10,
-                      color: CupertinoColors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  displayName,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: context.textPrimaryColor,
-                  ),
-                ),
-                if (signature.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    signature,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 1.4,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                ],
-                if (region.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Icon(
-                        CupertinoIcons.location,
-                        size: 13,
-                        color: context.textSecondaryColor,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        region,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textSecondaryColor,
+                  // 右下角相机角标
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: context.accentColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: context.listBgColor,
+                          width: 1.5,
                         ),
                       ),
-                    ],
+                      child: const Icon(
+                        CupertinoIcons.camera_fill,
+                        size: 10,
+                        color: CupertinoColors.white,
+                      ),
+                    ),
                   ),
                 ],
-              ],
+              ),
             ),
-          ),
-          Icon(
-            CupertinoIcons.pencil_circle,
-            size: 24,
-            color: context.textSecondaryColor,
-          ),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    displayName,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: context.textPrimaryColor,
+                    ),
+                  ),
+                  if (signature.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      signature,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.4,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                  ],
+                  if (region.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(
+                          CupertinoIcons.location,
+                          size: 13,
+                          color: context.textSecondaryColor,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          region,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(
+              CupertinoIcons.chevron_right,
+              size: 18,
+              color: context.textSecondaryColor,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 进入通讯录角色空间页（角色详情：背景图 + 朋友圈）
+  void _openCharacterSpace() {
+    final characterId = _characterId;
+    if (characterId.isEmpty) return;
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => CharacterDetailScreen(characterId: characterId),
       ),
     );
   }

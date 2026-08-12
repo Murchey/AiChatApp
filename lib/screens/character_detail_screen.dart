@@ -34,9 +34,16 @@ class CharacterDetailScreen extends StatefulWidget {
 }
 
 class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
-  /// 封面背景图交互状态：是否固定展开、当前拖拽偏移、是否正在拖拽
+  /// 封面背景图高度比例（相对屏高）
+  static const double _coverRestRatio = 0.40; // 常态露出高度
+  static const double _coverFullRatio = 0.70; // 下拉展开后的完整高度
+  static const double _coverMinRatio = 0.10; // 上滑浏览朋友圈时收缩到的下限
+
+  /// 封面背景图交互状态：是否固定展开、当前拖拽偏移、是否正在拖拽、
+  /// 上滑浏览朋友圈时的收缩偏移（封面可缩小到页面 10%）
   bool _coverExpanded = false;
   double _coverDragOffset = 0;
+  double _coverShrink = 0;
   bool _isDragging = false;
 
   /// 点击头像选择图片（相册 / 拍照）
@@ -151,45 +158,21 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
           navigationBar: CupertinoNavigationBar(
             middle: Text(character.name),
           ),
-          child: Column(
+          child: Stack(
             children: [
-              // 头部：背景图 + 骑跨交界处的头像 + 左侧昵称/签名
-              _buildHeader(character),
-              // 朋友圈：黑色背景，覆盖屏幕下半部分，内容可滚动
-              Expanded(child: _buildMomentsPanel(character)),
-              // 底部操作：发送消息（提示词仅可在聊天页右上角菜单的折叠 panel 中编辑）
-              SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: CupertinoButton.filled(
-                    onPressed: () {
-                      final conversation = chatProvider.getOrCreateConversation(
-                        characterId: character.id,
-                        characterName: character.displayName,
-                        characterAvatar: character.avatar,
-                      );
-
-                      Navigator.pushNamed(
-                        context,
-                        AppRoutes.chat,
-                        arguments: {
-                          'conversationId': conversation.id,
-                          'characterName': character.displayName,
-                          'characterAvatar': character.avatar,
-                        },
-                      );
-                    },
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-                    child: const Text(
-                      '发送消息',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
+              Column(
+                children: [
+                  // 头部：背景图 + 骑跨交界处的头像 + 左侧昵称/签名
+                  _buildHeader(character),
+                  // 朋友圈：黑色背景，覆盖屏幕下半部分，内容可滚动
+                  Expanded(child: _buildMomentsPanel(character)),
+                ],
+              ),
+              // 悬浮发送按钮（无背景面板，右下角）
+              Positioned(
+                right: 20,
+                bottom: 28,
+                child: _buildFloatingSendButton(character, chatProvider),
               ),
             ],
           ),
@@ -201,7 +184,8 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
   /// 松手后吸附：接近完整高度（90% 以上）则固定展开 70%，否则回弹到常态 40%。
   /// 头部拖拽与朋友圈下拉到顶的过度滚动共用此判定。
   void _settleCover() {
-    final expandDelta = MediaQuery.of(context).size.height * 0.3; // 70% - 40%
+    final screenHeight = MediaQuery.of(context).size.height;
+    final expandDelta = screenHeight * (_coverFullRatio - _coverRestRatio);
     setState(() {
       _isDragging = false;
       if (_coverDragOffset >= expandDelta * 0.9) {
@@ -214,6 +198,48 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
     });
   }
 
+  /// 悬浮发送按钮：圆形，右下角，无背景面板。点击进入聊天
+  Widget _buildFloatingSendButton(Character character, ChatProvider chatProvider) {
+    return GestureDetector(
+      onTap: () {
+        final conversation = chatProvider.getOrCreateConversation(
+          characterId: character.id,
+          characterName: character.displayName,
+          characterAvatar: character.avatar,
+        );
+        Navigator.pushNamed(
+          context,
+          AppRoutes.chat,
+          arguments: {
+            'conversationId': conversation.id,
+            'characterName': character.displayName,
+            'characterAvatar': character.avatar,
+          },
+        );
+      },
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: context.accentColor,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: CupertinoColors.black.withValues(alpha: 0.25),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Icon(
+          CupertinoIcons.chat_bubble_fill,
+          size: 26,
+          color: CupertinoColors.white,
+        ),
+      ),
+    );
+  }
+
   /// 头部：背景图（完整高度占屏幕 70%，常态只露出 40%，可下拉展开）+ 骑跨
   /// 交界处的头像（靠右）+ 头像左侧的昵称与个性签名（昵称底边对齐背景区
   /// 底部）。下拉到底（接近完整 70%）松手固定展开，只拉到中间松手回弹 40%；
@@ -222,15 +248,15 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
     final screenHeight = MediaQuery.of(context).size.height;
     const double avatarSize = 84;
     const double avatarOverhang = 42; // 头像下半部分伸出背景图的高度（骑跨区）
-    const double restRatio = 0.4; // 常态露出背景图高度 = 40% 屏高
-    const double fullRatio = 0.7; // 完整背景图高度 = 70% 屏高
-    final double restHeight = screenHeight * restRatio;
-    final double fullHeight = screenHeight * fullRatio;
+    final double restHeight = screenHeight * _coverRestRatio;
+    final double fullHeight = screenHeight * _coverFullRatio;
     final double expandDelta = fullHeight - restHeight;
+    final double minHeight = screenHeight * _coverMinRatio; // 上滑收缩下限
 
-    // 当前背景图高度：固定展开态取完整值，拖拽态 = 常态 + 拖拽偏移
-    final double coverHeight =
-        _coverExpanded ? fullHeight : restHeight + _coverDragOffset;
+    // 当前背景图高度：展开态取完整值、常态取 40%，再减去上滑收缩偏移
+    final double baseHeight = _coverExpanded ? fullHeight : restHeight;
+    final double coverHeight = (baseHeight + _coverDragOffset - _coverShrink)
+        .clamp(minHeight, fullHeight);
     final signature = character.signature.trim();
 
     return SizedBox(
@@ -238,12 +264,15 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
       // 头部整块响应下拉手势，展开封面
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onVerticalDragStart: (_) => _isDragging = true,
+        onVerticalDragStart: (_) {
+          setState(() => _isDragging = true);
+        },
         onVerticalDragUpdate: (details) {
           setState(() {
             _isDragging = true;
             // 固定展开态也允许继续拖拽（向上拉可收回）
             if (_coverExpanded) _coverExpanded = false;
+            _coverShrink = 0;
             _coverDragOffset = (_coverDragOffset + details.delta.dy).clamp(
               0.0,
               expandDelta,
@@ -396,19 +425,36 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
     final moments = character.moments;
     return Container(
       color: const Color(0xFF18181A),
-      // 朋友圈滚到顶部后继续下拉（过度滚动）时，驱动背景图自然展开
+      // 朋友圈滚到顶部后继续下拉（过度滚动）时，驱动背景图自然展开；
+      // 上滑浏览内容时，背景图从常态 40% 逐步收缩到页面 25%
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
-          if (notification is ScrollUpdateNotification &&
-              notification.dragDetails != null &&
-              notification.metrics.pixels < 0) {
+          if (notification is ScrollUpdateNotification) {
+            // 手指拖动时跟手（瞬时动画），惯性滚动/程序滚动时用动画平滑过渡
+            final isTouchDrag = notification.dragDetails != null;
+            final screenHeight = MediaQuery.of(context).size.height;
+            final pixels = notification.metrics.pixels;
             setState(() {
-              _isDragging = true;
-              if (_coverExpanded) _coverExpanded = false;
-              _coverDragOffset = (-notification.metrics.pixels).clamp(
-                0.0,
-                MediaQuery.of(context).size.height * 0.3,
-              );
+              _isDragging = isTouchDrag;
+              if (pixels < 0) {
+                // 滚到顶部继续下拉：展开背景图
+                if (_coverExpanded) _coverExpanded = false;
+                _coverShrink = 0;
+                _coverDragOffset = (-pixels).clamp(
+                  0.0,
+                  screenHeight * (_coverFullRatio - _coverRestRatio),
+                );
+              } else if (pixels > 0) {
+                // 上滑浏览朋友圈：封面从常态比例逐步收缩到下限比例
+                _coverDragOffset = 0;
+                final shrinkMax =
+                    screenHeight * (_coverRestRatio - _coverMinRatio);
+                _coverShrink = (pixels / (screenHeight * 0.3) * shrinkMax)
+                    .clamp(0.0, shrinkMax);
+              } else {
+                _coverShrink = 0;
+                _coverDragOffset = 0;
+              }
             });
           } else if (notification is ScrollEndNotification) {
             _settleCover();
@@ -419,7 +465,8 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
           physics: const BouncingScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
           ),
-          padding: const EdgeInsets.only(top: 8, bottom: 16),
+          // 底部留出悬浮按钮空间，避免遮挡最后一条内容
+          padding: const EdgeInsets.only(top: 8, bottom: 100),
           children: [
             // 朋友圈标题栏
             const Padding(
