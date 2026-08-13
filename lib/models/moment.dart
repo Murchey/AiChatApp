@@ -1,18 +1,33 @@
-/// 朋友圈单条评论
+/// 朋友圈单条评论。
+///
+/// [replyTo] 为非空字符串时表示"带回复评论"：`sender` 回复了 `replyTo`。
+/// 展示为「[sender] 回复了 [replyTo]：[content]」；为空时是普通评论
+/// 「[sender]：[content]」。序列化时仅在非空时写出 `reply_to` 字段，
+/// 与旧版评论 JSON（仅 sender/content）完全兼容。
 class MomentComment {
   final String sender;
   final String content;
+  final String replyTo;
 
-  const MomentComment({required this.sender, required this.content});
+  const MomentComment({
+    required this.sender,
+    required this.content,
+    this.replyTo = '',
+  });
 
   factory MomentComment.fromJson(Map<String, dynamic> json) {
     return MomentComment(
       sender: json['sender'] as String? ?? '',
       content: json['content'] as String? ?? '',
+      replyTo: json['reply_to'] as String? ?? '',
     );
   }
 
-  Map<String, dynamic> toJson() => {'sender': sender, 'content': content};
+  Map<String, dynamic> toJson() => {
+        'sender': sender,
+        'content': content,
+        if (replyTo.isNotEmpty) 'reply_to': replyTo,
+      };
 }
 
 /// 角色朋友圈单条动态

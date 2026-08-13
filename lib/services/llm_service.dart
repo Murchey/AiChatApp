@@ -49,6 +49,37 @@ class LLMService {
     return '请求出错：$error';
   }
 
+  /// 聊天会话专用请求：kimi 模型（模型请求名含 kimi，忽略大小写）
+  /// 首次请求尝试失败（网络/API 异常）时，第二次把 temperature 改为 1
+  /// 再尝试一次（kimi 部分版本对默认温度偶发拒绝/报错），其余模型直接抛错。
+  static Future<CompletionResult> _fetchWithKimiFallback({
+    required ApiModel model,
+    required List<Map<String, Object>> messages,
+    required int maxTokens,
+    double initialTemperature = 0.9,
+  }) async {
+    try {
+      return await fetchCompletion(
+        model: model,
+        messages: messages,
+        temperature: initialTemperature,
+        maxTokens: maxTokens,
+      );
+    } catch (_) {
+      if (model.modelName.toLowerCase().contains('kimi')) {
+        debugPrint('[LLMService] ${model.modelName} 首次请求失败，'
+            '改用 temperature=1 再次尝试');
+        return fetchCompletion(
+          model: model,
+          messages: messages,
+          temperature: 1.0,
+          maxTokens: maxTokens,
+        );
+      }
+      rethrow;
+    }
+  }
+
   /// 请求"角色主动发消息/回复"，返回解析后的消息数组（可能为空数组）。
   ///
   /// [historyMessages] 为最近的对话历史（user/assistant 交替），
@@ -63,7 +94,7 @@ class LLMService {
     List<Map<String, Object>> historyMessages = const [],
     String outputInstruction = '',
   }) async {
-    final completion = await fetchCompletion(
+    final completion = await _fetchWithKimiFallback(
       model: model,
       messages: [
         {'role': 'system', 'content': systemPrompt},
@@ -71,7 +102,6 @@ class LLMService {
         if (outputInstruction.trim().isNotEmpty)
           {'role': 'user', 'content': outputInstruction.trim()},
       ],
-      temperature: 0.9,
       maxTokens: 1024,
     );
     final raw = completion.content;
@@ -102,7 +132,7 @@ class LLMService {
     } catch (_) {
       throw const LLMException('无法读取图片，请重新选择图片后重试');
     }
-    final completion = await fetchCompletion(
+    final completion = await _fetchWithKimiFallback(
       model: model,
       messages: [
         {'role': 'system', 'content': systemPrompt},
@@ -120,7 +150,6 @@ class LLMService {
           ],
         },
       ],
-      temperature: 0.9,
       maxTokens: 1024,
     );
     final raw = completion.content;

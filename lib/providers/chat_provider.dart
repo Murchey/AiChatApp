@@ -83,6 +83,23 @@ class ChatProvider extends ChangeNotifier {
     return _messagesMap[conversationId] ?? [];
   }
 
+  /// 获取某角色的最近聊天记录（按上下文条数），供朋友圈评论回复等场景使用。
+  ///
+  /// 返回 `[{'role': 'user'|'assistant', 'content': ...}, ...]`；
+  /// [contextCount] <= 0 表示无限制（取摘要起全部历史）。
+  /// 该角色没有会话记录时返回空列表；不会新建会话。
+  List<Map<String, String>> getRecentHistoryForCharacter(
+    String characterId,
+    int contextCount,
+  ) {
+    for (final c in _conversations) {
+      if (c.characterId == characterId) {
+        return _buildHistory(c.id, contextCount);
+      }
+    }
+    return const [];
+  }
+
   /// 从本地存储加载会话与聊天记录（持久化）。
   /// 全部 JSON 反序列化与上下文 token 重算都在后台 isolate 中执行，
   /// 避免大量聊天记录在主线程解码拖慢启动。

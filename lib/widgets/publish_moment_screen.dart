@@ -9,6 +9,8 @@ import '../models/moment.dart';
 import '../models/visibility_group.dart';
 import '../providers/api_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/chat_provider.dart';
+import '../providers/chat_settings_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../screens/moment_visibility_screen.dart';
 import '../services/dev_log_service.dart';
@@ -137,6 +139,8 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
         final api = context.read<ApiProvider>();
         final notificationProvider =
             context.read<MomentNotificationProvider>();
+        final chatProvider = context.read<ChatProvider>();
+        final chatSettings = context.read<ChatSettingsProvider>();
         final edited = Moment(
           id: old.id,
           content: content,
@@ -154,6 +158,8 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
           characterProvider: characterProvider,
           api: api,
           notificationProvider: notificationProvider,
+          chatProvider: chatProvider,
+          chatSettings: chatSettings,
           moment: edited,
         );
       } else {
@@ -161,6 +167,8 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
         final api = context.read<ApiProvider>();
         final notificationProvider =
             context.read<MomentNotificationProvider>();
+        final chatProvider = context.read<ChatProvider>();
+        final chatSettings = context.read<ChatSettingsProvider>();
         final moment = await characterProvider.publishSelfMoment(
           content: content,
           images: newPaths,
@@ -174,6 +182,8 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
           characterProvider: characterProvider,
           api: api,
           notificationProvider: notificationProvider,
+          chatProvider: chatProvider,
+          chatSettings: chatSettings,
           moment: moment,
         );
       }
@@ -214,6 +224,8 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
     required CharacterProvider characterProvider,
     required ApiProvider api,
     required MomentNotificationProvider notificationProvider,
+    required ChatProvider chatProvider,
+    required ChatSettingsProvider chatSettings,
     required Moment moment,
   }) {
     final model = api.getModelById(api.momentModelId);
@@ -259,6 +271,8 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
       characterProvider: characterProvider,
       apiProvider: api,
       notificationProvider: notificationProvider,
+      chatProvider: chatProvider,
+      chatSettings: chatSettings,
       moment: moment,
       characters: characters,
     ));

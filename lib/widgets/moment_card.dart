@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
@@ -7,8 +8,12 @@ import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
+import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/chat_provider.dart';
+import '../providers/chat_settings_provider.dart';
+import '../services/moment_ai_service.dart';
 import '../utils/app_toast.dart';
 import 'character_avatar.dart';
 import 'publish_moment_screen.dart';
@@ -364,7 +369,8 @@ class _MomentCardState extends State<MomentCard> {
   /// 打开评论输入栏：输入框悬浮在软键盘上方，输入框上方仍是可滚动
   /// 操作的朋友圈内容（不进入二级页面）。
   /// [editIndex] 非空时表示编辑该位置的评论，输入框预填原内容。
-  void _openCommentInput({int? editIndex}) {
+  /// [replyToName] 非空时表示"回复该昵称"（点击评论条目套用回复输入框）。
+  void _openCommentInput({int? editIndex, String? replyToName}) {
     if (_commentInputEntry != null) return;
     final overlay = Overlay.of(context);
     _commentInputEntry = OverlayEntry(
@@ -380,8 +386,10 @@ class _MomentCardState extends State<MomentCard> {
                   editIndex != null && editIndex >= 0 && editIndex < moment.comments.length
                       ? moment.comments[editIndex].content
                       : null,
+              replyToName: replyToName,
               onClose: _closeCommentInput,
-              onSend: (text) => _submitComment(text, editIndex: editIndex),
+              onSend: (text) =>
+                  _submitComment(text, editIndex: editIndex, replyTo: replyToName),
             ),
           ),
         ],
@@ -395,8 +403,9 @@ class _MomentCardState extends State<MomentCard> {
     _commentInputEntry = null;
   }
 
-  /// 提交评论：无 [editIndex] 为新增，有则为编辑（发送者保持不变）
-  void _submitComment(String text, {int? editIndex}) {
+  /// 提交评论：无 [editIndex] 为新增（可携带 [replyTo] 表示回复某昵称），
+  /// 有 [editIndex] 为编辑（发送者与回复对象保持不变）。
+  void _submitComment(String text, {int? editIndex, String? replyTo}) {
     _closeCommentInput();
     if (editIndex != null) {
       if (editIndex < 0 || editIndex >= moment.comments.length) return;
@@ -404,15 +413,77 @@ class _MomentCardState extends State<MomentCard> {
       comments[editIndex] = MomentComment(
         sender: comments[editIndex].sender,
         content: text,
+        replyTo: comments[editIndex].replyTo,
       );
       _updateMoment(comments: comments);
     } else {
       final comments = [
         ...moment.comments,
-        MomentComment(sender: _myName.isEmpty ? '我' : _myName, content: text),
+        MomentComment(
+          sender: _myName.isEmpty ? '我' : _myName,
+          content: text,
+          replyTo: replyTo ?? '',
+        ),
       ];
       _updateMoment(comments: comments);
+      // 触发 AI 回复（管理模式除外）：
+      // - 普通评论：由动态发布者回复（自己的动态不触发）
+      // - 回复某评论：优先由被回复的角色（若在通讯录）回复，否则由发布者回复；
+      //   回复目标为自己时（如在自己动态下回复陌生人评论）不触发
+      if (!widget.manageMode) {
+        final replier = _resolveReplier(replyTo);
+        if (replier != null &&
+            replier.id != CharacterProvider.selfCharacterId) {
+          _triggerAiReply(text, replier, replyToName: replyTo);
+        }
+      }
     }
+  }
+
+  /// 解析本次 AI 回复的"回复者"：
+  /// [replyTo] 指定的昵称若存在于通讯录（非自己）则用该角色，
+  /// 否则回退为该条动态的发布者。
+  Character? _resolveReplier(String? replyTo) {
+    if (replyTo != null && replyTo.isNotEmpty) {
+      final chars = context.read<CharacterProvider>().characters;
+      for (final c in chars) {
+        if (c.displayName == replyTo) return c;
+      }
+    }
+    // 发布者（自己的动态时为自己，调用方据此跳过）
+    return character;
+  }
+
+  /// 后台请求回复者（角色）回复用户的评论，不阻塞界面。
+  /// [replier] 为以谁的身份回复；回复评论始终追加到发布者 [character] 名下。
+  /// [replyToName] 为用户回复的评论者昵称（为空表示直接评论动态），
+  /// 连同被回复的评论原文一并交给模型，让回复紧扣上下文。
+  void _triggerAiReply(String userComment, Character replier,
+      {String? replyToName}) {
+    // 用户回复某条评论时，取出被回复评论的原文（最近一条匹配），
+    // 模型才知道用户是针对"谁说了什么"在回复
+    String repliedComment = '';
+    if (replyToName != null && replyToName.isNotEmpty) {
+      for (final c in moment.comments.reversed) {
+        if (c.sender == replyToName) {
+          repliedComment = c.content;
+          break;
+        }
+      }
+    }
+    unawaited(MomentAiService.replyToUserComment(
+      apiProvider: context.read<ApiProvider>(),
+      chatSettings: context.read<ChatSettingsProvider>(),
+      chatProvider: context.read<ChatProvider>(),
+      characterProvider: context.read<CharacterProvider>(),
+      character: replier,
+      owner: character,
+      moment: moment,
+      userNickname: _myName.isEmpty ? '我' : _myName,
+      userComment: userComment,
+      replyToName: replyToName ?? '',
+      repliedComment: repliedComment,
+    ));
   }
 
   /// 长按自己的评论（或管理模式下任意评论）：在长按位置弹出悬浮菜单，
@@ -664,6 +735,7 @@ class _MomentCardState extends State<MomentCard> {
                 final isMine = c.sender == _myName;
                 final canCommentMenu = isMine || widget.manageMode;
                 return GestureDetector(
+                  onTap: () => _openCommentInput(replyToName: c.sender),
                   onLongPressStart: canCommentMenu
                       ? (details) =>
                           _showCommentMenu(details.globalPosition, i)
@@ -674,9 +746,19 @@ class _MomentCardState extends State<MomentCard> {
                       TextSpan(
                         children: [
                           TextSpan(
-                            text: '${c.sender}：',
+                            text: c.sender,
                             style: const TextStyle(color: Color(0xFF8FB8E8)),
                           ),
+                          // 带回复评论：显示「A 回复了 B：内容」
+                          if (c.replyTo.isNotEmpty) ...[
+                            const TextSpan(text: ' 回复了 '),
+                            TextSpan(
+                              text: c.replyTo,
+                              style: const TextStyle(
+                                  color: Color(0xFF8FB8E8)),
+                            ),
+                          ],
+                          const TextSpan(text: '：'),
                           TextSpan(text: c.content),
                         ],
                       ),
@@ -732,6 +814,7 @@ class _MomentCardState extends State<MomentCard> {
 /// 输入栏上方不遮挡朋友圈内容，列表仍可滑动操作。
 class _CommentInputBar extends StatefulWidget {
   final String? initialText;
+  final String? replyToName;
   final VoidCallback onClose;
   final ValueChanged<String> onSend;
 
@@ -739,6 +822,7 @@ class _CommentInputBar extends StatefulWidget {
     required this.onClose,
     required this.onSend,
     this.initialText,
+    this.replyToName,
   });
 
   @override
@@ -802,7 +886,11 @@ class _CommentInputBarState extends State<_CommentInputBar> {
                 controller: _controller,
                 autofocus: true,
                 maxLength: 100,
-                placeholder: widget.initialText == null ? '说点什么...' : '编辑评论',
+                placeholder: widget.initialText != null
+                    ? '编辑评论'
+                    : (widget.replyToName != null
+                        ? '回复 ${widget.replyToName}'
+                        : '说点什么...'),
                 placeholderStyle:
                     TextStyle(color: context.textSecondaryColor),
                 padding: const EdgeInsets.symmetric(

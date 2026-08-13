@@ -4,6 +4,7 @@ import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../providers/chat_provider.dart';
+import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/api_provider.dart';
 import '../providers/moment_notification_provider.dart';
@@ -44,11 +45,15 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     final characterProvider = context.read<CharacterProvider>();
     final apiProvider = context.read<ApiProvider>();
     final notificationProvider = context.read<MomentNotificationProvider>();
+    final chatProvider = context.read<ChatProvider>();
+    final chatSettings = context.read<ChatSettingsProvider>();
     characterProvider.loadCharacters().then((_) {
       MomentAiService.resumePending(
         characterProvider: characterProvider,
         apiProvider: apiProvider,
         notificationProvider: notificationProvider,
+        chatProvider: chatProvider,
+        chatSettings: chatSettings,
       );
     }).catchError((Object e) {
       DevLogService.instance.log('朋友圈互动断点恢复失败: $e');

@@ -8,6 +8,8 @@ import '../models/moment_notification.dart';
 import '../models/visibility_group.dart';
 import '../providers/api_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/chat_provider.dart';
+import '../providers/chat_settings_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../utils/app_toast.dart';
 import 'dev_log_service.dart';
@@ -52,6 +54,15 @@ class MomentAiService {
   /// 全局互斥：同一时刻只允许一轮互动运行，避免并发写断点互相覆盖。
   static bool _interactionRunning = false;
 
+  /// 正在生成"评论回复"的组合键集合（"回复者 id|动态 id"），
+  /// 防止同一回复者针对同一动态并发触发多次回复；
+  /// 同一动态下不同回复者的回复互不阻塞。
+  static final Set<String> _replyingMomentIds = <String>{};
+
+  /// 组装评论回复互斥键：以「回复者 + 动态」为粒度去重
+  static String _replyKey(String characterId, String momentId) =>
+      '$characterId|$momentId';
+
   /// 运行一轮朋友圈互动（后台异步执行，不阻塞 UI）。
   ///
   /// 按角色逐个请求，单个角色失败自动重试；累计失败 [maxFailures] 次
@@ -64,6 +75,8 @@ class MomentAiService {
     required CharacterProvider characterProvider,
     required ApiProvider apiProvider,
     required MomentNotificationProvider notificationProvider,
+    required ChatProvider chatProvider,
+    required ChatSettingsProvider chatSettings,
     required Moment moment,
     required List<Character> characters,
     int initialFailures = 0,
@@ -107,6 +120,12 @@ class MomentAiService {
         var success = false;
         while (!success && totalFailures < maxFailures) {
           try {
+            // 角色与用户的最近聊天记录（条数与用户设置的上下文条数一致），
+            // 让角色在回复用户朋友圈时了解与用户之间的历史语境
+            final chatHistory = chatProvider.getRecentHistoryForCharacter(
+              character.id,
+              chatSettings.contextCount,
+            );
             final decision = await _askCharacter(
               model,
               character,
@@ -114,6 +133,7 @@ class MomentAiService {
               // 累计已失败 4 次后（即第 5 次尝试起），不再发送自定义
               // temperature，让模型使用默认值（部分模型不支持 temperature 字段）
               useDefaultTemperature: totalFailures >= 4,
+              chatHistory: chatHistory,
             );
             await _applyDecision(
               characterProvider,
@@ -177,6 +197,8 @@ class MomentAiService {
     required CharacterProvider characterProvider,
     required ApiProvider apiProvider,
     required MomentNotificationProvider notificationProvider,
+    required ChatProvider chatProvider,
+    required ChatSettingsProvider chatSettings,
   }) async {
     final bp = await _loadBreakpoint();
     if (bp == null) return;
@@ -215,6 +237,8 @@ class MomentAiService {
       characterProvider: characterProvider,
       apiProvider: apiProvider,
       notificationProvider: notificationProvider,
+      chatProvider: chatProvider,
+      chatSettings: chatSettings,
       moment: bp.moment,
       characters: remaining,
       initialFailures: bp.totalFailures,
@@ -268,11 +292,14 @@ class MomentAiService {
   /// 网络 / API / 解析失败均抛出 [LLMException]，由外层计入失败次数。
   /// [useDefaultTemperature] 为 true 时不发送 temperature 字段，
   /// 由模型使用自身默认值。
+  /// [chatHistory] 为角色与用户的最近聊天记录（用户设置的上下文条数），
+  /// 附加到 user 消息中，让角色互动时了解与用户的历史语境。
   static Future<MomentDecision> _askCharacter(
     ApiModel model,
     Character character,
     Moment moment, {
     bool useDefaultTemperature = false,
+    List<Map<String, String>> chatHistory = const [],
   }) async {
     final system = character.systemPrompt.trim().isEmpty
         ? '你是「${character.displayName}」，正在浏览朋友圈。'
@@ -283,8 +310,8 @@ class MomentAiService {
       {
         'role': 'user',
         'content': moment.images.isEmpty
-            ? _buildUserPrompt(moment, relationship)
-            : _buildVisionUserContent(moment, relationship),
+            ? _buildUserPrompt(moment, relationship, chatHistory)
+            : _buildVisionUserContent(moment, relationship, chatHistory),
       },
     ];
     final result = await LLMService.fetchCompletion(
@@ -298,8 +325,13 @@ class MomentAiService {
     return _parseDecision(result.content);
   }
 
-  /// 动态文本部分：JSON 序列化动态 + 用户关系 + 输出格式指令
-  static String _buildUserPrompt(Moment moment, String relationship) {
+  /// 动态文本部分：JSON 序列化动态 + 用户关系 + 输出格式指令。
+  /// [chatHistory] 非空时附带「最近聊天记录」段落。
+  static String _buildUserPrompt(
+    Moment moment,
+    String relationship, [
+    List<Map<String, String>> chatHistory = const [],
+  ]) {
     final json = jsonEncode({
       'content': moment.content,
       'location': moment.location,
@@ -314,6 +346,7 @@ class MomentAiService {
         '$json\n\n'
         '你和朋友圈主人的关系：'
         '${relationship.isEmpty ? '普通朋友' : relationship}\n\n'
+        '${_chatHistorySection(chatHistory)}'
         '请你以当前角色的身份决定互动方式，只输出一个 JSON 对象，'
         '不要输出任何其他文字，不要用代码块包裹。格式：\n'
         '{"like": true或false, "comment": "评论内容"}\n\n'
@@ -324,9 +357,13 @@ class MomentAiService {
   }
 
   /// 图文动态：文本指令 + 图片（base64 data URL，OpenAI 视觉格式）
-  static Object _buildVisionUserContent(Moment moment, String relationship) {
+  static Object _buildVisionUserContent(
+    Moment moment,
+    String relationship, [
+    List<Map<String, String>> chatHistory = const [],
+  ]) {
     final parts = <Map<String, Object>>[
-      {'type': 'text', 'text': _buildUserPrompt(moment, relationship)},
+      {'type': 'text', 'text': _buildUserPrompt(moment, relationship, chatHistory)},
     ];
     for (final path in moment.images.take(9)) {
       try {
@@ -357,6 +394,22 @@ class MomentAiService {
       default:
         return 'image/jpeg';
     }
+  }
+
+  /// 组装「最近聊天记录」段落（无记录时返回空串）。
+  /// [characterName] 用于把 assistant 角色标注为角色名。
+  static String _chatHistorySection(
+    List<Map<String, String>> chatHistory, [
+    String characterName = '角色',
+  ]) {
+    if (chatHistory.isEmpty) return '';
+    final buf = StringBuffer('你与该用户最近的聊天记录（按时间顺序）：\n');
+    for (final m in chatHistory) {
+      final speaker = m['role'] == 'user' ? '用户' : characterName;
+      buf.writeln('$speaker：${m['content']}');
+    }
+    buf.writeln();
+    return buf.toString();
   }
 
   /// 容错解析模型返回的 JSON 决策对象（兼容代码块包裹 / 前后多余文本）。
@@ -462,6 +515,244 @@ class MomentAiService {
       comment: decision.comment,
       createdAt: DateTime.now(),
     ));
+  }
+
+  /// 用户评论角色的朋友圈后，由该角色（动态发布者）回复用户的评论。
+  ///
+  /// 模型输入包含：动态完整 JSON（文案/图片/点赞/评论）、用户的角色卡片、
+  /// 用户与角色的关系、角色的最近聊天记录（条数与用户设置的上下文条数一致）、
+  /// 角色系统提示词。生成的回复作为一条「带回复评论」写入该动态
+  /// （sender=角色名，reply_to=用户昵称）。
+  ///
+  /// 同一动态同时只触发一次回复；重复触发直接忽略。
+  static Future<void> replyToUserComment({
+    required ApiProvider apiProvider,
+    required ChatSettingsProvider chatSettings,
+    required ChatProvider chatProvider,
+    required CharacterProvider characterProvider,
+    required Character character,
+    required Character owner,
+    required Moment moment,
+    required String userNickname,
+    required String userComment,
+    String replyToName = '',
+    String repliedComment = '',
+  }) async {
+    final replyKey = _replyKey(character.id, moment.id);
+    if (_replyingMomentIds.contains(replyKey)) {
+      DevLogService.instance
+          .log('「${character.displayName}」评论回复进行中，跳过重复触发');
+      return;
+    }
+    _replyingMomentIds.add(replyKey);
+    try {
+      // 朋友圈回复优先使用「朋友圈互动」模型，未配置时回退聊天模型
+      final model = apiProvider.getModelById(apiProvider.momentModelId) ??
+          apiProvider.getModelById(chatSettings.selectedModelId);
+      if (model == null) {
+        const msg = '请先在「API 设置」中配置「朋友圈互动」模型或聊天模型';
+        DevLogService.instance.log(msg);
+        showAppToast(msg);
+        return;
+      }
+      final self = characterProvider.selfCharacter;
+      final relationship = character.userRelationship.trim();
+      var chatHistory = chatProvider.getRecentHistoryForCharacter(
+        character.id,
+        chatSettings.contextCount,
+      );
+
+      // 组装 prompt 前，从发布者处重新读取该动态的最新快照
+      // （用户刚提交的评论此刻已写入 provider），让模型看到完整的评论区上下文
+      var latestMoment = moment;
+      final ownerLatest = characterProvider.getCharacterById(owner.id);
+      if (ownerLatest != null) {
+        for (final m in ownerLatest.moments) {
+          if (m.id == moment.id) {
+            latestMoment = m;
+            break;
+          }
+        }
+      }
+
+      final system = character.systemPrompt.trim().isEmpty
+          ? '你是「${character.displayName}」。'
+          : character.systemPrompt;
+      var userPrompt = _buildReplyPrompt(
+        character: character,
+        self: self,
+        moment: latestMoment,
+        relationship: relationship,
+        chatHistory: chatHistory,
+        userNickname: userNickname,
+        userComment: userComment,
+        replyToName: replyToName,
+        repliedComment: repliedComment,
+      );
+
+      // 上下文估算：若已达到互动模型上下文窗口的 70%，自动压缩聊天记录后再回复
+      final estimated = LLMService.estimateTokens(system) +
+          LLMService.estimateTokens(userPrompt);
+      if (model.contextLength > 0 &&
+          chatHistory.isNotEmpty &&
+          estimated >= model.contextLength * 0.7) {
+        DevLogService.instance.log(
+            '「${character.displayName}」评论回复上下文估算 $estimated/${model.contextLength}'
+            ' token（≥70%），自动压缩最近聊天记录后回复');
+        try {
+          final summary = await LLMService.compressHistory(
+            model: model,
+            historyMessages: chatHistory,
+          );
+          if (summary.isNotEmpty) {
+            // 以压缩摘要替代完整聊天记录重新组装 prompt
+            chatHistory = [
+              {
+                'role': 'assistant',
+                'content': '［已压缩的最近聊天记录摘要］\n$summary',
+              },
+            ];
+            userPrompt = _buildReplyPrompt(
+              character: character,
+              self: self,
+              moment: latestMoment,
+              relationship: relationship,
+              chatHistory: chatHistory,
+              userNickname: userNickname,
+              userComment: userComment,
+              replyToName: replyToName,
+              repliedComment: repliedComment,
+            );
+            DevLogService.instance.log(
+                '「${character.displayName}」评论回复压缩完成，压缩后估算 '
+                '${LLMService.estimateTokens(system) + LLMService.estimateTokens(userPrompt)} token');
+          }
+        } catch (e) {
+          DevLogService.instance.log(
+              '「${character.displayName}」评论回复压缩失败，按原文回复：'
+              '${LLMService.describeException(e)}');
+        }
+      } else if (model.contextLength > 0) {
+        DevLogService.instance.log(
+            '「${character.displayName}」评论回复上下文估算 $estimated/${model.contextLength}'
+            ' token（未达 70% 阈值，不压缩）');
+      }
+
+      final messages = <Map<String, Object>>[
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': userPrompt},
+      ];
+      final result = await LLMService.fetchCompletion(
+        model: model,
+        messages: messages,
+        temperature: 0.9,
+        maxTokens: 200,
+      );
+      final reply = _cleanReply(result.content);
+      if (reply.isEmpty) return;
+
+      // 重新读取发布者（owner）的最新角色（含用户刚提交的评论），
+      // 在其动态上追加角色回复，避免用旧的快照覆盖掉用户刚写入的评论。
+      // 回复评论以「回复者」身份署名，但始终落在发布者的动态下。
+      final latest = characterProvider.getCharacterById(owner.id);
+      if (latest == null) return;
+      final moments = [...latest.moments];
+      final index = moments.indexWhere((m) => m.id == moment.id);
+      if (index == -1) return; // 动态已被删除
+      final cur = moments[index];
+      final comments = [
+        ...cur.comments,
+        MomentComment(
+          sender: character.displayName,
+          content: reply,
+          replyTo: userNickname,
+        ),
+      ];
+      moments[index] = Moment(
+        id: cur.id,
+        content: cur.content,
+        location: cur.location,
+        visibility: cur.visibility,
+        images: cur.images,
+        likes: cur.likes,
+        comments: comments,
+        createdAt: cur.createdAt,
+      );
+      await characterProvider.updateMoments(owner.id, moments);
+      DevLogService.instance
+          .log('「${character.displayName}」回复了 $userNickname 的评论：$reply');
+    } catch (e) {
+      DevLogService.instance.log(
+          '「${character.displayName}」评论回复失败：${LLMService.describeException(e)}');
+    } finally {
+      _replyingMomentIds.remove(replyKey);
+    }
+  }
+
+  /// 组装「角色回复用户评论」的 user 消息。
+  ///
+  /// [replyToName] 为用户回复的评论者昵称（为空表示用户直接评论动态），
+  /// [repliedComment] 为被回复评论的原文，让模型知道用户是针对"谁说了什么"在回复。
+  static String _buildReplyPrompt({
+    required Character character,
+    required Character? self,
+    required Moment moment,
+    required String relationship,
+    required List<Map<String, String>> chatHistory,
+    required String userNickname,
+    required String userComment,
+    String replyToName = '',
+    String repliedComment = '',
+  }) {
+    final momentJson = jsonEncode({
+      'content': moment.content,
+      'location': moment.location,
+      'created_at': moment.createdAt?.toIso8601String(),
+      if (moment.images.isNotEmpty)
+        'images': [
+          for (final p in moment.images.take(9)) p.split(RegExp(r'[/\\]')).last,
+        ],
+      'likes': moment.likes,
+      'comments': moment.comments.map((c) => c.toJson()).toList(),
+    });
+
+    final userCard = <String>[
+      '昵称：${self?.displayName ?? userNickname}',
+      if (self != null && self.signature.isNotEmpty) '签名：${self.signature}',
+      if (self != null && self.region.isNotEmpty) '地区：${self.region}',
+      if (self != null && self.description.isNotEmpty) '简介：${self.description}',
+      if (self != null && self.personality.isNotEmpty) '性格：${self.personality}',
+    ].join('\n');
+
+    final chatSection = _chatHistorySection(chatHistory, character.displayName);
+
+    // 用户回复的上下文：是直接评论，还是回复了某人的评论（附原评论内容）
+    final replyContext = replyToName.isEmpty
+        ? '用户在这条动态下直接发表了评论（不是回复某条评论）'
+        : '用户回复了「$replyToName」的评论'
+            '${repliedComment.isEmpty ? '' : '，被回复的原评论内容是：「$repliedComment」'}';
+
+    return '用户在朋友圈给你的一条动态下留了评论，请你以「${character.displayName}」的身份回复这条评论。\n\n'
+        '【朋友圈动态（JSON）】\n$momentJson\n\n'
+        '【用户角色卡片】\n${userCard.isEmpty ? '（无资料）' : userCard}\n\n'
+        '【用户与你的关系】\n${relationship.isEmpty ? '普通朋友' : relationship}\n\n'
+        '${chatSection.isEmpty ? '' : '$chatSection\n'}'
+        '【用户这次评论的上下文】\n$replyContext\n\n'
+        '【用户的最新评论】\n$userComment\n\n'
+        '请直接输出你要回复的内容（5~50 字中文），符合你的角色性格与说话习惯，'
+        '并针对「用户这次评论的上下文」中的原评论内容自然回应，'
+        '不要带任何前缀、引号、解释，也不要输出 JSON 或代码块。';
+  }
+
+  /// 清洗模型返回的回复文本：去掉代码块包裹与首尾引号。
+  static String _cleanReply(String raw) {
+    var text = raw.trim();
+    text = text.replaceAll(RegExp(r'```[a-zA-Z]*'), '').trim();
+    text = text.replaceAll('```', '').trim();
+    if (text.startsWith('"') && text.endsWith('"') && text.length >= 2) {
+      text = text.substring(1, text.length - 1).trim();
+    }
+    return text.trim();
   }
 }
 
