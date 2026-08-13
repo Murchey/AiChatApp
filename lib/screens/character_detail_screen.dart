@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:gal/gal.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
@@ -14,6 +16,172 @@ import '../utils/app_toast.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/moment_card.dart';
 import '../widgets/publish_moment_screen.dart';
+
+// #region debug-point cover-jitter
+/// 调试上报：封面动画抖动问题。节流高频滚动采样（8ms，较上次 30ms 更密，
+/// 避免丢失惯性振荡关键轨迹），其余关键事件逐条上报。
+const String _dbgServerUrl = 'http://192.168.3.138:7777/event';
+int _dbgLastTs = 0;
+Future<void> _dbgReport(
+  String hypothesisId,
+  String location,
+  String msg, [
+  Map<String, dynamic>? data,
+]) async {
+  final now = DateTime.now().millisecondsSinceEpoch;
+  if (hypothesisId == 'A' && now - _dbgLastTs < 8) return;
+  _dbgLastTs = now;
+  try {
+    await http.post(
+      Uri.parse(_dbgServerUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'sessionId': 'cover-animation-jitter',
+        'runId': 'post-fix3',
+        'hypothesisId': hypothesisId,
+        'location': location,
+        'msg': msg,
+        'data': data ?? {},
+        'ts': now,
+      }),
+    );
+  } catch (_) {}
+}
+
+/// 物理调用级插桩（诊断惯性滚动振荡）：
+/// - ballistic：每次 createBallisticSimulation 调用（含起点/速度/范围/序号）
+///   ——若惯性期间反复重启，seq 会快速递增；
+/// - boundary：每次 applyBoundaryConditions 调用（含返回值 r）
+///   ——r != 0 说明边界正在钳制位置；
+/// - pid：当前绑定的 ScrollPosition 对象身份（重建则递增）。
+int _dbgBoundarySeq = 0;
+int _dbgBallisticSeq = 0;
+int _dbgPhysPid = 0;
+Object? _dbgPhysLastPosition;
+void _dbgTrackPosition(ScrollMetrics position) {
+  if (!identical(position, _dbgPhysLastPosition)) {
+    _dbgPhysLastPosition = position;
+    _dbgPhysPid++;
+  }
+}
+
+int _dbgPhysLastTs = 0;
+void _dbgPhys(String tag, Map<String, dynamic> data) {
+  final now = DateTime.now().millisecondsSinceEpoch;
+  // 16ms 节流覆盖 30fps 帧率即可，物理调用量级远小于滚动事件
+  if (now - _dbgPhysLastTs < 16) return;
+  _dbgPhysLastTs = now;
+  _dbgReport('P', tag, 'ev', data);
+}
+// #endregion
+
+/// 朋友圈列表滚动物理：顶部保留 iOS 橡皮筋回弹（供封面下拉展开），
+/// 底部改为硬截止（到达列表末尾立即停止，不再越界回弹），
+/// 彻底消除快速滑动到底部时内容越界往复导致的"抖动"。
+class _MomentsScrollPhysics extends BouncingScrollPhysics {
+  const _MomentsScrollPhysics({super.parent, this.debug});
+
+  /// 物理调用级调试回调（仅在插桩期间非空，见 ListView 传入处）
+  final void Function(String tag, Map<String, dynamic> data)? debug;
+
+  @override
+  _MomentsScrollPhysics applyTo(ScrollPhysics? ancestor) =>
+      _MomentsScrollPhysics(parent: buildParent(ancestor), debug: debug);
+
+  @override
+  double applyBoundaryConditions(ScrollMetrics position, double value) {
+    _dbgTrackPosition(position);
+    final double result = _applyBoundaryConditions(position, value);
+    // #region debug-point P:boundary
+    debug?.call('boundary', {
+      'pid': _dbgPhysPid,
+      'p': position.pixels,
+      'v': value,
+      'r': result,
+      'seq': ++_dbgBoundarySeq,
+    });
+    // #endregion
+    return result;
+  }
+
+  double _applyBoundaryConditions(ScrollMetrics position, double value) {
+    // 顶部：允许越界（Bouncing 行为），供下拉展开封面
+    if (value < position.minScrollExtent) return 0.0;
+    // 底部：硬截止（Clamping 行为），到达 maxScrollExtent 后不再越界
+    if (value > position.maxScrollExtent &&
+        position.pixels <= position.maxScrollExtent) {
+      return value - position.maxScrollExtent;
+    }
+    // 防御：极端情况下已越过底部，继续增大时按越界量返回
+    if (position.pixels > position.maxScrollExtent &&
+        value >= position.pixels) {
+      return value - position.pixels;
+    }
+    return 0.0;
+  }
+
+  @override
+  Simulation? createBallisticSimulation(
+      ScrollMetrics position, double velocity) {
+    _dbgTrackPosition(position);
+    final Tolerance tolerance = toleranceFor(position);
+    // #region debug-point P:ballistic
+    debug?.call('ballistic', {
+      'pid': _dbgPhysPid,
+      'p': position.pixels,
+      'v': velocity,
+      'min': position.minScrollExtent,
+      'max': position.maxScrollExtent,
+      'seq': ++_dbgBallisticSeq,
+    });
+    // #endregion
+    // 顶部越界：橡皮筋回弹到 0（下拉展开封面后松手回弹）。
+    // 速度取原始 velocity（与官方 BouncingScrollSimulation._underscrollSimulation
+    // 一致）：负速度先继续深入越界区再回弹，避免 -velocity 造成的收敛振荡。
+    if (position.pixels < position.minScrollExtent) {
+      return ScrollSpringSimulation(
+        spring,
+        position.pixels,
+        position.minScrollExtent,
+        velocity,
+        tolerance: tolerance,
+      );
+    }
+    // 底部越界（防御分支，正常拖拽已被硬截止）：回弹到 maxScrollExtent
+    if (position.pixels > position.maxScrollExtent) {
+      return ScrollSpringSimulation(
+        spring,
+        position.pixels,
+        position.maxScrollExtent,
+        math.min(0.0, velocity),
+        tolerance: tolerance,
+      );
+    }
+    // 正常范围：惯性滚动
+    if (velocity.abs() < tolerance.velocity) return null;
+    // 向下（朝底部）：Clamping 摩擦减速，配合拖拽硬截止，到底即停
+    if (velocity > 0.0) {
+      if (position.pixels >= position.maxScrollExtent) return null;
+      return ClampingScrollSimulation(
+        position: position.pixels,
+        velocity: velocity,
+        tolerance: tolerance,
+      );
+    }
+    // 向上（朝顶部）：官方 BouncingScrollSimulation —— 摩擦减速，接近顶部时
+    // 转入受限弹簧回弹。不能再用 ClampingScrollSimulation：顶部为开边界而
+    // 惯性模拟不经过 applyBoundaryConditions，会直接穿透顶部滑进深度越界区
+    // （-100~-160px）再缓慢回弹，即用户感知的"抖动"。
+    return BouncingScrollSimulation(
+      spring: spring,
+      position: position.pixels,
+      velocity: velocity,
+      leadingExtent: position.minScrollExtent,
+      trailingExtent: position.maxScrollExtent,
+      tolerance: tolerance,
+    );
+  }
+}
 
 /// base64 图片解码缓存：同一 base64 只解码一次并复用同一个 [MemoryImage]。
 /// 若每次重建都新建 [MemoryImage]，ImageCache 永不命中（Dart 的 List ==
@@ -46,18 +214,45 @@ class CharacterDetailScreen extends StatefulWidget {
   State<CharacterDetailScreen> createState() => _CharacterDetailScreenState();
 }
 
-class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
+class _CharacterDetailScreenState extends State<CharacterDetailScreen>
+    with TickerProviderStateMixin {
   /// 封面背景图高度比例（相对屏高）
   static const double _coverRestRatio = 0.40; // 常态露出高度
   static const double _coverFullRatio = 0.70; // 下拉展开后的完整高度
   static const double _coverMinRatio = 0.10; // 上滑浏览朋友圈时收缩到的下限
 
-  /// 封面背景图交互状态：是否固定展开、当前拖拽偏移、是否正在拖拽、
+  /// 封面背景图交互状态：是否固定展开、当前拖拽偏移、
   /// 上滑浏览朋友圈时的收缩偏移（封面可缩小到页面 10%）
   bool _coverExpanded = false;
   double _coverDragOffset = 0;
   double _coverShrink = 0;
-  bool _isDragging = false;
+
+  /// 封面吸附动画：仅在松手吸附（回弹/固定展开）时由 [AnimationController]
+  /// 显式播放一次；滚动跟手 / 惯性滚动期间一律瞬时跟随，绝不依赖隐式动画
+  /// 逐帧重启，避免封面动画反复追逐导致界面卡屏。
+  late final AnimationController _settleController;
+  Animation<double>? _settleAnim;
+
+  /// 当前渲染的封面高度（px）：滚动期间等于目标高度，吸附动画期间取动画插值，
+  /// 作为吸附动画的起始高度。
+  double _renderedCoverHeight = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _settleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    )..addListener(() {
+        if (_settleAnim != null) setState(() {});
+      });
+  }
+
+  @override
+  void dispose() {
+    _settleController.dispose();
+    super.dispose();
+  }
 
   /// 点击头像选择图片（相册 / 拍照）
   Future<void> _pickAvatar(Character character) async {
@@ -267,19 +462,65 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
 
   /// 松手后吸附：接近完整高度（90% 以上）则固定展开 70%，否则回弹到常态 40%。
   /// 头部拖拽与朋友圈下拉到顶的过度滚动共用此判定。
+  /// 吸附动画由 [AnimationController] 从当前渲染高度显式播放一次；
+  /// 播放期间若有新的滚动/拖拽会立即取消（见滚动回调），不会循环。
   void _settleCover() {
     final screenHeight = MediaQuery.of(context).size.height;
     final expandDelta = screenHeight * (_coverFullRatio - _coverRestRatio);
+    final expanded = _coverDragOffset >= expandDelta * 0.9;
+    final targetHeight =
+        (((expanded ? screenHeight * _coverFullRatio : screenHeight * _coverRestRatio) +
+                    (expanded ? expandDelta : 0) -
+                    _coverShrink))
+            .clamp(screenHeight * _coverMinRatio, screenHeight * _coverFullRatio);
     setState(() {
-      _isDragging = false;
-      if (_coverDragOffset >= expandDelta * 0.9) {
-        _coverExpanded = true;
-        _coverDragOffset = expandDelta;
-      } else {
-        _coverExpanded = false;
-        _coverDragOffset = 0;
-      }
+      _coverExpanded = expanded;
+      _coverDragOffset = expanded ? expandDelta : 0;
     });
+    // #region debug-point B:settle
+    _dbgReport('B', 'settleCover', 'settle', {
+      'expanded': expanded,
+      'target': targetHeight,
+      'rendered': _renderedCoverHeight,
+    });
+    // #endregion
+    _playSettleAnimation(targetHeight);
+  }
+
+  /// 取消进行中的吸附动画（用户重新滚动/拖拽时调用），转回瞬时跟随
+  void _cancelSettleAnimation() {
+    if (_settleAnim == null) return;
+    // #region debug-point C:cancel
+    _dbgReport('C', 'cancelSettle', 'cancel', {
+      'rendered': _renderedCoverHeight,
+    });
+    // #endregion
+    _settleController.stop();
+    _settleAnim = null;
+  }
+
+  /// 播放一次封面吸附动画：从当前渲染高度过渡到 [targetHeight]。
+  /// 距离过小（<0.5px）时直接跳过，避免无意义的动画。
+  void _playSettleAnimation(double targetHeight) {
+    // #region debug-point C:play
+    _dbgReport('C', 'playSettle', 'play', {
+      'from': _renderedCoverHeight,
+      'to': targetHeight,
+    });
+    // #endregion
+    _settleController.stop();
+    _settleAnim = null;
+    final from = _renderedCoverHeight;
+    if ((from - targetHeight).abs() < 0.5) return;
+    _settleAnim = Tween<double>(begin: from, end: targetHeight)
+        .chain(CurveTween(curve: Curves.easeOutCubic))
+        .animate(_settleController)
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => _settleAnim = null);
+        }
+      });
+    _settleController.forward(from: 0);
   }
 
   /// 右下角悬浮按钮：非"自己"为聊天入口；"自己"不能发起聊天，改为发布朋友圈
@@ -372,10 +613,14 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
     final double expandDelta = fullHeight - restHeight;
     final double minHeight = screenHeight * _coverMinRatio; // 上滑收缩下限
 
-    // 当前背景图高度：展开态取完整值、常态取 40%，再减去上滑收缩偏移
+    // 当前背景图高度：展开态取完整值、常态取 40%，再减去上滑收缩偏移；
+    // 吸附动画期间取动画插值高度（一次性播放），滚动期间瞬时跟随目标值
     final double baseHeight = _coverExpanded ? fullHeight : restHeight;
-    final double coverHeight = (baseHeight + _coverDragOffset - _coverShrink)
-        .clamp(minHeight, fullHeight);
+    final double targetCoverHeight =
+        (baseHeight + _coverDragOffset - _coverShrink).clamp(minHeight, fullHeight);
+    final double coverHeight =
+        _settleAnim != null ? _settleAnim!.value : targetCoverHeight;
+    _renderedCoverHeight = coverHeight;
     final signature = character.signature.trim();
 
     return SizedBox(
@@ -384,11 +629,10 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onVerticalDragStart: (_) {
-          setState(() => _isDragging = true);
+          _cancelSettleAnimation();
         },
         onVerticalDragUpdate: (details) {
           setState(() {
-            _isDragging = true;
             // 固定展开态也允许继续拖拽（向上拉可收回）
             if (_coverExpanded) _coverExpanded = false;
             _coverShrink = 0;
@@ -403,12 +647,7 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
           children: [
             // 背景图区域（下拉手势由外层统一处理；更换封面仅可点右下角按钮）
             Positioned.fill(
-              child: AnimatedContainer(
-                // 拖拽中即时跟随手指，松手后平滑回弹/固定
-                duration: _isDragging
-                    ? Duration.zero
-                    : const Duration(milliseconds: 260),
-                curve: Curves.easeOutCubic,
+              child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
@@ -571,40 +810,96 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           if (notification is ScrollUpdateNotification) {
-            // 手指拖动时跟手（瞬时动画），惯性滚动/程序滚动时用动画平滑过渡
-            final isTouchDrag = notification.dragDetails != null;
+            // 跟手拖动与惯性滚动期间一律瞬时跟随封面；若吸附动画正在播放
+            // （松手后尚未结束又继续滚动）则立即取消，转回瞬时跟随，
+            // 避免封面动画反复追逐导致界面卡屏
             final screenHeight = MediaQuery.of(context).size.height;
             final pixels = notification.metrics.pixels;
-            setState(() {
-              _isDragging = isTouchDrag;
+            // 高复杂度降级：松手后的越界回弹（惯性弹簧）期间不跟手驱动封面，
+            // 朋友圈只做纯滚动（不加动画），避免回弹过程中封面反复 setState
+            // 整页重建造成的抖动；封面在 ScrollEnd 时由 _settleCover 吸附到位。
+            // 跟手拖动（下拉展开封面）与正常范围内的惯性滚动仍实时跟随。
+            final bool degraded = notification.dragDetails == null &&
+                notification.metrics.outOfRange;
+            // 先计算目标状态，仅当封面状态实际发生变化时才 setState：
+            // 越界回弹/饱和期封面已到极限或冻结，若仍每帧 setState 整页重建，
+            // 会造成掉帧与视觉抖动。
+            double newShrink = _coverShrink;
+            double newDragOffset = _coverDragOffset;
+            var newExpanded = _coverExpanded;
+            if (!degraded) {
               if (pixels < 0) {
                 // 滚到顶部继续下拉：展开背景图
-                if (_coverExpanded) _coverExpanded = false;
-                _coverShrink = 0;
-                _coverDragOffset = (-pixels).clamp(
+                newExpanded = false;
+                newShrink = 0;
+                newDragOffset = (-pixels).clamp(
                   0.0,
                   screenHeight * (_coverFullRatio - _coverRestRatio),
                 );
               } else if (pixels > 0) {
                 // 上滑浏览朋友圈：封面从常态比例逐步收缩到下限比例
-                _coverDragOffset = 0;
+                newDragOffset = 0;
                 final shrinkMax =
                     screenHeight * (_coverRestRatio - _coverMinRatio);
-                _coverShrink = (pixels / (screenHeight * 0.3) * shrinkMax)
+                newShrink = (pixels / (screenHeight * 0.3) * shrinkMax)
                     .clamp(0.0, shrinkMax);
               } else {
-                _coverShrink = 0;
-                _coverDragOffset = 0;
+                newShrink = 0;
+                newDragOffset = 0;
               }
+            }
+            final coverChanged = _settleAnim != null ||
+                newShrink != _coverShrink ||
+                newDragOffset != _coverDragOffset ||
+                newExpanded != _coverExpanded;
+            if (coverChanged) {
+              setState(() {
+                _cancelSettleAnimation();
+                _coverExpanded = newExpanded;
+                _coverShrink = newShrink;
+                _coverDragOffset = newDragOffset;
+              });
+            }
+            // #region debug-point A:scroll
+            _dbgReport('A', 'onScroll', 'upd', {
+              'p': pixels,
+              'sh': _coverShrink,
+              'of': _coverDragOffset,
+              'exp': _coverExpanded,
+              'set': coverChanged,
+              'drag': notification.dragDetails != null,
+              'out': notification.metrics.outOfRange,
+              'deg': degraded,
+              'max': notification.metrics.maxScrollExtent,
+              'view': notification.metrics.viewportDimension,
             });
+            // #endregion
+          } else if (notification is ScrollMetricsNotification) {
+            // #region debug-point P:metrics
+            _dbgReport('P', 'metrics', 'ev', {
+              'p': notification.metrics.pixels,
+              'min': notification.metrics.minScrollExtent,
+              'max': notification.metrics.maxScrollExtent,
+              'view': notification.metrics.viewportDimension,
+            });
+            // #endregion
           } else if (notification is ScrollEndNotification) {
+            // #region debug-point C:scroll-end
+            _dbgReport('C', 'scrollEnd', 'end', {
+              'p': notification.metrics.pixels,
+              'sh': _coverShrink,
+              'of': _coverDragOffset,
+            });
+            // #endregion
             _settleCover();
           }
           return false;
         },
         child: ListView.builder(
-          physics: const BouncingScrollPhysics(
+          // debug 回调仅插桩期间传入（_dbgPhys 顶层函数），修复后移除
+          physics: _MomentsScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
+            debug: _dbgPhys,
           ),
           // 底部留出悬浮按钮空间，避免遮挡最后一条内容
           padding: const EdgeInsets.only(top: 8, bottom: 100),

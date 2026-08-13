@@ -293,7 +293,12 @@ class CharacterPackService {
     for (final f in allFiles) {
       final segs = f.name.split('/');
       if (segs.last.toLowerCase() != 'moments.json') continue;
-      if (segs.length < 2) continue; // 忽略 zip 根目录下的 moments.json
+      // moments.json 必须直接位于角色文件夹内：
+      //   - 布局一：总包名/角色名/moments.json（3 段）
+      //   - 布局二：角色名/moments.json（2 段）
+      // 嵌套子目录（如角色包内的「角色名/moments/moments.json」，≥4 段）
+      // 不属于朋友圈数据包结构，跳过，避免把 moments 子文件夹误识别为一个角色
+      if (segs.length < 2 || segs.length > 3) continue;
       // .../角色名/moments.json
       charDirs.add(segs.sublist(0, segs.length - 1).join('/'));
     }

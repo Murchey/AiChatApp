@@ -952,13 +952,20 @@ class _SingleImageThumb extends StatefulWidget {
 }
 
 class _SingleImageThumbState extends State<_SingleImageThumb> {
-  /// 原图尺寸（异步读取；未知时按默认 3:4 占位）
+  /// 原图尺寸静态缓存：同一路径只异步读取一次。滚动中卡片 build/dispose
+  /// 直接命中缓存，避免缩略图在「占位(3:4) ↔ 实际比例」间反复切换——
+  /// 该高度反复变化会驱动列表内容 extent 振荡（→ 位置跳变 → ballistic
+  /// 重启），即惯性滚动"抖动"的根因。
+  static final Map<String, Size> _sizeCache = {};
+
+  /// 原图尺寸（优先命中缓存；未知时按默认 3:4 占位）
   Size? _imgSize;
 
   @override
   void initState() {
     super.initState();
-    _loadSize();
+    _imgSize = _sizeCache[widget.path];
+    if (_imgSize == null) _loadSize();
   }
 
   Future<void> _loadSize() async {
@@ -974,6 +981,8 @@ class _SingleImageThumbState extends State<_SingleImageThumb> {
       );
       descriptor.dispose();
       buffer.dispose();
+      if (_sizeCache.length > 512) _sizeCache.clear();
+      _sizeCache[widget.path] = size;
       if (mounted) setState(() => _imgSize = size);
     } catch (_) {
       // 尺寸读取失败时保持默认占位展示，不影响点开预览

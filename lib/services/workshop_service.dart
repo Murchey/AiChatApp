@@ -181,6 +181,31 @@ class WorkshopService {
     } catch (_) {}
   }
 
+  /// 清除全部下载缓存：删除应用文档目录 workshop/ 下所有残留文件
+  /// （下载失败的 .part 临时文件、导入被取消/中断未清理的 zip 等），
+  /// 返回删除的文件数。仅清理下载缓存，不影响已导入的角色数据与朋友圈图片。
+  static Future<int> clearDownloadCache() async {
+    try {
+      final docDir = await getApplicationDocumentsDirectory();
+      final workshopDir = Directory('${docDir.path}/workshop');
+      if (!workshopDir.existsSync()) return 0;
+      var removed = 0;
+      await for (final entity in workshopDir.list()) {
+        try {
+          if (entity is Directory) {
+            entity.deleteSync(recursive: true);
+          } else {
+            entity.deleteSync();
+          }
+          removed++;
+        } catch (_) {}
+      }
+      return removed;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// 防止空名 / '.' / '..' 等非法文件名
   static String _safeFileName(String name) {
     final trimmed = name.trim();
