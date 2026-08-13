@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
 import '../models/moment_notification.dart';
@@ -44,76 +45,218 @@ class MomentAiService {
     return provider.manageableCharacters;
   }
 
+  /// 朋友圈互动断点存储键：应用中途被杀/退出时记录未完成的互动，
+  /// 下次启动从断点续跑剩余角色，避免互动被中断后丢失。
+  static const String breakpointKey = 'moment_interaction_breakpoint_v1';
+
+  /// 全局互斥：同一时刻只允许一轮互动运行，避免并发写断点互相覆盖。
+  static bool _interactionRunning = false;
+
   /// 运行一轮朋友圈互动（后台异步执行，不阻塞 UI）。
   ///
   /// 按角色逐个请求，单个角色失败自动重试；累计失败 [maxFailures] 次
   /// 立即终止全部互动，并以 Toast + 开发者日志告知错误原因。
+  ///
+  /// 防打断设计：启动时把「待互动角色、累计失败数、模型 id」写入断点，
+  /// 每完成一个角色就更新一次断点；全部结束（或失败达上限）后清除。
+  /// 应用退出后 [resumePending] 会从断点续跑剩余角色。
   static Future<void> run({
     required CharacterProvider characterProvider,
     required ApiProvider apiProvider,
     required MomentNotificationProvider notificationProvider,
     required Moment moment,
     required List<Character> characters,
+    int initialFailures = 0,
   }) async {
-    final model = apiProvider.getModelById(apiProvider.momentModelId);
-    if (model == null) {
-      const msg = '请先在「API 设置」中配置「朋友圈互动」模型';
+    if (_interactionRunning) {
+      const msg = '朋友圈互动正在进行中，已跳过本次';
       DevLogService.instance.log(msg);
       showAppToast(msg);
       return;
     }
-    if (characters.isEmpty) {
-      DevLogService.instance.log('朋友圈 AI 互动：展示范围内没有可见角色，跳过');
+    _interactionRunning = true;
+    try {
+      final model = apiProvider.getModelById(apiProvider.momentModelId);
+      if (model == null) {
+        const msg = '请先在「API 设置」中配置「朋友圈互动」模型';
+        DevLogService.instance.log(msg);
+        showAppToast(msg);
+        return;
+      }
+      if (characters.isEmpty) {
+        DevLogService.instance.log('朋友圈 AI 互动：展示范围内没有可见角色，跳过');
+        return;
+      }
+
+      // 写入断点：记录待互动的剩余角色（应用被杀后下次启动可精确续跑）
+      var pendingIds = characters.map((c) => c.id).toList();
+      var totalFailures = initialFailures;
+      await _saveBreakpoint(
+        moment: moment,
+        pendingCharacterIds: pendingIds,
+        totalFailures: totalFailures,
+        modelId: model.id,
+      );
+
+      DevLogService.instance.log(
+          '开始朋友圈 AI 互动：共 ${characters.length} 个角色可见（模型：${model.displayName}）');
+      String? lastError;
+
+      for (final character in characters) {
+        if (totalFailures >= maxFailures) break;
+        var success = false;
+        while (!success && totalFailures < maxFailures) {
+          try {
+            final decision = await _askCharacter(
+              model,
+              character,
+              moment,
+              // 累计已失败 4 次后（即第 5 次尝试起），不再发送自定义
+              // temperature，让模型使用默认值（部分模型不支持 temperature 字段）
+              useDefaultTemperature: totalFailures >= 4,
+            );
+            await _applyDecision(
+              characterProvider,
+              notificationProvider,
+              moment,
+              character,
+              decision,
+            );
+            success = true;
+            // 该角色互动完成：从断点移除并持久化（崩溃/退出后可续跑剩余角色）
+            pendingIds.remove(character.id);
+            await _saveBreakpoint(
+              moment: moment,
+              pendingCharacterIds: pendingIds,
+              totalFailures: totalFailures,
+              modelId: model.id,
+            );
+            final actions = <String>[
+              if (decision.like) '点赞',
+              if (decision.comment.isNotEmpty) '评论：${decision.comment}',
+            ];
+            DevLogService.instance.log(
+                '「${character.displayName}」互动成功：${actions.isEmpty ? '仅浏览' : actions.join('，')}');
+          } catch (e) {
+            totalFailures++;
+            lastError = LLMService.describeException(e);
+            // 失败计数计入断点，重启后按累计失败数续跑（保持失败上限语义）
+            await _saveBreakpoint(
+              moment: moment,
+              pendingCharacterIds: pendingIds,
+              totalFailures: totalFailures,
+              modelId: model.id,
+            );
+            DevLogService.instance.log(
+                '「${character.displayName}」请求失败（累计 $totalFailures 次）：$lastError');
+          }
+        }
+      }
+
+      if (totalFailures >= maxFailures) {
+        final msg = '朋友圈 AI 互动失败次数过多已停止：$lastError';
+        DevLogService.instance.log(msg);
+        showAppToast(msg);
+      } else {
+        DevLogService.instance.log('朋友圈 AI 互动结束');
+      }
+      // 全部角色互动完成（或达到失败上限）：清除断点
+      await _clearBreakpoint();
+    } finally {
+      _interactionRunning = false;
+    }
+  }
+
+  /// 应用启动时调用：若存在未完成的朋友圈互动断点（应用中途被杀/退出），
+  /// 从断点续跑剩余角色的互动。
+  ///
+  /// - 动态已被删除 → 清除断点；
+  /// - 断点模型已不可用 → 保留断点，等待模型恢复后下次启动再续跑；
+  /// - 剩余角色已全部被删除 → 清除断点。
+  static Future<void> resumePending({
+    required CharacterProvider characterProvider,
+    required ApiProvider apiProvider,
+    required MomentNotificationProvider notificationProvider,
+  }) async {
+    final bp = await _loadBreakpoint();
+    if (bp == null) return;
+
+    final self = characterProvider.selfCharacter;
+    final momentExists =
+        self != null && self.moments.any((m) => m.id == bp.moment.id);
+    if (!momentExists) {
+      DevLogService.instance.log('朋友圈互动断点：动态已不存在，清除断点');
+      await _clearBreakpoint();
+      return;
+    }
+
+    final model = apiProvider.getModelById(bp.modelId);
+    if (model == null) {
+      DevLogService.instance.log(
+          '朋友圈互动断点：模型不可用，保留断点等待模型配置后恢复');
+      return;
+    }
+
+    // 按断点顺序解析剩余角色；期间被删除的角色自动跳过
+    final remaining = <Character>[];
+    for (final id in bp.pendingCharacterIds) {
+      final c = characterProvider.getCharacterById(id);
+      if (c != null) remaining.add(c);
+    }
+    if (remaining.isEmpty) {
+      DevLogService.instance.log('朋友圈互动断点：剩余角色已不存在，清除断点');
+      await _clearBreakpoint();
       return;
     }
 
     DevLogService.instance.log(
-        '开始朋友圈 AI 互动：共 ${characters.length} 个角色可见（模型：${model.displayName}）');
-    var totalFailures = 0;
-    String? lastError;
+        '恢复朋友圈 AI 互动：剩余 ${remaining.length} 个角色（累计失败 ${bp.totalFailures} 次）');
+    await run(
+      characterProvider: characterProvider,
+      apiProvider: apiProvider,
+      notificationProvider: notificationProvider,
+      moment: bp.moment,
+      characters: remaining,
+      initialFailures: bp.totalFailures,
+    );
+  }
 
-    for (final character in characters) {
-      if (totalFailures >= maxFailures) break;
-      var success = false;
-      while (!success && totalFailures < maxFailures) {
-        try {
-          final decision = await _askCharacter(
-            model,
-            character,
-            moment,
-            // 累计已失败 4 次后（即第 5 次尝试起），不再发送自定义
-            // temperature，让模型使用默认值（部分模型不支持 temperature 字段）
-            useDefaultTemperature: totalFailures >= 4,
-          );
-          await _applyDecision(
-            characterProvider,
-            notificationProvider,
-            moment,
-            character,
-            decision,
-          );
-          success = true;
-          final actions = <String>[
-            if (decision.like) '点赞',
-            if (decision.comment.isNotEmpty) '评论：${decision.comment}',
-          ];
-          DevLogService.instance.log(
-              '「${character.displayName}」互动成功：${actions.isEmpty ? '仅浏览' : actions.join('，')}');
-        } catch (e) {
-          totalFailures++;
-          lastError = LLMService.describeException(e);
-          DevLogService.instance.log(
-              '「${character.displayName}」请求失败（累计 $totalFailures 次）：$lastError');
-        }
-      }
-    }
+  /// 保存朋友圈互动断点
+  static Future<void> _saveBreakpoint({
+    required Moment moment,
+    required List<String> pendingCharacterIds,
+    required int totalFailures,
+    required String modelId,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      breakpointKey,
+      jsonEncode(_InteractionBreakpoint(
+        moment: moment,
+        pendingCharacterIds: pendingCharacterIds,
+        totalFailures: totalFailures,
+        modelId: modelId,
+      ).toJson()),
+    );
+  }
 
-    if (totalFailures >= maxFailures) {
-      final msg = '朋友圈 AI 互动失败次数过多已停止：$lastError';
-      DevLogService.instance.log(msg);
-      showAppToast(msg);
-    } else {
-      DevLogService.instance.log('朋友圈 AI 互动结束');
+  /// 清除朋友圈互动断点
+  static Future<void> _clearBreakpoint() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(breakpointKey);
+  }
+
+  /// 读取朋友圈互动断点（无断点或数据损坏时返回 null）
+  static Future<_InteractionBreakpoint?> _loadBreakpoint() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(breakpointKey);
+    if (raw == null) return null;
+    try {
+      return _InteractionBreakpoint.fromJson(
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
+    } catch (_) {
+      return null;
     }
   }
 
@@ -320,6 +463,45 @@ class MomentAiService {
       createdAt: DateTime.now(),
     ));
   }
+}
+
+/// 朋友圈互动断点：记录一轮未完成互动的位置，应用退出后据此续跑。
+///
+/// [moment] 为动态快照（互动内容以发布时为准）；
+/// [pendingCharacterIds] 为尚未互动的角色 id（有序）；
+/// [totalFailures] 为跨重启累计的失败次数（保持失败上限语义）；
+/// [modelId] 为发布互动时使用的模型，恢复时校验其仍可用。
+class _InteractionBreakpoint {
+  final Moment moment;
+  final List<String> pendingCharacterIds;
+  final int totalFailures;
+  final String modelId;
+
+  const _InteractionBreakpoint({
+    required this.moment,
+    required this.pendingCharacterIds,
+    required this.totalFailures,
+    required this.modelId,
+  });
+
+  factory _InteractionBreakpoint.fromJson(Map<String, dynamic> json) {
+    return _InteractionBreakpoint(
+      moment: Moment.fromJson(json['moment'] as Map<String, dynamic>? ?? {}),
+      pendingCharacterIds: (json['pending_character_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      totalFailures: (json['total_failures'] as num?)?.toInt() ?? 0,
+      modelId: json['model_id'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'moment': moment.toJson(),
+        'pending_character_ids': pendingCharacterIds,
+        'total_failures': totalFailures,
+        'model_id': modelId,
+      };
 }
 
 /// 单个角色对一条朋友圈的互动决策

@@ -11,6 +11,7 @@ import '../providers/workshop_provider.dart';
 import '../services/character_pack_service.dart';
 import '../services/workshop_service.dart';
 import '../utils/conversation_relink.dart';
+import '../utils/pinyin_util.dart';
 import 'character_import_screen.dart';
 import 'workshop_repos_screen.dart';
 
@@ -55,11 +56,38 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
   final Set<String> _selected = {};
   bool _importing = false;
 
+  // 搜索状态
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   String _categoryLabel(String tag) =>
       tag == kCharacterPackTag ? '角色分类' : '游戏分类';
 
   List<_ZipItem> get _allItems =>
       [..._items[kCharacterPackTag]!, ..._items[kGamePackTag]!];
+
+  /// 搜索结果：仅在已勾选（标记开启）的两个分类内搜索。
+  /// 忽略大小写，同时匹配「名称原文」与「完整拼音」：
+  /// 汉字/字母查询命中名称，拼音查询命中名称拼音，结果为拼音命中 + 汉字命中的并集。
+  List<_ZipItem> get _searchResults {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) return const [];
+    return _allItems.where((item) {
+      if (_checked[item.asset.tag] != true) return false;
+      final name = item.asset.name;
+      // 汉字/原文匹配（忽略大小写）
+      if (name.toLowerCase().contains(query)) return true;
+      // 拼音匹配：如查「zhangsan」可命中「张三」
+      final pinyin = PinyinUtil.fullPinyin(name);
+      return pinyin.contains(query);
+    }).toList();
+  }
 
   /// 进入配置可用仓库；返回后刷新已勾选分类的资产（仓库可能已变化）
   Future<void> _openRepos() async {
@@ -296,6 +324,8 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
       child: Column(
         children: [
           _buildRepoSection(context, provider),
+          // 搜索框：位于「可用仓库栏」下方、「分类勾选栏」上方
+          _buildSearchBar(context),
           // 分类勾选
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
@@ -464,6 +494,55 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     return parts.join('·');
   }
 
+  /// 搜索框：仅在已勾选的「角色 / 游戏」两个分类内搜索，
+  /// 支持中文名称与拼音（忽略大小写），输入时实时过滤下方资产列表。
+  Widget _buildSearchBar(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: CupertinoTextField(
+        controller: _searchController,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: context.listBgColor,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: context.separatorColor),
+        ),
+        placeholder: '搜索资产（支持中文或拼音，忽略大小写）',
+        placeholderStyle: TextStyle(
+          fontSize: 14,
+          color: context.textSecondaryColor,
+        ),
+        style: TextStyle(
+          fontSize: 14,
+          color: context.textPrimaryColor,
+        ),
+        prefix: Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: Icon(
+            CupertinoIcons.search,
+            size: 18,
+            color: context.textSecondaryColor,
+          ),
+        ),
+        suffix: _searchQuery.isEmpty
+            ? null
+            : CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                },
+                child: Icon(
+                  CupertinoIcons.clear_circled_solid,
+                  size: 18,
+                  color: context.textSecondaryColor,
+                ),
+              ),
+        onChanged: (v) => setState(() => _searchQuery = v),
+      ),
+    );
+  }
+
   Widget _buildAssetsList(BuildContext context) {
     final hasChecked = _checked.values.any((v) => v);
     if (!hasChecked) {
@@ -480,6 +559,31 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
             ),
           ),
         ),
+      );
+    }
+    // 搜索模式：在已勾选分类内展示拼音结果 + 汉字结果的并集
+    final query = _searchQuery.trim();
+    if (query.isNotEmpty) {
+      final results = _searchResults;
+      if (results.isEmpty) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              '未找到与「$query」匹配的资产',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.5,
+                color: context.textSecondaryColor,
+              ),
+            ),
+          ),
+        );
+      }
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: [for (final item in results) _buildZipRow(context, item)],
       );
     }
     return ListView(

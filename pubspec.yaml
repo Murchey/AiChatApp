@@ -23,6 +23,7 @@ dependencies:
   url_launcher: ^6.3.0
   package_info_plus: ^8.0.0
   flutter_local_notifications: ^22.3.0
+  gal: ^2.3.3
 
 dev_dependencies:
   flutter_test:

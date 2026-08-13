@@ -63,182 +63,32 @@ class CharacterProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // 先从本地读取自定义修改（如系统提示词），再合并默认角色
+    // 读取本地原始数据（不含解析），随后把 JSON 反序列化、默认角色合并、
+    // "自己"账号构建、动态 id 归一化等重活全部放到后台 isolate，
+    // 避免含 base64 头像/背景的大 JSON 在主线程解码拖慢启动首帧。
     final prefs = await SharedPreferences.getInstance();
-    final deletedIds = prefs.getStringList(_deletedKey) ?? const [];
-    _deletedDefaultIds = deletedIds.toSet();
-
-    final stored = prefs.getString(_storageKey);
-    Map<String, dynamic> customMap = {};
-    if (stored != null) {
-      try {
-        customMap = jsonDecode(stored) as Map<String, dynamic>;
-      } catch (_) {}
-    }
-
-    // 默认角色过滤掉用户已删除的
-    final defaults = _defaultCharacters()
-        .where((c) => !_deletedDefaultIds.contains(c.id))
-        .toList();
-    final defaultIds = defaults.map((c) => c.id).toSet();
-    // "自己"账号：资料取自用户资料（昵称/头像/签名），朋友圈从本地恢复
-    final self = _buildSelfCharacter(
-      customMap[selfCharacterId] as Map<String, dynamic>?,
-      prefs,
+    final raw = _CharacterRawStore(
+      stored: prefs.getString(_storageKey),
+      deletedIds: prefs.getStringList(_deletedKey) ?? const [],
+      visibilityGroupsStr: prefs.getString(_visibilityGroupsKey),
+      nickname: prefs.getString('user_nickname') ?? '',
+      avatar: prefs.getString('user_avatar') ?? '',
+      signature: prefs.getString('user_signature') ?? '',
     );
-    _characters = [
-      ...defaults.map((c) {
-        final custom = customMap[c.id];
-        if (custom is Map<String, dynamic>) {
-          return Character(
-            id: c.id,
-            name: custom['name'] as String? ?? c.name,
-            remark: custom['remark'] as String? ?? c.remark,
-            signature: custom['signature'] as String? ?? c.signature,
-            region: custom['region'] as String? ?? c.region,
-            avatar: custom['avatar'] as String? ?? c.avatar,
-            background: custom['background'] as String? ?? c.background,
-            description: custom['description'] as String? ?? c.description,
-            personality: custom['personality'] as String? ?? c.personality,
-            greeting: custom['greeting'] as String? ?? c.greeting,
-            systemPrompt: custom['system_prompt'] as String? ?? c.systemPrompt,
-            userRelationship:
-                custom['user_relationship'] as String? ?? c.userRelationship,
-            tags:
-                (custom['tags'] as List<dynamic>?)?.cast<String>() ?? c.tags,
-          );
-        }
-        return c;
-      }),
-      // 恢复用户导入/自定义的角色（不在默认角色中，排除"自己"）
-      ...customMap.entries
-           .where((e) =>
-               !defaultIds.contains(e.key) &&
-               e.key != selfCharacterId &&
-               e.value is Map<String, dynamic>)
-           .map((e) => Character.fromJson(e.value as Map<String, dynamic>)),
-      if (self != null) self,
-    ];
-    // 归一化动态 id：历史数据（如导入的数据包）中可能存在重复/缺失 id，
-    // 会破坏"按 id 更新"（点赞 / 评论 / 编辑 / AI 互动）逻辑导致互相覆盖，
-    // 加载时统一重新生成，保证每个角色内动态 id 唯一
-    _characters = _characters
-        .map((c) => c.copyWith(moments: _dedupeMomentIds(c.moments)))
-        .toList();
-    // 恢复朋友圈展示范围分组
+
+    _CharacterDecoded? decoded;
     try {
-      final groupsStr = prefs.getString(_visibilityGroupsKey);
-      if (groupsStr != null) {
-        final list = jsonDecode(groupsStr) as List<dynamic>;
-        _visibilityGroups = list
-            .map((e) => VisibilityGroup.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
-    } catch (_) {}
+      decoded = await compute(_decodeCharacterStore, raw);
+    } catch (e) {
+      debugPrint('[CharacterProvider] 加载角色数据失败，按空数据启动: $e');
+    }
+    if (decoded != null) {
+      _characters = decoded.characters;
+      _visibilityGroups = decoded.visibilityGroups;
+      _deletedDefaultIds = decoded.deletedIds;
+    }
     _isLoading = false;
     notifyListeners();
-  }
-
-  /// 去重动态 id：空 id 或列表内重复的 id 重新生成，
-  /// 返回 id 全唯一的动态列表（其余字段保持不变）。
-  List<Moment> _dedupeMomentIds(List<Moment> moments) {
-    final seen = <String>{};
-    var count = 0;
-    return moments.map((m) {
-      var id = m.id;
-      if (id.isEmpty || !seen.add(id)) {
-        id = 'moment_${DateTime.now().microsecondsSinceEpoch}_$count';
-        seen.add(id);
-      }
-      count++;
-      return Moment(
-        id: id,
-        content: m.content,
-        location: m.location,
-        visibility: m.visibility,
-        images: m.images,
-        likes: m.likes,
-        comments: m.comments,
-        createdAt: m.createdAt,
-      );
-    }).toList();
-  }
-
-  /// 构建"自己"账号：昵称/头像/签名以用户资料为准（用户未设置时回退到
-  /// 本地存储值），朋友圈动态从本地存储恢复。
-  Character? _buildSelfCharacter(
-    Map<String, dynamic>? stored,
-    SharedPreferences prefs,
-  ) {
-    final nickname = (prefs.getString('user_nickname') ?? '').trim();
-    final avatar = prefs.getString('user_avatar') ?? '';
-    final signature = prefs.getString('user_signature') ?? '';
-    if (stored != null) {
-      final base = Character.fromJson(stored);
-      return Character(
-        id: selfCharacterId,
-        name: nickname.isNotEmpty ? nickname : base.name,
-        avatar: avatar.isNotEmpty ? avatar : base.avatar,
-        signature: signature.isNotEmpty ? signature : base.signature,
-        remark: base.remark,
-        region: base.region,
-        background: base.background,
-        description: base.description,
-        personality: base.personality,
-        greeting: base.greeting,
-        systemPrompt: base.systemPrompt,
-        userRelationship: base.userRelationship,
-        tags: base.tags,
-        moments: base.moments,
-      );
-    }
-    return Character(
-      id: selfCharacterId,
-      name: nickname.isNotEmpty ? nickname : '我',
-      avatar: avatar,
-      signature: signature,
-    );
-  }
-
-  List<Character> _defaultCharacters() {
-    return [
-      Character(
-        id: 'char_001',
-        name: '苏格拉底',
-        description: '古希腊哲学家，善于通过提问引导思考',
-        personality: '智慧、耐心、善于启发',
-        greeting: '你好，年轻人。今天你有什么想探讨的问题吗？',
-        systemPrompt: '你是古希腊哲学家苏格拉底。你通过提问来引导对方思考，而不是直接给出答案。你的回答充满智慧和启发性。',
-        tags: ['哲学', '历史', '智慧'],
-      ),
-      Character(
-        id: 'char_002',
-        name: '小猫咪',
-        description: '一只可爱的拟人化小猫咪，说话带喵~',
-        personality: '可爱、活泼、粘人',
-        greeting: '喵~ 主人好呀！今天想和小猫咪玩什么喵？',
-        systemPrompt: '你是一只可爱的拟人化小猫咪。你说话时会在句尾加上"喵~"，性格活泼可爱，喜欢撒娇。',
-        tags: ['可爱', '萌宠', '日常'],
-      ),
-      Character(
-        id: 'char_003',
-        name: '冒险家',
-        description: '经验丰富的冒险家，讲述各种冒险故事',
-        personality: '勇敢、幽默、见多识广',
-        greeting: '嘿，旅者！准备好踏上新的冒险了吗？',
-        systemPrompt: '你是一位经验丰富的冒险家。你热爱讲述冒险故事，性格幽默勇敢，经常用冒险经历来举例说明。',
-        tags: ['冒险', '奇幻', '故事'],
-      ),
-      Character(
-        id: 'char_004',
-        name: '程序员导师',
-        description: '资深全栈工程师，擅长用通俗语言解释技术问题',
-        personality: '耐心、专业、幽默',
-        greeting: 'Hello World! 今天想学点什么技术？',
-        systemPrompt: '你是一位资深的全栈工程师和编程导师。你擅长用通俗易懂的语言解释复杂的技术概念，回答时会配合代码示例。',
-        tags: ['编程', '技术', '教育'],
-      ),
-    ];
   }
 
   void selectCharacter(Character character) {
@@ -458,4 +308,216 @@ class CharacterProvider extends ChangeNotifier {
       jsonEncode(_visibilityGroups.map((g) => g.toJson()).toList()),
     );
   }
+}
+
+// ─── 角色加载跨 isolate 传输的数据结构与解码函数 ─────────────────
+
+/// 本地存储的原始数据（供后台 isolate 反序列化）。
+class _CharacterRawStore {
+  final String? stored;
+  final List<String> deletedIds;
+  final String? visibilityGroupsStr;
+  final String nickname;
+  final String avatar;
+  final String signature;
+
+  const _CharacterRawStore({
+    this.stored,
+    required this.deletedIds,
+    this.visibilityGroupsStr,
+    required this.nickname,
+    required this.avatar,
+    required this.signature,
+  });
+}
+
+/// 后台 isolate 解码后的结果。
+class _CharacterDecoded {
+  final List<Character> characters;
+  final List<VisibilityGroup> visibilityGroups;
+  final Set<String> deletedIds;
+
+  const _CharacterDecoded({
+    required this.characters,
+    required this.visibilityGroups,
+    required this.deletedIds,
+  });
+}
+
+/// 后台 isolate：反序列化角色数据并完成默认角色合并、自定义角色恢复、
+/// "自己"账号构建与动态 id 归一化（与旧主线程逻辑完全一致）。
+@pragma('vm:entry-point')
+_CharacterDecoded _decodeCharacterStore(_CharacterRawStore raw) {
+  final deletedIds = raw.deletedIds.toSet();
+  Map<String, dynamic> customMap = {};
+  if (raw.stored != null) {
+    try {
+      customMap = jsonDecode(raw.stored!) as Map<String, dynamic>;
+    } catch (_) {}
+  }
+
+  final defaults = _defaultCharacters()
+      .where((c) => !deletedIds.contains(c.id))
+      .toList();
+  final defaultIds = defaults.map((c) => c.id).toSet();
+  final self = _buildSelfCharacter(
+    customMap[CharacterProvider.selfCharacterId] as Map<String, dynamic>?,
+    raw.nickname,
+    raw.avatar,
+    raw.signature,
+  );
+
+  var characters = <Character>[
+    ...defaults.map((c) {
+      final custom = customMap[c.id];
+      if (custom is Map<String, dynamic>) {
+        return Character(
+          id: c.id,
+          name: custom['name'] as String? ?? c.name,
+          remark: custom['remark'] as String? ?? c.remark,
+          signature: custom['signature'] as String? ?? c.signature,
+          region: custom['region'] as String? ?? c.region,
+          avatar: custom['avatar'] as String? ?? c.avatar,
+          background: custom['background'] as String? ?? c.background,
+          description: custom['description'] as String? ?? c.description,
+          personality: custom['personality'] as String? ?? c.personality,
+          greeting: custom['greeting'] as String? ?? c.greeting,
+          systemPrompt: custom['system_prompt'] as String? ?? c.systemPrompt,
+          userRelationship:
+              custom['user_relationship'] as String? ?? c.userRelationship,
+          tags: (custom['tags'] as List<dynamic>?)?.cast<String>() ?? c.tags,
+        );
+      }
+      return c;
+    }),
+    ...customMap.entries
+        .where((e) =>
+            !defaultIds.contains(e.key) &&
+            e.key != CharacterProvider.selfCharacterId &&
+            e.value is Map<String, dynamic>)
+        .map((e) => Character.fromJson(e.value as Map<String, dynamic>)),
+    if (self != null) self,
+  ];
+  characters = characters
+      .map((c) => c.copyWith(moments: _dedupeMomentIds(c.moments)))
+      .toList();
+
+  var groups = <VisibilityGroup>[];
+  final groupsStr = raw.visibilityGroupsStr;
+  if (groupsStr != null) {
+    try {
+      groups = (jsonDecode(groupsStr) as List<dynamic>)
+          .map((e) => VisibilityGroup.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {}
+  }
+
+  return _CharacterDecoded(
+    characters: characters,
+    visibilityGroups: groups,
+    deletedIds: deletedIds,
+  );
+}
+
+/// 去重动态 id：空 id 或列表内重复的 id 重新生成，
+/// 返回 id 全唯一的动态列表（其余字段保持不变）。
+List<Moment> _dedupeMomentIds(List<Moment> moments) {
+  final seen = <String>{};
+  var count = 0;
+  return moments.map((m) {
+    var id = m.id;
+    if (id.isEmpty || !seen.add(id)) {
+      id = 'moment_${DateTime.now().microsecondsSinceEpoch}_$count';
+      seen.add(id);
+    }
+    count++;
+    return Moment(
+      id: id,
+      content: m.content,
+      location: m.location,
+      visibility: m.visibility,
+      images: m.images,
+      likes: m.likes,
+      comments: m.comments,
+      createdAt: m.createdAt,
+    );
+  }).toList();
+}
+
+/// 构建"自己"账号：昵称/头像/签名以用户资料为准（用户未设置时回退到
+/// 本地存储值），朋友圈动态从本地存储恢复。
+Character? _buildSelfCharacter(
+  Map<String, dynamic>? stored,
+  String nickname,
+  String avatar,
+  String signature,
+) {
+  final n = nickname.trim();
+  if (stored != null) {
+    final base = Character.fromJson(stored);
+    return Character(
+      id: CharacterProvider.selfCharacterId,
+      name: n.isNotEmpty ? n : base.name,
+      avatar: avatar.isNotEmpty ? avatar : base.avatar,
+      signature: signature.isNotEmpty ? signature : base.signature,
+      remark: base.remark,
+      region: base.region,
+      background: base.background,
+      description: base.description,
+      personality: base.personality,
+      greeting: base.greeting,
+      systemPrompt: base.systemPrompt,
+      userRelationship: base.userRelationship,
+      tags: base.tags,
+      moments: base.moments,
+    );
+  }
+  return Character(
+    id: CharacterProvider.selfCharacterId,
+    name: n.isNotEmpty ? n : '我',
+    avatar: avatar,
+    signature: signature,
+  );
+}
+
+/// 内置默认角色列表。
+List<Character> _defaultCharacters() {
+  return [
+    Character(
+      id: 'char_001',
+      name: '苏格拉底',
+      description: '古希腊哲学家，善于通过提问引导思考',
+      personality: '智慧、耐心、善于启发',
+      greeting: '你好，年轻人。今天你有什么想探讨的问题吗？',
+      systemPrompt: '你是古希腊哲学家苏格拉底。你通过提问来引导对方思考，而不是直接给出答案。你的回答充满智慧和启发性。',
+      tags: ['哲学', '历史', '智慧'],
+    ),
+    Character(
+      id: 'char_002',
+      name: '小猫咪',
+      description: '一只可爱的拟人化小猫咪，说话带喵~',
+      personality: '可爱、活泼、粘人',
+      greeting: '喵~ 主人好呀！今天想和小猫咪玩什么喵？',
+      systemPrompt: '你是一只可爱的拟人化小猫咪。你说话时会在句尾加上"喵~"，性格活泼可爱，喜欢撒娇。',
+      tags: ['可爱', '萌宠', '日常'],
+    ),
+    Character(
+      id: 'char_003',
+      name: '冒险家',
+      description: '经验丰富的冒险家，讲述各种冒险故事',
+      personality: '勇敢、幽默、见多识广',
+      greeting: '嘿，旅者！准备好踏上新的冒险了吗？',
+      systemPrompt: '你是一位经验丰富的冒险家。你热爱讲述冒险故事，性格幽默勇敢，经常用冒险经历来举例说明。',
+      tags: ['冒险', '奇幻', '故事'],
+    ),
+    Character(
+      id: 'char_004',
+      name: '程序员导师',
+      description: '资深全栈工程师，擅长用通俗语言解释技术问题',
+      personality: '耐心、专业、幽默',
+      greeting: 'Hello World! 今天想学点什么技术？',
+      systemPrompt: '你是一位资深的全栈工程师和编程导师。你擅长用通俗易懂的语言解释复杂的技术概念，回答时会配合代码示例。',
+      tags: ['编程', '技术', '教育'],
+    ),
+  ];
 }

@@ -18,7 +18,6 @@ class MomentsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final notifications = context.watch<MomentNotificationProvider>();
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('朋友圈'),
@@ -32,29 +31,33 @@ class MomentsScreen extends StatelessWidget {
               ),
             );
           },
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              const Icon(CupertinoIcons.bell),
-              // 未读互动通知红点
-              if (notifications.hasUnread)
-                Positioned(
-                  right: -3,
-                  top: -3,
-                  child: Container(
-                    width: 9,
-                    height: 9,
-                    decoration: BoxDecoration(
-                      color: CupertinoColors.systemRed,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: context.navBarColor,
-                        width: 1.2,
+          // 仅监听未读状态：通知变化只重建铃铛红点，不重建整个朋友圈列表
+          child: Selector<MomentNotificationProvider, bool>(
+            selector: (_, p) => p.hasUnread,
+            builder: (context, hasUnread, _) => Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(CupertinoIcons.bell),
+                // 未读互动通知红点
+                if (hasUnread)
+                  Positioned(
+                    right: -3,
+                    top: -3,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemRed,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: context.navBarColor,
+                          width: 1.2,
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
         trailing: CupertinoButton(
@@ -105,6 +108,7 @@ class MomentsScreen extends StatelessWidget {
             itemBuilder: (context, i) {
               final (character, moment) = items[i];
               return Padding(
+                key: ValueKey('${character.id}_${moment.id}'),
                 padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,

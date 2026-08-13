@@ -53,6 +53,10 @@ class ChatBubble extends StatefulWidget {
   final VoidCallback? onForwardTap;
   /// 点击文件消息卡片时回调（参数为文件路径，用于打开文件）
   final Future<void> Function(String filePath)? onFileTap;
+  /// 点击"我"的头像时回调（进入自己的空间页）
+  final VoidCallback? onUserAvatarTap;
+  /// 点击"对方"头像时回调（进入对方的空间页）
+  final VoidCallback? onCharacterAvatarTap;
 
   const ChatBubble({
     super.key,
@@ -65,6 +69,8 @@ class ChatBubble extends StatefulWidget {
     this.onTap,
     this.onForwardTap,
     this.onFileTap,
+    this.onUserAvatarTap,
+    this.onCharacterAvatarTap,
   });
 
   @override
@@ -96,7 +102,7 @@ class _ChatBubbleState extends State<ChatBubble> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
-            _buildAvatar(context, avatar),
+            _buildAvatar(context, avatar, onTap: widget.onCharacterAvatarTap),
             const SizedBox(width: 8),
           ],
           // 多选模式：选中勾选框（消息在左侧时勾选框在气泡右侧）
@@ -164,7 +170,7 @@ class _ChatBubbleState extends State<ChatBubble> {
           if (widget.selectMode && isUser) _buildSelectCheck(context),
           if (isUser) ...[
             const SizedBox(width: 8),
-            _buildAvatar(context, avatar),
+            _buildAvatar(context, avatar, onTap: widget.onUserAvatarTap),
           ],
         ],
       ),
@@ -268,7 +274,7 @@ class _ChatBubbleState extends State<ChatBubble> {
           ),
           // 我方转发人头像（右侧）
           const SizedBox(width: 8),
-          _buildAvatar(context, widget.userAvatar),
+          _buildAvatar(context, widget.userAvatar, onTap: widget.onUserAvatarTap),
         ],
       ),
     );
@@ -397,8 +403,16 @@ class _ChatBubbleState extends State<ChatBubble> {
     );
   }
 
-  /// 头像：跟随全局设置（方形 / 仿 QQ 圆形），未设置时显示默认用户图标
-  Widget _buildAvatar(BuildContext context, String avatarBase64) {
-    return CharacterAvatar(base64: avatarBase64, size: 40);
+  /// 头像：跟随全局设置（方形 / 仿 QQ 圆形），未设置时显示默认用户图标；
+  /// [onTap] 非空时头像可点击（进入对应的空间页）
+  Widget _buildAvatar(BuildContext context, String avatarBase64,
+      {VoidCallback? onTap}) {
+    final avatar = CharacterAvatar(base64: avatarBase64, size: 40);
+    if (onTap == null) return avatar;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: avatar,
+    );
   }
 }

@@ -19,6 +19,7 @@ import '../widgets/character_avatar.dart';
 import '../widgets/message_input.dart';
 import 'chat_detail_screen.dart';
 import 'chat_settings_screen.dart';
+import 'character_detail_screen.dart';
 import 'forward_detail_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -53,6 +54,10 @@ class _ChatScreenState extends State<ChatScreen>
   ChatProvider? _chatProvider; // 生命周期内复用（dispose 中仍需访问）
   int _lastRenderedCount = -1; // 已渲染消息条数（用于新消息自动滚底）
   bool _keyboardVisible = false; // 软键盘是否弹出（用于键盘弹出时保持列表滚底）
+  // 发送防重复：界面卡顿导致点击无视觉反馈时，用户常会连点"发送"，
+  // 同一条消息会被插入多次。以时间窗节流，窗口内重复点击直接忽略。
+  static const int _sendThrottleMs = 500;
+  DateTime _lastSendAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void initState() {
@@ -546,6 +551,13 @@ class _ChatScreenState extends State<ChatScreen>
   /// 发送消息（携带引用）：只发送用户消息，不自动触发模型回复，
   /// 由用户点击输入框右侧的"对号"按钮手动触发角色回复。
   void _handleSend(String content) {
+    // 防止长会话卡顿期间用户重复点击导致同一条消息被发送多次
+    final now = DateTime.now();
+    if (now.difference(_lastSendAt).inMilliseconds < _sendThrottleMs) {
+      debugPrint('[ChatScreen] 发送过于频繁，忽略本次点击（${_sendThrottleMs}ms 内）');
+      return;
+    }
+    _lastSendAt = now;
     final quote = _quoteMessage;
     context.read<ChatProvider>().sendMessage(
           conversationId: widget.conversationId,
@@ -850,6 +862,36 @@ class _ChatScreenState extends State<ChatScreen>
           items: message.forwardedItems,
           userAvatar: userAvatar,
           characterAvatar: characterAvatar,
+        ),
+      ),
+    );
+  }
+
+  /// 点击角色头像：进入对方的空间页（资料 + 朋友圈）
+  void _openCharacterSpace() {
+    final conversation = context
+        .read<ChatProvider>()
+        .conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    if (conversation == null) return;
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => CharacterDetailScreen(
+          characterId: conversation.characterId,
+        ),
+      ),
+    );
+  }
+
+  /// 点击"我"的头像：进入自己的空间页（资料 + 朋友圈）
+  void _openSelfSpace() {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => const CharacterDetailScreen(
+          characterId: CharacterProvider.selfCharacterId,
         ),
       ),
     );
@@ -1183,6 +1225,7 @@ class _ChatScreenState extends State<ChatScreen>
                                   .inMinutes >=
                               10;
                       return Column(
+                        key: ValueKey(msg.id),
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (showTime) _buildTimeLabel(msg.createdAt),
@@ -1192,6 +1235,13 @@ class _ChatScreenState extends State<ChatScreen>
                             characterAvatar: characterAvatar,
                             selectMode: _selectMode,
                             selected: _selectedIds.contains(msg.id),
+                            // 点击头像进入对应空间页（多选模式下禁用，避免误触）
+                            onUserAvatarTap: _selectMode
+                                ? null
+                                : _openSelfSpace,
+                            onCharacterAvatarTap: _selectMode
+                                ? null
+                                : _openCharacterSpace,
                             onTap: _selectMode
                                 ? () => _toggleSelect(msg)
                                 : null,

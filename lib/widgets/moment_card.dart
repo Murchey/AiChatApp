@@ -1,11 +1,15 @@
 import 'dart:io';
+import 'dart:math';
+import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
+import 'package:gal/gal.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
+import '../utils/app_toast.dart';
 import 'character_avatar.dart';
 import 'publish_moment_screen.dart';
 
@@ -557,6 +561,8 @@ class _MomentCardState extends State<MomentCard> {
 
   /// 图片：最多 9 张，1 张大图、多张 3 列网格；缺失时只显示文字占位。
   /// 点击图片全屏预览。
+  /// 解码尺寸按实际展示区域指定（cacheWidth/Height），避免原图全分辨率解码
+  /// 造成大内存占用与滚动卡顿。
   Widget _images(BuildContext context) {
     final shown = moment.images.where((p) => File(p).existsSync()).take(9).toList();
     if (shown.isEmpty) {
@@ -568,26 +574,19 @@ class _MomentCardState extends State<MomentCard> {
         ),
       );
     }
+    final screenWidth = MediaQuery.of(context).size.width;
     if (shown.length == 1) {
-      return GestureDetector(
+      // 单图：微信风格缩略图，按图片比例裁剪、不强制展示完整图片
+      //（竖图 3:4、横图按原比例），点击进入全屏预览
+      return _SingleImageThumb(
+        path: shown.first,
         onTap: () => _previewImage(context, shown.first),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            width: double.infinity,
-            height: 150,
-            child: Image(
-              image: FileImage(File(shown.first)),
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-            ),
-          ),
-        ),
       );
     }
     // 多图：3 列网格，单格按卡片内可用宽度均分
-    final screenWidth = MediaQuery.of(context).size.width;
     final cell = (screenWidth - 32 - 24 - 34 - 10 - 8) / 3;
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final cellPx = (cell * dpr).round();
     return Wrap(
       spacing: 4,
       runSpacing: 4,
@@ -599,10 +598,12 @@ class _MomentCardState extends State<MomentCard> {
             child: SizedBox(
               width: cell,
               height: cell,
-              child: Image(
-                image: FileImage(File(p)),
+              child: Image.file(
+                File(p),
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
+                cacheWidth: cellPx,
+                cacheHeight: cellPx,
               ),
             ),
           ),
@@ -694,23 +695,17 @@ class _MomentCardState extends State<MomentCard> {
     );
   }
 
-  /// 全屏预览朋友圈图片（点击任意位置关闭）
+  /// 全屏预览朋友圈图片：
+  /// - 单击关闭；双击放大/缩小；双指缩放，放大后可自由拖动查看
+  /// - 长按弹出【保存图片】到系统相册
   void _previewImage(BuildContext context, String path) {
     if (!File(path).existsSync()) return;
     Navigator.of(context).push(
       PageRouteBuilder(
-        opaque: false,
-        barrierColor: CupertinoColors.black.withValues(alpha: 0.9),
-        barrierDismissible: true,
-        pageBuilder: (_, __, ___) => GestureDetector(
-          onTap: () => Navigator.of(context).pop(),
-          child: Center(
-            child: InteractiveViewer(
-              maxScale: 4,
-              child: Image.file(File(path)),
-            ),
-          ),
-        ),
+        opaque: true,
+        transitionDuration: const Duration(milliseconds: 220),
+        reverseTransitionDuration: const Duration(milliseconds: 180),
+        pageBuilder: (_, __, ___) => _ImagePreviewPage(path: path),
       ),
     );
   }
@@ -837,6 +832,271 @@ class _CommentInputBarState extends State<_CommentInputBar> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 朋友圈单图缩略图（微信风格）：
+/// 不强制展示完整图片——竖图按 3:4 比例裁剪、横图按原比例，最大约 60%
+/// 内容区宽度 / 220 高度。异步读取原图尺寸后计算展示尺寸，避免布局跳动。
+class _SingleImageThumb extends StatefulWidget {
+  final String path;
+  final VoidCallback onTap;
+
+  const _SingleImageThumb({required this.path, required this.onTap});
+
+  @override
+  State<_SingleImageThumb> createState() => _SingleImageThumbState();
+}
+
+class _SingleImageThumbState extends State<_SingleImageThumb> {
+  /// 原图尺寸（异步读取；未知时按默认 3:4 占位）
+  Size? _imgSize;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSize();
+  }
+
+  Future<void> _loadSize() async {
+    try {
+      final bytes = await File(widget.path).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final size = Size(
+        frame.image.width.toDouble(),
+        frame.image.height.toDouble(),
+      );
+      frame.image.dispose();
+      codec.dispose();
+      if (mounted) setState(() => _imgSize = size);
+    } catch (_) {
+      // 尺寸读取失败时保持默认占位展示，不影响点开预览
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    // 卡片内容区可用宽度：屏宽 - 列表边距 16*2 - 卡片内边距 12*2 - 头像 34 - 间距 10
+    final contentWidth = screenWidth - 32 - 24 - 34 - 10;
+    final maxWidth = contentWidth * 0.6;
+    const maxHeight = 220.0;
+
+    double w;
+    double h;
+    final img = _imgSize;
+    if (img == null) {
+      // 未知尺寸：按 3:4 默认比例占位
+      w = maxHeight * 0.75;
+      h = maxHeight;
+    } else {
+      final aspect = img.width / img.height;
+      if (aspect >= 1) {
+        // 横图 / 方形：宽优先，高度按原比例，超出高度上限则按比例截断
+        w = maxWidth;
+        h = w / aspect;
+        if (h > maxHeight) {
+          h = maxHeight;
+          w = h * aspect;
+          if (w > maxWidth) w = maxWidth;
+        }
+      } else {
+        // 竖图：微信风格 3:4 缩略图（cover 裁剪，不展示完整图片）
+        w = maxHeight * 0.75;
+        h = maxHeight;
+        if (w > maxWidth) {
+          w = maxWidth;
+          h = w * 4 / 3;
+        }
+      }
+    }
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: w,
+          height: h,
+          child: Image.file(
+            File(widget.path),
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            cacheWidth: (w * dpr).round(),
+            cacheHeight: (h * dpr).round(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 朋友圈图片全屏预览页：
+/// - 黑底全屏，图片按屏幕 contain 适配
+/// - 双击放大 / 缩小；双指缩放；`constrained: false` 允许图片放大超出视口后自由拖动查看
+/// - 长按弹出【保存图片】到系统相册
+class _ImagePreviewPage extends StatefulWidget {
+  final String path;
+
+  const _ImagePreviewPage({required this.path});
+
+  @override
+  State<_ImagePreviewPage> createState() => _ImagePreviewPageState();
+}
+
+class _ImagePreviewPageState extends State<_ImagePreviewPage> {
+  final TransformationController _transform = TransformationController();
+
+  /// 图片适配屏幕后的展示尺寸（加载前为 null，此时用全屏占位）
+  Size? _fittedSize;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadImageSize();
+  }
+
+  @override
+  void dispose() {
+    _transform.dispose();
+    super.dispose();
+  }
+
+  /// 读取原图尺寸并按视口 contain 计算初始展示尺寸
+  Future<void> _loadImageSize() async {
+    Size img;
+    try {
+      final bytes = await File(widget.path).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      img = Size(
+        frame.image.width.toDouble(),
+        frame.image.height.toDouble(),
+      );
+      frame.image.dispose();
+      codec.dispose();
+    } catch (_) {
+      img = const Size(1, 1); // 解码失败时回退为全屏 contain
+    }
+    if (!mounted) return;
+    final vp = MediaQuery.of(context).size;
+    final scale = min(vp.width / img.width, vp.height / img.height);
+    setState(() {
+      _fittedSize = Size(img.width * scale, img.height * scale);
+    });
+  }
+
+  /// 双击位置（onDoubleTapDown 记录，onDoubleTap 时使用）
+  Offset _doubleTapPos = Offset.zero;
+
+  /// 双击：放大 2.5 倍（以点击处为中心），再次双击复位
+  void _toggleZoom() {
+    if (_transform.value.getMaxScaleOnAxis() > 1.05) {
+      _transform.value = Matrix4.identity();
+    } else {
+      final p = _doubleTapPos;
+      _transform.value = Matrix4.identity()
+        ..translateByDouble(p.dx, p.dy, 0, 1)
+        ..scaleByDouble(2.5, 2.5, 1, 1)
+        ..translateByDouble(-p.dx, -p.dy, 0, 1);
+    }
+  }
+
+  Future<void> _saveImage() async {
+    // gal 的 putImage 不会自行申请权限：Android 6–9（API 23–28）
+    // 需要 WRITE_EXTERNAL_STORAGE 才能写入相册，先检查/申请权限再保存
+    if (!await Gal.hasAccess()) {
+      final granted = await Gal.requestAccess();
+      if (!granted) {
+        if (mounted) showAppToast('未获得相册权限，无法保存图片');
+        return;
+      }
+    }
+    try {
+      await Gal.putImage(widget.path);
+      if (mounted) showAppToast('已保存到系统相册');
+    } on GalException catch (e) {
+      if (!mounted) return;
+      showAppToast(
+        switch (e.type) {
+          GalExceptionType.accessDenied => '未获得相册权限，无法保存图片',
+          GalExceptionType.notEnoughSpace => '存储空间不足，保存失败',
+          GalExceptionType.notSupportedFormat => '图片格式不支持保存',
+          GalExceptionType.unexpected => '保存失败，请重试',
+        },
+      );
+    } catch (_) {
+      if (mounted) showAppToast('保存失败，请重试');
+    }
+  }
+
+  /// 长按图片：弹出操作菜单（保存图片）
+  void _showSaveSheet() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('图片操作'),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _saveImage();
+            },
+            child: const Text('保存图片'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final viewport = MediaQuery.of(context).size;
+    final fitted = _fittedSize;
+    return ColoredBox(
+      color: CupertinoColors.black,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // 单击关闭；与双击共存时 Flutter 会等待双击判定，稍显延迟但可接受
+        onTap: () => Navigator.of(context).pop(),
+        onDoubleTapDown: (details) => _doubleTapPos = details.localPosition,
+        onDoubleTap: _toggleZoom,
+        onLongPress: _showSaveSheet,
+        child: InteractiveViewer(
+          transformationController: _transform,
+          // 注意：constrained:false 时子组件锚定在视口左上角（不居中），
+          // 因此子组件必须是整屏大小的盒子，图片在其内部居中，
+          // 否则适配屏幕后的小图会偏移到屏幕顶部。
+          constrained: false,
+          boundaryMargin: const EdgeInsets.all(200),
+          minScale: 1,
+          maxScale: 6,
+          child: SizedBox(
+            width: viewport.width,
+            height: viewport.height,
+            child: fitted == null
+                ? const Center(child: CupertinoActivityIndicator())
+                : Center(
+                    child: SizedBox(
+                      width: fitted.width,
+                      height: fitted.height,
+                      child: Image.file(
+                        File(widget.path),
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  ),
+          ),
         ),
       ),
     );

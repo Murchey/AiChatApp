@@ -83,61 +83,37 @@ class ChatProvider extends ChangeNotifier {
     return _messagesMap[conversationId] ?? [];
   }
 
-  /// 从本地存储加载会话与聊天记录（持久化）
+  /// 从本地存储加载会话与聊天记录（持久化）。
+  /// 全部 JSON 反序列化与上下文 token 重算都在后台 isolate 中执行，
+  /// 避免大量聊天记录在主线程解码拖慢启动。
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
+    final raw = _RawStore(
+      conversationsJson: prefs.getString(_conversationsKey),
+      messagesJson: prefs.getString(_messagesKey),
+      contextTokensJson: prefs.getString(_contextTokensKey),
+      systemTokensJson: prefs.getString(_systemTokensKey),
+    );
+    _DecodedStore? decoded;
     try {
-      final convStr = prefs.getString(_conversationsKey);
-      if (convStr != null) {
-        final list = jsonDecode(convStr) as List<dynamic>;
-        _conversations
-          ..clear()
-          ..addAll(list.map((e) =>
-              Conversation.fromJson(e as Map<String, dynamic>)));
-      }
-    } catch (_) {}
-    try {
-      final msgStr = prefs.getString(_messagesKey);
-      if (msgStr != null) {
-        final map = jsonDecode(msgStr) as Map<String, dynamic>;
-        _messagesMap.clear();
-        map.forEach((convId, messages) {
-          _messagesMap[convId] = (messages as List<dynamic>)
-              .map((e) => Message.fromJson(e as Map<String, dynamic>))
-              .toList();
-        });
-      }
-    } catch (_) {}
-    // 加载各会话上下文 token 累计值
-    try {
-      final ctxStr = prefs.getString(_contextTokensKey);
-      if (ctxStr != null) {
-        final map = jsonDecode(ctxStr) as Map<String, dynamic>;
-        _contextTokens
-          ..clear()
-          ..addAll(map.map(
-              (k, v) => MapEntry(k, (v as num).toInt())));
-      }
-    } catch (_) {}
-    // 加载各会话系统提示词 + 输出指令 token（纯内存态重启即丢，
-    // 若不恢复，重启后发送消息乐观更新时会漏掉系统提示词这一大头）
-    try {
-      final sysStr = prefs.getString(_systemTokensKey);
-      if (sysStr != null) {
-        final map = jsonDecode(sysStr) as Map<String, dynamic>;
-        _systemTokens
-          ..clear()
-          ..addAll(map.map(
-              (k, v) => MapEntry(k, (v as num).toInt())));
-      }
-    } catch (_) {}
-    // 系统提示词恢复后，用「系统提示词 + 摘要起全部历史」重算各会话上下文，
-    // 覆盖重启前可能不含系统提示词的旧快照
-    _systemTokens.forEach((id, _) {
-      if (_messagesMap.containsKey(id)) {
-        _contextTokens[id] = _estimateSendInputBudget(id);
-      }
-    });
+      decoded = await compute(_decodePersistStore, raw);
+    } catch (e) {
+      debugPrint('[ChatProvider] 加载本地数据失败，按空数据启动: $e');
+    }
+    if (decoded != null) {
+      _conversations
+        ..clear()
+        ..addAll(decoded.conversations);
+      _messagesMap
+        ..clear()
+        ..addAll(decoded.messages);
+      _contextTokens
+        ..clear()
+        ..addAll(decoded.contextTokens);
+      _systemTokens
+        ..clear()
+        ..addAll(decoded.systemTokens);
+    }
     // 加载完成后通知监听者重建界面：
     // 否则首页在 init 完成前先渲染一次（会话为空 → 显示"暂无会话"），
     // 数据就绪后没有重建通知，列表会一直停留在空状态。
@@ -145,25 +121,46 @@ class ChatProvider extends ChangeNotifier {
   }
 
   /// 保存会话与聊天记录到本地（持久化）
+  ///
+  /// JSON 序列化在后台 isolate 中执行，避免长会话（上千条消息、多会话）时
+  /// 每次入库都同步编码全量数据阻塞主线程——这是发送/渲染卡顿的直接原因。
+  /// 采用「单飞 + 脏标记」：写入进行中再触发时只标记待写，由当前写入收尾时
+  /// 自动补写，AI 逐条渲染期间的高频调用会合并为少量实际写盘，
+  /// 且最后一次写入始终包含最新数据。
+  bool _persistRunning = false;
+  bool _persistDirty = false;
+
   Future<void> _persist() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _conversationsKey,
-      jsonEncode(_conversations.map((c) => c.toJson()).toList()),
-    );
-    await prefs.setString(
-      _messagesKey,
-      jsonEncode(
-        _messagesMap.map(
-          (key, value) => MapEntry(
-            key,
-            value.map((m) => m.toJson()).toList(),
+    if (_persistRunning) {
+      _persistDirty = true;
+      return;
+    }
+    _persistRunning = true;
+    try {
+      do {
+        _persistDirty = false;
+        // 浅拷贝快照（指针级，开销小），确保后台序列化期间数据一致
+        final snapshot = _PersistSnapshot(
+          conversations: List.of(_conversations),
+          messages: _messagesMap.map(
+            (key, value) => MapEntry(key, List.of(value)),
           ),
-        ),
-      ),
-    );
-    await prefs.setString(_contextTokensKey, jsonEncode(_contextTokens));
-    await prefs.setString(_systemTokensKey, jsonEncode(_systemTokens));
+          contextTokens: Map.of(_contextTokens),
+          systemTokens: Map.of(_systemTokens),
+        );
+        final encoded = await compute(_encodePersistSnapshot, snapshot);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_conversationsKey, encoded['conversations']!);
+        await prefs.setString(_messagesKey, encoded['messages']!);
+        await prefs.setString(_contextTokensKey, encoded['contextTokens']!);
+        await prefs.setString(_systemTokensKey, encoded['systemTokens']!);
+      } while (_persistDirty);
+    } catch (e) {
+      // 持久化失败不阻塞主流程（多为平台通道/磁盘异常），下次变更会再次尝试
+      debugPrint('[ChatProvider] 持久化失败: $e');
+    } finally {
+      _persistRunning = false;
+    }
   }
 
   Conversation getOrCreateConversation({
@@ -913,4 +910,140 @@ class ChatProvider extends ChangeNotifier {
       _persist();
     }
   }
+}
+
+// ─── 持久化跨 isolate 传输的数据结构 ─────────────────────────────
+
+/// 本地存储的原始 JSON 字符串（供后台 isolate 反序列化）
+class _RawStore {
+  final String? conversationsJson;
+  final String? messagesJson;
+  final String? contextTokensJson;
+  final String? systemTokensJson;
+
+  const _RawStore({
+    this.conversationsJson,
+    this.messagesJson,
+    this.contextTokensJson,
+    this.systemTokensJson,
+  });
+}
+
+/// 后台 isolate 反序列化后的结果
+class _DecodedStore {
+  final List<Conversation> conversations;
+  final Map<String, List<Message>> messages;
+  final Map<String, int> contextTokens;
+  final Map<String, int> systemTokens;
+
+  const _DecodedStore({
+    required this.conversations,
+    required this.messages,
+    required this.contextTokens,
+    required this.systemTokens,
+  });
+}
+
+/// 待持久化的内存数据快照（供后台 isolate 序列化）
+class _PersistSnapshot {
+  final List<Conversation> conversations;
+  final Map<String, List<Message>> messages;
+  final Map<String, int> contextTokens;
+  final Map<String, int> systemTokens;
+
+  const _PersistSnapshot({
+    required this.conversations,
+    required this.messages,
+    required this.contextTokens,
+    required this.systemTokens,
+  });
+}
+
+/// 后台 isolate：反序列化全部本地数据。
+/// 解析完成后在后台重算各会话上下文 token：
+/// 系统提示词恢复后，按「系统提示词 + 摘要起全部历史」估算，
+/// 覆盖重启前可能不含系统提示词的旧快照。
+@pragma('vm:entry-point')
+_DecodedStore _decodePersistStore(_RawStore raw) {
+  var conversations = const <Conversation>[];
+  var messages = <String, List<Message>>{};
+  var contextTokens = <String, int>{};
+  var systemTokens = <String, int>{};
+
+  try {
+    final convStr = raw.conversationsJson;
+    if (convStr != null) {
+      final list = jsonDecode(convStr) as List<dynamic>;
+      conversations =
+          list.map((e) => Conversation.fromJson(e as Map<String, dynamic>)).toList();
+    }
+  } catch (_) {}
+  try {
+    final msgStr = raw.messagesJson;
+    if (msgStr != null) {
+      final map = jsonDecode(msgStr) as Map<String, dynamic>;
+      map.forEach((convId, msgs) {
+        messages[convId] = (msgs as List<dynamic>)
+            .map((e) => Message.fromJson(e as Map<String, dynamic>))
+            .toList();
+      });
+    }
+  } catch (_) {}
+  try {
+    final ctxStr = raw.contextTokensJson;
+    if (ctxStr != null) {
+      final map = jsonDecode(ctxStr) as Map<String, dynamic>;
+      contextTokens = map.map((k, v) => MapEntry(k, (v as num).toInt()));
+    }
+  } catch (_) {}
+  try {
+    final sysStr = raw.systemTokensJson;
+    if (sysStr != null) {
+      final map = jsonDecode(sysStr) as Map<String, dynamic>;
+      systemTokens = map.map((k, v) => MapEntry(k, (v as num).toInt()));
+    }
+  } catch (_) {}
+
+  // 与旧版主线程逻辑等价的上下文 token 重算（移入后台避免拖慢启动）
+  for (final entry in systemTokens.entries) {
+    final msgs = messages[entry.key];
+    if (msgs == null) continue;
+    var start = 0;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].isCompressionSummary) {
+        start = i;
+        break;
+      }
+    }
+    var total = entry.value;
+    for (var i = start; i < msgs.length; i++) {
+      final m = msgs[i];
+      if (m.type == MessageType.text) {
+        total += LLMService.estimateTokens(m.content) +
+            ChatProvider.kPerMessageJsonTokens;
+      }
+    }
+    contextTokens[entry.key] = total;
+  }
+
+  return _DecodedStore(
+    conversations: conversations,
+    messages: messages,
+    contextTokens: contextTokens,
+    systemTokens: systemTokens,
+  );
+}
+
+/// 后台 isolate：将内存数据序列化为各存储键的 JSON 字符串。
+@pragma('vm:entry-point')
+Map<String, String> _encodePersistSnapshot(_PersistSnapshot snapshot) {
+  return {
+    'conversations':
+        jsonEncode(snapshot.conversations.map((c) => c.toJson()).toList()),
+    'messages': jsonEncode(snapshot.messages.map(
+      (key, value) => MapEntry(key, value.map((m) => m.toJson()).toList()),
+    )),
+    'contextTokens': jsonEncode(snapshot.contextTokens),
+    'systemTokens': jsonEncode(snapshot.systemTokens),
+  };
 }

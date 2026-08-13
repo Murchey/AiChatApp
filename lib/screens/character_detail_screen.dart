@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
+import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
@@ -8,6 +9,7 @@ import '../models/character.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
+import '../utils/app_toast.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/moment_card.dart';
 import '../widgets/publish_moment_screen.dart';
@@ -85,13 +87,31 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
     }
   }
 
-  /// 头像选择弹窗
+  /// 头像选择弹窗：查看 / 保存 / 更换
   void _showAvatarMenu(Character character) {
+    final hasAvatar = character.avatar.isNotEmpty;
     showCupertinoModalPopup(
       context: context,
       builder: (ctx) => CupertinoActionSheet(
-        title: const Text('设置角色头像'),
+        title: const Text('角色头像'),
         actions: [
+          // 未设置头像时无需「查看 / 保存」
+          if (hasAvatar)
+            CupertinoActionSheetAction(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _viewAvatar(character);
+              },
+              child: const Text('查看头像'),
+            ),
+          if (hasAvatar)
+            CupertinoActionSheetAction(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _saveAvatar(character);
+              },
+              child: const Text('保存头像'),
+            ),
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
@@ -107,6 +127,48 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
         ),
       ),
     );
+  }
+
+  /// 全屏查看头像大图（单击关闭、双击缩放、可放大拖动）
+  void _viewAvatar(Character character) {
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => _AvatarPreviewScreen(base64: character.avatar),
+      ),
+    );
+  }
+
+  /// 保存头像到系统相册（base64 头像解码为图片字节后通过 gal 写入）
+  Future<void> _saveAvatar(Character character) async {
+    // gal 不自动申请权限：Android 6–9 需要 WRITE_EXTERNAL_STORAGE 才能写入相册
+    if (!await Gal.hasAccess()) {
+      final granted = await Gal.requestAccess();
+      if (!granted) {
+        if (mounted) showAppToast('未获得相册权限，无法保存头像');
+        return;
+      }
+    }
+    try {
+      final bytes = base64Decode(character.avatar);
+      // name 无需扩展名：gal 会根据图片字节自动检测格式
+      await Gal.putImageBytes(
+        bytes,
+        name: 'aichat_avatar_${DateTime.now().millisecondsSinceEpoch}',
+      );
+      if (mounted) showAppToast('头像已保存到系统相册');
+    } on GalException catch (e) {
+      if (!mounted) return;
+      showAppToast(
+        switch (e.type) {
+          GalExceptionType.accessDenied => '未获得相册权限，无法保存头像',
+          GalExceptionType.notEnoughSpace => '存储空间不足，保存失败',
+          GalExceptionType.notSupportedFormat => '头像格式不支持保存',
+          GalExceptionType.unexpected => '保存失败，请重试',
+        },
+      );
+    } catch (_) {
+      if (mounted) showAppToast('保存头像失败，请重试');
+    }
   }
 
   /// 点击背景图选择图片
@@ -668,6 +730,74 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
           fontSize: 15,
           height: 1.6,
           color: context.textPrimaryColor,
+        ),
+      ),
+    );
+  }
+}
+
+/// 头像全屏预览页：黑底居中展示，单击关闭、双击缩放、双指缩放后
+/// 可自由拖动查看。子组件为整屏大小的盒子、图片在其内部居中，
+/// 避免 InteractiveViewer(constrained: false) 把图片锚定到左上角。
+class _AvatarPreviewScreen extends StatefulWidget {
+  final String base64;
+
+  const _AvatarPreviewScreen({required this.base64});
+
+  @override
+  State<_AvatarPreviewScreen> createState() => _AvatarPreviewScreenState();
+}
+
+class _AvatarPreviewScreenState extends State<_AvatarPreviewScreen> {
+  final TransformationController _transform = TransformationController();
+  Offset _doubleTapPos = Offset.zero;
+
+  @override
+  void dispose() {
+    _transform.dispose();
+    super.dispose();
+  }
+
+  /// 双击：放大 2.5 倍（以点击处为中心），再次双击复位
+  void _toggleZoom() {
+    if (_transform.value.getMaxScaleOnAxis() > 1.05) {
+      _transform.value = Matrix4.identity();
+    } else {
+      final p = _doubleTapPos;
+      _transform.value = Matrix4.identity()
+        ..translateByDouble(p.dx, p.dy, 0, 1)
+        ..scaleByDouble(2.5, 2.5, 1, 1)
+        ..translateByDouble(-p.dx, -p.dy, 0, 1);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final viewport = MediaQuery.of(context).size;
+    return ColoredBox(
+      color: CupertinoColors.black,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).pop(),
+        onDoubleTapDown: (details) => _doubleTapPos = details.localPosition,
+        onDoubleTap: _toggleZoom,
+        child: InteractiveViewer(
+          transformationController: _transform,
+          constrained: false,
+          boundaryMargin: const EdgeInsets.all(200),
+          minScale: 1,
+          maxScale: 6,
+          child: SizedBox(
+            width: viewport.width,
+            height: viewport.height,
+            child: Center(
+              child: Image.memory(
+                base64Decode(widget.base64),
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+              ),
+            ),
+          ),
         ),
       ),
     );

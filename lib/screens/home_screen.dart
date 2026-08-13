@@ -5,8 +5,11 @@ import '../config/theme.dart';
 import '../models/character.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/api_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/dev_log_service.dart';
+import '../services/moment_ai_service.dart';
 import '../services/update_service.dart';
 import '../widgets/alphabet_index_bar.dart';
 import '../widgets/character_avatar.dart';
@@ -36,7 +39,20 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   void initState() {
     super.initState();
     context.read<ChatProvider>().init();
-    context.read<CharacterProvider>().loadCharacters();
+    // 角色加载完成后检查朋友圈互动断点：应用中途退出后，从上次未完成的
+    // 位置续跑剩余角色的点赞/评论互动（防打断设计）
+    final characterProvider = context.read<CharacterProvider>();
+    final apiProvider = context.read<ApiProvider>();
+    final notificationProvider = context.read<MomentNotificationProvider>();
+    characterProvider.loadCharacters().then((_) {
+      MomentAiService.resumePending(
+        characterProvider: characterProvider,
+        apiProvider: apiProvider,
+        notificationProvider: notificationProvider,
+      );
+    }).catchError((Object e) {
+      DevLogService.instance.log('朋友圈互动断点恢复失败: $e');
+    });
     _cleanupOldApks();
     _checkUpdateOnStartup();
   }
@@ -138,16 +154,15 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
   @override
   Widget build(BuildContext context) {
-    // 监听未读数变化，驱动底部导航栏角标刷新
-    return Consumer<ChatProvider>(
-      builder: (context, chatProvider, _) {
-        final totalUnread = chatProvider.conversations.fold<int>(
-          0,
-          (sum, c) => sum + c.unreadCount,
-        );
-        // 朋友圈互动通知未读 → 底部「朋友圈」tab 显示红点
-        final momentsUnread =
-            context.watch<MomentNotificationProvider>().hasUnread;
+    // 朋友圈互动通知未读 → 底部「朋友圈」tab 显示红点
+    final momentsUnread =
+        context.watch<MomentNotificationProvider>().hasUnread;
+    // 只监听未读数总和：聊天消息内容/排序变化不重建整个首页（4 个 tab + 底部栏），
+    // 仅未读数字变化时才重建角标；会话列表自身由 _buildChatList 内的 Consumer 独立刷新。
+    return Selector<ChatProvider, int>(
+      selector: (_, p) =>
+          p.conversations.fold<int>(0, (sum, c) => sum + c.unreadCount),
+      builder: (context, totalUnread, _) {
         return Column(
           children: [
             // 主内容：四个导航页，支持触摸横向滑动切换（与底部 tab 联动）
