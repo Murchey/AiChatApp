@@ -241,6 +241,8 @@ class ChatProvider extends ChangeNotifier {
   /// 使模型知道用户说了什么，从而分多条回复。
   /// [enableCompression] 开启且 [contextLength] 已知时，若历史估算 token 达到
   /// 模型上下文 [kCompressThreshold]，会先用 [compressModel] 压缩更早的历史消息。
+  /// [activeStart]/[activeEnd] 为角色活跃时段（"HH:mm"），落在时段内时
+  /// 角色不会主动道别/说晚安。
   /// API 层失败时设置 [_lastError] 并返回空结果；解析兜底消息由 LLMService 处理。
   Future<ProactiveResult> generateProactiveMessages({
     required String conversationId,
@@ -257,6 +259,8 @@ class ChatProvider extends ChangeNotifier {
     int contextLength = 8000,
     double compressThreshold = 0.7,
     String? imagePath, // 非空时以"图片消息"发给模型（OpenAI 视觉格式）
+    String activeStart = '',
+    String activeEnd = '',
   }) async {
     final prompt = PromptBuilder.buildSystemPrompt(
       baseSystemPrompt: characterSystemPrompt,
@@ -265,6 +269,8 @@ class ChatProvider extends ChangeNotifier {
       userRelationship: userRelationship,
       currentTime: DateTime.now(),
       replyToUser: replyToUser,
+      activeStart: activeStart,
+      activeEnd: activeEnd,
     );
     final outputInstruction = PromptBuilder.buildOutputInstruction(
       characterName: characterName,
@@ -337,6 +343,8 @@ class ChatProvider extends ChangeNotifier {
     int contextLength = 8000,
     double compressThreshold = 0.7,
     String? imagePath,
+    String activeStart = '',
+    String activeEnd = '',
   }) {
     debugPrint('[ChatProvider] runProactiveReply 被调用: $conversationId replyToUser=$replyToUser');
     // 同一会话的回复进行中：直接复用同一次流程（防止重复触发/误报空回复）
@@ -360,6 +368,8 @@ class ChatProvider extends ChangeNotifier {
       contextLength: contextLength,
       compressThreshold: compressThreshold,
       imagePath: imagePath,
+      activeStart: activeStart,
+      activeEnd: activeEnd,
     );
     _runningReply = future;
     return future;
@@ -379,6 +389,8 @@ class ChatProvider extends ChangeNotifier {
     int contextLength = 8000,
     double compressThreshold = 0.7,
     String? imagePath,
+    String activeStart = '',
+    String activeEnd = '',
   }) async {
     debugPrint('[ChatProvider] _doRunProactiveReply 开始: $conversationId');
     try {
@@ -396,6 +408,8 @@ class ChatProvider extends ChangeNotifier {
         contextLength: contextLength,
         compressThreshold: compressThreshold,
         imagePath: imagePath,
+        activeStart: activeStart,
+        activeEnd: activeEnd,
       );
       final messages = result.messages;
       final random = Random();

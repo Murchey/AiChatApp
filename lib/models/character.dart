@@ -13,6 +13,11 @@ class Character {
   final String greeting;
   final String systemPrompt;
   final String userRelationship; // 用户与角色的关系
+
+  /// 活跃时段（"HH:mm"，start/end 任一为空表示未设置）：
+  /// 在该时间段内聊天时，角色不会主动道别/说晚安，保持活跃
+  final String activeStart;
+  final String activeEnd;
   final List<String> tags;
   final List<Moment> moments; // 朋友圈动态（详情页展示）
 
@@ -29,6 +34,8 @@ class Character {
     this.greeting = '',
     this.systemPrompt = '',
     this.userRelationship = '',
+    this.activeStart = '',
+    this.activeEnd = '',
     this.tags = const [],
     this.moments = const [],
   });
@@ -50,6 +57,8 @@ class Character {
       greeting: json['greeting'] as String? ?? '',
       systemPrompt: json['system_prompt'] as String? ?? '',
       userRelationship: json['user_relationship'] as String? ?? '',
+      activeStart: json['active_start'] as String? ?? '',
+      activeEnd: json['active_end'] as String? ?? '',
       tags: (json['tags'] as List<dynamic>?)?.cast<String>() ?? [],
       moments: (json['moments'] as List<dynamic>?)
               ?.map((e) => Moment.fromJson(e as Map<String, dynamic>))
@@ -72,6 +81,8 @@ class Character {
       'greeting': greeting,
       'system_prompt': systemPrompt,
       'user_relationship': userRelationship,
+      'active_start': activeStart,
+      'active_end': activeEnd,
       'tags': tags,
       'moments': moments.map((e) => e.toJson()).toList(),
     };
@@ -89,6 +100,8 @@ class Character {
     String? greeting,
     String? systemPrompt,
     String? userRelationship,
+    String? activeStart,
+    String? activeEnd,
     List<String>? tags,
     List<Moment>? moments,
   }) {
@@ -105,6 +118,8 @@ class Character {
       greeting: greeting ?? this.greeting,
       systemPrompt: systemPrompt ?? this.systemPrompt,
       userRelationship: userRelationship ?? this.userRelationship,
+      activeStart: activeStart ?? this.activeStart,
+      activeEnd: activeEnd ?? this.activeEnd,
       tags: tags ?? this.tags,
       moments: moments ?? this.moments,
     );

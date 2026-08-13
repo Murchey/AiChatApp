@@ -24,6 +24,8 @@ class PromptBuilder {
   /// [userNickname] 当前用户昵称。
   /// [userRelationship] 用户与角色的关系。
   /// [currentTime] 当前环境时间（用于人设作息判断）。
+  /// [activeStart]/[activeEnd] 角色的活跃时段（"HH:mm"）；当前时间落在时段内时，
+  /// 追加"保持活跃、不主动道别/说晚安"的规则，避免角色提前结束聊天。
   static String buildSystemPrompt({
     String baseSystemPrompt = '',
     required String characterName,
@@ -31,7 +33,10 @@ class PromptBuilder {
     required String userRelationship,
     required DateTime currentTime,
     bool replyToUser = false, // true = 回复用户最近的消息；false = 主动给用户发消息
+    String activeStart = '',
+    String activeEnd = '',
   }) {
+    final active = _inActivePeriod(currentTime, activeStart, activeEnd);
     final template = '''
 ${replyToUser ? '你是 $characterName，正在微信上回复用户最近发来的消息。' : '你是 $characterName，正在和用户进行微信聊天。'}
 
@@ -47,12 +52,42 @@ ${_formatTime(currentTime)} (格式: YYYY-MM-DD HH:mm:ss)
 2. ${replyToUser
         ? '针对用户最近发来的消息，把想说的话拆分为 3~6 条短消息进行回复，每条消息 5~10 个字，最多不超过 20 个字。'
         : '模拟真实微信聊天习惯：把想说的话拆分为 3~6 条短消息，每条消息 5~10 个字，最多不超过 20 个字。'}
-3. 结合"当前环境时间"和你的"人设作息"判断：如果当前时间极不合理（如凌晨3点且你不是夜猫子），可以跳过本次回复。
-'''.trim();
+3. ${active
+        ? '当前正处于用户设定的活跃时段（$activeStart ~ $activeEnd）内：即使时间看起来较晚，也绝对不要主动道别、说晚安或提前结束对话，继续保持活跃、自然地陪用户聊天。'
+        : '结合"当前环境时间"和你的"人设作息"判断：如果当前时间极不合理（如凌晨3点且你不是夜猫子），可以跳过本次回复。'}'''.trim();
 
     final base = sanitize(baseSystemPrompt);
     if (base.isEmpty) return template;
     return '$base\n\n（以下是本次${replyToUser ? '回复用户消息' : '主动给用户发消息'}的生成指令）\n$template';
+  }
+
+  /// 当前时间是否落在 [activeStart]~[activeEnd] 活跃时段内。
+  /// 任一未设置/非法时返回 false（维持原作息判断）。
+  static bool _inActivePeriod(
+    DateTime now,
+    String activeStart,
+    String activeEnd,
+  ) {
+    final start = _parseHm(activeStart);
+    final end = _parseHm(activeEnd);
+    if (start == null || end == null) return false;
+    final nowMin = now.hour * 60 + now.minute;
+    // 跨零点时段（start > end）：now>=start 或 now<end 即命中
+    return start <= end
+        ? nowMin >= start && nowMin < end
+        : nowMin >= start || nowMin < end;
+  }
+
+  /// 解析 "HH:mm" 为当日分钟数，非法/空串返回 null
+  static int? _parseHm(String s) {
+    final parts = s.trim().split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
+      return null;
+    }
+    return h * 60 + m;
   }
 
   /// 生成"输出格式"强指令，作为最后一条 user 消息追加在对话历史之后。

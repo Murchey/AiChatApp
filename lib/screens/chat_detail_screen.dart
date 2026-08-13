@@ -69,6 +69,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     String? signature,
     String? region,
     String? userRelationship,
+    String? activeStart,
+    String? activeEnd,
   }) async {
     final charProvider = context.read<CharacterProvider>();
     final chatProvider = context.read<ChatProvider>();
@@ -82,6 +84,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       userRelationship: userRelationship == null
           ? null
           : PromptBuilder.sanitize(userRelationship),
+      activeStart: activeStart,
+      activeEnd: activeEnd,
     );
     final updated = charProvider.getCharacterById(characterId);
     if (updated != null) {
@@ -447,6 +451,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final signature = character?.signature ?? '';
     final region = character?.region ?? '';
     final userRelationship = character?.userRelationship ?? '';
+    final activeStart = character?.activeStart ?? '';
+    final activeEnd = character?.activeEnd ?? '';
+    final activePeriod = activeStart.isNotEmpty && activeEnd.isNotEmpty
+        ? '$activeStart - $activeEnd'
+        : '';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -522,10 +531,182 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               onSave: (v) => _saveField(userRelationship: v),
             ),
           ),
+          _separator(),
+          _infoTile(
+            icon: CupertinoIcons.time,
+            label: '活跃时段',
+            value: activePeriod,
+            placeholder: '未设置',
+            onTap: () => _editActivePeriod(
+              activeStart: activeStart,
+              activeEnd: activeEnd,
+            ),
+          ),
         ],
       ),
     );
   }
+
+  /// 弹出活跃时段编辑面板：开始/结束两个时间选择器 + 不限/保存。
+  /// 设定后在活跃时段内角色不会主动道别/说晚安，保持活跃继续聊天。
+  void _editActivePeriod({
+    required String activeStart,
+    required String activeEnd,
+  }) {
+    var start = _parseHm(activeStart) ?? DateTime(2000, 1, 1, 9);
+    var end = _parseHm(activeEnd) ?? DateTime(2000, 1, 1, 23);
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '设置活跃时段',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: context.textPrimaryColor,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '在活跃时段内，角色不会主动道别、说晚安，会保持活跃继续聊天；时段外的深夜仍按角色人设作息判断',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Text(
+                              '开始',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: context.textSecondaryColor,
+                              ),
+                            ),
+                            SizedBox(
+                              height: 170,
+                              child: CupertinoDatePicker(
+                                mode: CupertinoDatePickerMode.time,
+                                use24hFormat: true,
+                                initialDateTime: start,
+                                onDateTimeChanged: (v) =>
+                                    setModalState(() => start = v),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Text(
+                              '结束',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: context.textSecondaryColor,
+                              ),
+                            ),
+                            SizedBox(
+                              height: 170,
+                              child: CupertinoDatePicker(
+                                mode: CupertinoDatePickerMode.time,
+                                use24hFormat: true,
+                                initialDateTime: end,
+                                onDateTimeChanged: (v) =>
+                                    setModalState(() => end = v),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    '当前选择：${_fmtHm(start)} - ${_fmtHm(end)}'
+                    '（支持跨零点时段）',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: CupertinoButton(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          borderRadius: BorderRadius.circular(10),
+                          color: context.textSecondaryColor.withValues(
+                            alpha: 0.12,
+                          ),
+                          onPressed: () {
+                            _saveField(activeStart: '', activeEnd: '');
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text('不限时段'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: CupertinoButton.filled(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          borderRadius: BorderRadius.circular(10),
+                          onPressed: () {
+                            _saveField(
+                              activeStart: _fmtHm(start),
+                              activeEnd: _fmtHm(end),
+                            );
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text('保存'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 解析 "HH:mm" 为日期（时/分），非法/空串返回 null
+  static DateTime? _parseHm(String s) {
+    final parts = s.trim().split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
+      return null;
+    }
+    return DateTime(2000, 1, 1, h, m);
+  }
+
+  /// 格式化为 "HH:mm"
+  static String _fmtHm(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   Widget _infoTile({
     required IconData icon,

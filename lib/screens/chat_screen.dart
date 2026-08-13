@@ -66,6 +66,35 @@ class _ChatScreenState extends State<ChatScreen>
     // 打开会话：清除未读并记录当前会话（此后角色新消息不再计入未读）
     _chatProvider = context.read<ChatProvider>();
     _chatProvider!.markConversationActive(widget.conversationId);
+    // 首次打开（会话无消息）且角色配置了 Greeting 时，角色主动发送问候语
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _sendGreetingIfNeeded();
+    });
+  }
+
+  /// 首次打开会话（无任何消息）且角色配置了 Greeting 时，
+  /// 角色主动发送问候语，让新会话从角色的主动问候开始。
+  Future<void> _sendGreetingIfNeeded() async {
+    final chatProvider = context.read<ChatProvider>();
+    if (chatProvider.getMessages(widget.conversationId).isNotEmpty) return;
+    final conversation = chatProvider.conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    if (conversation == null) return;
+    final greeting = context
+            .read<CharacterProvider>()
+            .getCharacterById(conversation.characterId)
+            ?.greeting
+            .trim() ??
+        '';
+    if (greeting.isEmpty) return;
+    // 稍作停顿模拟角色主动"打字"，随后一次性发出问候
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    // 等待期间用户已发消息/问候已入队则不再重复发送
+    if (chatProvider.getMessages(widget.conversationId).isNotEmpty) return;
+    chatProvider.addProactiveMessage(widget.conversationId, greeting);
+    _scrollToBottom();
   }
 
   @override
@@ -1011,6 +1040,8 @@ class _ChatScreenState extends State<ChatScreen>
       contextLength: model.contextLength,
       compressThreshold: chatSettings.compressThreshold,
       imagePath: imagePath,
+      activeStart: character?.activeStart ?? '',
+      activeEnd: character?.activeEnd ?? '',
     );
     debugPrint('[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');
     if (!mounted) return;

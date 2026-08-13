@@ -23,6 +23,15 @@ class CharacterProvider extends ChangeNotifier {
   /// 被用户删除的默认角色 id（删除后重启不恢复）
   Set<String> _deletedDefaultIds = {};
 
+  /// 角色数据修订号：任何角色/动态变更都会自增，
+  /// 供朋友圈等页面按修订号做选择性重建（避免无关通知触发全量重建）
+  int _dataRevision = 0;
+  int get dataRevision => _dataRevision;
+
+  /// 后台持久化单飞/脏标记（与聊天页一致）：高频变更合并为一次写盘
+  bool _persistRunning = false;
+  bool _persistDirty = false;
+
   List<Character> get characters => _characters;
   Character? get selectedCharacter => _selectedCharacter;
   bool get isLoading => _isLoading;
@@ -88,6 +97,7 @@ class CharacterProvider extends ChangeNotifier {
       _deletedDefaultIds = decoded.deletedIds;
     }
     _isLoading = false;
+    _dataRevision++;
     notifyListeners();
   }
 
@@ -132,7 +142,7 @@ class CharacterProvider extends ChangeNotifier {
     await _persistCharacters();
   }
 
-  /// 更新角色资料信息（昵称/备注/个性签名/定位地区/关系）并持久化
+  /// 更新角色资料信息（昵称/备注/个性签名/定位地区/关系/活跃时段）并持久化
   Future<void> updateCharacterInfo(
     String id, {
     String? name,
@@ -140,6 +150,8 @@ class CharacterProvider extends ChangeNotifier {
     String? signature,
     String? region,
     String? userRelationship,
+    String? activeStart,
+    String? activeEnd,
   }) async {
     final index = _characters.indexWhere((c) => c.id == id);
     if (index == -1) return;
@@ -149,6 +161,8 @@ class CharacterProvider extends ChangeNotifier {
       signature: signature,
       region: region,
       userRelationship: userRelationship,
+      activeStart: activeStart,
+      activeEnd: activeEnd,
     );
     notifyListeners();
     await _persistCharacters();
@@ -294,11 +308,29 @@ class CharacterProvider extends ChangeNotifier {
   }
 
   Future<void> _persistCharacters() async {
-    final prefs = await SharedPreferences.getInstance();
-    final map = <String, dynamic>{
-      for (final c in _characters) c.id: c.toJson(),
-    };
-    await prefs.setString(_storageKey, jsonEncode(map));
+    // 每次变更都推进修订号（在进入异步之前同步自增，确保下一帧重建读到新值）
+    _dataRevision++;
+    if (_persistRunning) {
+      _persistDirty = true;
+      return;
+    }
+    _persistRunning = true;
+    try {
+      do {
+        _persistDirty = false;
+        // 浅拷贝快照（指针级，开销小），确保后台序列化期间数据一致；
+        // 含 base64 头像/背景的大 JSON 在后台 isolate 序列化，避免主线程卡顿
+        final snapshot = List<Character>.of(_characters);
+        final encoded = await compute(_encodeCharacterStore, snapshot);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_storageKey, encoded);
+      } while (_persistDirty);
+    } catch (e) {
+      // 持久化失败不阻塞主流程（多为平台通道/磁盘异常），下次变更会再次尝试
+      debugPrint('[CharacterProvider] 持久化失败: $e');
+    } finally {
+      _persistRunning = false;
+    }
   }
 
   Future<void> _persistVisibilityGroups() async {
@@ -344,6 +376,15 @@ class _CharacterDecoded {
   });
 }
 
+/// 后台 isolate：把角色列表序列化为存储 JSON（含 base64 头像/背景等大数据，
+/// 避免主线程 JSON 序列化造成卡顿）。
+@pragma('vm:entry-point')
+String _encodeCharacterStore(List<Character> characters) {
+  return jsonEncode({
+    for (final c in characters) c.id: c.toJson(),
+  });
+}
+
 /// 后台 isolate：反序列化角色数据并完成默认角色合并、自定义角色恢复、
 /// "自己"账号构建与动态 id 归一化（与旧主线程逻辑完全一致）。
 @pragma('vm:entry-point')
@@ -385,6 +426,8 @@ _CharacterDecoded _decodeCharacterStore(_CharacterRawStore raw) {
           systemPrompt: custom['system_prompt'] as String? ?? c.systemPrompt,
           userRelationship:
               custom['user_relationship'] as String? ?? c.userRelationship,
+          activeStart: custom['active_start'] as String? ?? c.activeStart,
+          activeEnd: custom['active_end'] as String? ?? c.activeEnd,
           tags: (custom['tags'] as List<dynamic>?)?.cast<String>() ?? c.tags,
         );
       }

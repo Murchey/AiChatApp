@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
+import '../models/moment.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
@@ -601,39 +602,86 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
           }
           return false;
         },
-        child: ListView(
+        child: ListView.builder(
           physics: const BouncingScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
           ),
           // 底部留出悬浮按钮空间，避免遮挡最后一条内容
           padding: const EdgeInsets.only(top: 8, bottom: 100),
-          children: [
-            // 朋友圈标题栏
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Icon(
-                    CupertinoIcons.circle_grid_3x3_fill,
-                    size: 16,
-                    color: context.textSecondaryColor,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '朋友圈',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: context.textSecondaryColor,
+          // 列表结构：朋友圈标题栏(1) + 动态卡(N，空态占1) + 角色资料卡片(1)
+          // 动态多时只按需构建可见卡（ListView 懒加载），避免一次性全量 build
+          itemCount: _momentInfoIndex(moments) + 1,
+          itemBuilder: (context, i) {
+            // 标题栏
+            if (i == 0) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          CupertinoIcons.circle_grid_3x3_fill,
+                          size: 16,
+                          color: context.textSecondaryColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '朋友圈',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            // 动态列表（无动态时显示空态）
-            if (moments.isEmpty)
-              SizedBox(
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              );
+            }
+            // 角色资料卡片（标题栏 + 动态/空态之后的固定尾部）
+            if (i == _momentInfoIndex(moments)) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (character.description.isNotEmpty) ...[
+                      Text(
+                        '角色介绍',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _infoCard(context, character.description),
+                      const SizedBox(height: 16),
+                    ],
+                    if (character.greeting.isNotEmpty) ...[
+                      Text(
+                        '开场白',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _infoCard(context, character.greeting),
+                      const SizedBox(height: 16),
+                    ],
+                  ],
+                ),
+              );
+            }
+            // 空态
+            if (moments.isEmpty) {
+              return SizedBox(
                 height: 90,
                 child: Center(
                   child: Text(
@@ -647,58 +695,30 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen> {
                     ),
                   ),
                 ),
-              )
-            else
-              ...moments.map(
-                (m) => Padding(
-                  padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
-                  child: MomentCard(
-                    character: character,
-                    moment: m,
-                    manageMode: widget.manageMode,
-                  ),
+              );
+            }
+            // 动态卡
+            final m = moments[i - 1];
+            return RepaintBoundary(
+              child: Padding(
+                padding: const EdgeInsets.only(
+                    left: 16, right: 16, bottom: 12),
+                child: MomentCard(
+                  character: character,
+                  moment: m,
+                  manageMode: widget.manageMode,
                 ),
               ),
-            // 角色资料卡片（跟随滚动，黑色背景上使用白色标题）
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (character.description.isNotEmpty) ...[
-                    Text(
-                      '角色介绍',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: context.textPrimaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _infoCard(context, character.description),
-                    const SizedBox(height: 16),
-                  ],
-                  if (character.greeting.isNotEmpty) ...[
-                    Text(
-                      '开场白',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: context.textPrimaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _infoCard(context, character.greeting),
-                    const SizedBox(height: 16),
-                  ],
-                ],
-              ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
   }
+
+  /// 列表尾部"角色资料卡片"的索引：标题栏(1) + 动态/空态项数
+  int _momentInfoIndex(List<Moment> moments) =>
+      1 + (moments.isEmpty ? 1 : moments.length);
 
   /// 角色头像：跟随全局设置（方形 / 仿 QQ 圆形），未设置时显示默认用户图标
   Widget _buildAvatar(Character character) {

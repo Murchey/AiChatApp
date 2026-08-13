@@ -630,12 +630,24 @@ class _MomentCardState extends State<MomentCard> {
     );
   }
 
+  /// 图片文件存在性缓存：build 中不直接调用 File.existsSync（同步 IO 会阻塞
+  /// 主线程，朋友圈图片多时滚动/重建卡顿）。图片文件只在删除动态时消失，
+  /// 缓存命中后复用结果，超容量时整体清空。
+  static final Map<String, bool> _imageExistsCache = {};
+
+  static bool _imageExists(String path) =>
+      _imageExistsCache.putIfAbsent(path, () {
+        if (_imageExistsCache.length > 512) _imageExistsCache.clear();
+        return File(path).existsSync();
+      });
+
   /// 图片：最多 9 张，1 张大图、多张 3 列网格；缺失时只显示文字占位。
   /// 点击图片全屏预览。
   /// 解码尺寸按实际展示区域指定（cacheWidth/Height），避免原图全分辨率解码
   /// 造成大内存占用与滚动卡顿。
   Widget _images(BuildContext context) {
-    final shown = moment.images.where((p) => File(p).existsSync()).take(9).toList();
+    final shown =
+        moment.images.where(_imageExists).take(9).toList();
     if (shown.isEmpty) {
       return Text(
         '图片加载失败',
@@ -951,15 +963,17 @@ class _SingleImageThumbState extends State<_SingleImageThumb> {
 
   Future<void> _loadSize() async {
     try {
+      // 仅解析图片头部元数据获取宽高，不整图解码，避免列表中出现大量
+      // 单图缩略图时反复整图解码造成卡顿与内存峰值
       final bytes = await File(widget.path).readAsBytes();
-      final codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
       final size = Size(
-        frame.image.width.toDouble(),
-        frame.image.height.toDouble(),
+        descriptor.width.toDouble(),
+        descriptor.height.toDouble(),
       );
-      frame.image.dispose();
-      codec.dispose();
+      descriptor.dispose();
+      buffer.dispose();
       if (mounted) setState(() => _imgSize = size);
     } catch (_) {
       // 尺寸读取失败时保持默认占位展示，不影响点开预览
@@ -1059,15 +1073,16 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
   Future<void> _loadImageSize() async {
     Size img;
     try {
+      // 仅解析头部元数据获取宽高（整图解码交给下方 Image.file 按需执行）
       final bytes = await File(widget.path).readAsBytes();
-      final codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
       img = Size(
-        frame.image.width.toDouble(),
-        frame.image.height.toDouble(),
+        descriptor.width.toDouble(),
+        descriptor.height.toDouble(),
       );
-      frame.image.dispose();
-      codec.dispose();
+      descriptor.dispose();
+      buffer.dispose();
     } catch (_) {
       img = const Size(1, 1); // 解码失败时回退为全屏 contain
     }

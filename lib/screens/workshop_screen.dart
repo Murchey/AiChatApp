@@ -679,7 +679,8 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
                   const SizedBox(height: 3),
                   Text(
                     _zipSubtitle(item),
-                    maxLines: 1,
+                    // 一行显示不下时换行展示（包大小放在行尾，避免被省略号截断）
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
