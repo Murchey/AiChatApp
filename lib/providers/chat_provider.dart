@@ -83,6 +83,42 @@ class ChatProvider extends ChangeNotifier {
     return _messagesMap[conversationId] ?? [];
   }
 
+  /// 聊天记录搜索：在所有会话的文本消息中查找包含 [keyword] 的消息。
+  /// 返回按会话分组的匹配结果（会话内保持消息时间升序），
+  /// 会话按「最近一条匹配消息」的时间降序排列（更新鲜的排前面）。
+  /// 图片/文件消息（正文为文件路径）与压缩摘要消息不参与匹配；
+  /// 合并转发卡片展开其内部文本参与匹配。
+  List<MapEntry<Conversation, List<Message>>> searchMessages(
+      String keyword) {
+    final kw = keyword.trim().toLowerCase();
+    if (kw.isEmpty) return const [];
+    final groups = <MapEntry<Conversation, List<Message>>>[];
+    for (final c in _conversations) {
+      final messages = _messagesMap[c.id] ?? const <Message>[];
+      final matches = <Message>[];
+      for (final m in messages) {
+        if (m.isCompressionSummary) continue;
+        if (m.isForwardCard) {
+          final hit = m.forwardedItems.any(
+            (f) =>
+                f.type == 'text' && f.content.toLowerCase().contains(kw),
+          );
+          if (hit) matches.add(m);
+        } else if (m.type == MessageType.text &&
+            m.content.toLowerCase().contains(kw)) {
+          matches.add(m);
+        }
+      }
+      if (matches.isNotEmpty) {
+        groups.add(MapEntry(c, matches));
+      }
+    }
+    groups.sort(
+      (a, b) => b.value.last.createdAt.compareTo(a.value.last.createdAt),
+    );
+    return groups;
+  }
+
   /// 获取某角色的最近聊天记录（按上下文条数），供朋友圈评论回复等场景使用。
   ///
   /// 返回 `[{'role': 'user'|'assistant', 'content': ...}, ...]`；

@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -27,12 +28,15 @@ class ChatScreen extends StatefulWidget {
   final String conversationId;
   final String characterName;
   final String characterAvatar;
+  // 从搜索结果进入时定位到该消息（null 表示默认显示最新消息）
+  final String? initialMessageId;
 
   const ChatScreen({
     super.key,
     required this.conversationId,
     required this.characterName,
     this.characterAvatar = '',
+    this.initialMessageId,
   });
 
   @override
@@ -60,6 +64,75 @@ class _ChatScreenState extends State<ChatScreen>
   // 同一条消息会被插入多次。以时间窗节流，窗口内重复点击直接忽略。
   static const int _sendThrottleMs = 500;
   DateTime _lastSendAt = DateTime.fromMillisecondsSinceEpoch(0);
+  // 搜索结果定位：待定位的消息 id（定位完成后置 null）
+  String? _pendingScrollMessageId;
+  int _locateRetries = 0; // 补跳次数（步长随次数指数增大）
+
+  /// 按消息类型/长度估算条目高度（像素），用于定位的初始跳转。
+  /// 取值刻意偏小（每行字符数偏多、行高偏小），保证初始跳转不会越过
+  /// 目标——目标总在"更旧"方向，后续补跳单向递增即可收敛，避免双向回溯。
+  double _estimateMessageHeight(Message m) {
+    const lineHeight = 20.0; // fontSize 16 行高，取偏小值
+    const perLineChars = 16.0; // 气泡内宽约 240px，中文约 17px/字，偏小估算
+    const fixed = 40.0; // 气泡上下 padding + 可能的时间标签，取偏小值
+    switch (m.type) {
+      case MessageType.image:
+        return 260;
+      case MessageType.file:
+        return 90;
+      case MessageType.system:
+        return 60;
+      case MessageType.text:
+        final lines = (m.content.length / perLineChars).ceil();
+        return fixed + lines * lineHeight;
+    }
+  }
+
+  /// 搜索结果进入时的定位流程：
+  /// 1) 按消息类型/长度估算 offset，一次性跳近目标（估算偏小 → 目标偏旧方向）；
+  /// 2) 目标未进入构建区时，以指数步长（1/2/4/8/16 屏）向更旧方向补跳，
+  ///    步长递增使长距离偏差只需几次跳转，避免逐帧小步推进的连续布局开销；
+  /// 3) 补跳接近最旧端时直接跳到底——目标必在构建区内，由 itemBuilder
+  ///    捕获后 ensureVisible 精确对齐；目标已不存在则自然停止，无死循环。
+  void _locatePendingMessage() {
+    final targetId = _pendingScrollMessageId;
+    if (targetId == null || !mounted || !_scrollController.hasClients) return;
+    final messages =
+        _chatProvider?.getMessages(widget.conversationId) ?? const <Message>[];
+    final targetIndex = messages.indexWhere((m) => m.id == targetId);
+    if (targetIndex == -1) {
+      _pendingScrollMessageId = null;
+      return;
+    }
+    // reverse 列表 offset 0 = 底部（最新消息）；目标 offset = 比它更新的
+    // 消息高度之和（滚动到该处时目标正好进入视口）
+    var offset = 0.0;
+    for (var i = messages.length - 1; i > targetIndex; i--) {
+      offset += _estimateMessageHeight(messages[i]);
+    }
+    final max = _scrollController.position.maxScrollExtent;
+    _scrollController.jumpTo(offset.clamp(0.0, max));
+    _locateRetries = 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refineLocate());
+  }
+
+  void _refineLocate() {
+    final targetId = _pendingScrollMessageId;
+    if (targetId == null || !mounted || !_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    // 指数步长：1/2/4/8/16 屏，长距离偏差只需几次跳转
+    final step = position.viewportDimension * (1 << _locateRetries.clamp(0, 4));
+    final next = position.pixels + step;
+    if (next >= position.maxScrollExtent) {
+      // 接近最旧端：直接跳到底，目标若存在必在构建区内；不存在则
+      // itemBuilder 永不捕获，不再调度，定位自然结束
+      position.jumpTo(position.maxScrollExtent);
+      return;
+    }
+    _locateRetries++;
+    position.jumpTo(next);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refineLocate());
+  }
 
   @override
   void initState() {
@@ -72,6 +145,13 @@ class _ChatScreenState extends State<ChatScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _sendGreetingIfNeeded();
     });
+    // 从搜索结果进入：定位到目标消息
+    if (widget.initialMessageId != null) {
+      _pendingScrollMessageId = widget.initialMessageId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _locatePendingMessage();
+      });
+    }
   }
 
   /// 首次打开会话（无任何消息）且角色配置了 Greeting 时，
@@ -1278,14 +1358,11 @@ class _ChatScreenState extends State<ChatScreen>
 
   @override
   Widget build(BuildContext context) {
-    // 实时显示名：优先使用角色资料中的备注/昵称
-    final chatProvider = context.watch<ChatProvider>();
-    // 当前模型是否已检测为视觉模型（检测过一次即记住）：
-    // 命中缓存则直接放开聊天页的图片发送，无需重复检测
-    final api = context.watch<ApiProvider>();
-    final chatSettings = context.watch<ChatSettingsProvider>();
-    final visionReady =
-        api.isVisionSupported(chatSettings.selectedModelId) == true;
+    // 实时显示名：优先使用角色资料中的备注/昵称。
+    // 注意：ChatProvider 在 AI 逐条回复时会多次 notify，若顶层 watch 它，
+    // 每次回复都会重建整个聊天页（导航栏+列表+输入框），是滚动/回复卡顿的主因。
+    // 这里只做一次性 read；列表/输入框/标题分别用 Consumer/Selector 局部重建。
+    final chatProvider = context.read<ChatProvider>();
     final conversation = chatProvider.conversations
         .where((c) => c.id == widget.conversationId)
         .firstOrNull;
@@ -1311,18 +1388,22 @@ class _ChatScreenState extends State<ChatScreen>
       _keyboardVisible = false;
     }
 
-    // 对号按钮可用性：上一条消息是用户发送时才可点（角色还没回复）
-    final lastMessage = chatProvider.getMessages(widget.conversationId).lastOrNull;
-    final replyEnabled = lastMessage != null && lastMessage.isFromUser;
+    // 对号按钮可用性（上一条消息是用户发送时才可点）与最新消息：
+    // 在下方输入框的 Consumer 内计算，随 ChatProvider 局部刷新
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         // 多选模式显示标题；否则角色回复生成/渲染期间标题变为"对方正在输入……"
-        middle: Text(_selectMode
-            ? (_selectingMemory ? '选择记忆点' : '选择消息')
-            : (chatProvider.isReplying(widget.conversationId)
-                ? '对方正在输入……'
-                : displayName)),
+        // 多选模式显示标题；否则角色回复生成/渲染期间标题变为"对方正在输入……"。
+        // 用 Selector 只订阅本会话的回复状态，ChatProvider 其他变化不重建标题
+        middle: _selectMode
+            ? Text(_selectingMemory ? '选择记忆点' : '选择消息')
+            : Selector<ChatProvider, bool>(
+                selector: (_, p) => p.isReplying(widget.conversationId),
+                builder: (context, replying, _) => Text(
+                  replying ? '对方正在输入……' : displayName,
+                ),
+              ),
         trailing: _selectMode
             ? null
             : CupertinoButton(
@@ -1410,6 +1491,9 @@ class _ChatScreenState extends State<ChatScreen>
                     controller: _scrollController,
                     reverse: true,
                     padding: const EdgeInsets.symmetric(vertical: 12),
+                    // 增大构建缓存区：搜索结果定位时，目标消息更容易被构建到
+                    // 从而通过 ensureVisible 精确对齐（见 _locatePendingMessage）
+                    scrollCacheExtent: const ScrollCacheExtent.pixels(600),
                     itemCount: messages.length,
                     itemBuilder: (context, index) {
                       // 反向列表：index 0 对应最新一条消息
@@ -1423,12 +1507,29 @@ class _ChatScreenState extends State<ChatScreen>
                                   .difference(prev.createdAt)
                                   .inMinutes >=
                               10;
-                      return Column(
+                      // 搜索结果定位：目标消息被构建到后精确滚动对齐（只需一次）
+                      final pendingId = _pendingScrollMessageId;
+                      if (pendingId != null && msg.id == pendingId) {
+                        _pendingScrollMessageId = null;
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted) return;
+                          Scrollable.ensureVisible(
+                            context,
+                            alignment: 0.35,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        });
+                      }
+                      // RepaintBoundary：气泡独立绘制层，列表滚动/重建时
+                      // 只有变化的条目重绘，其余复用已光栅化内容
+                      return RepaintBoundary(
                         key: ValueKey(msg.id),
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (showTime) _buildTimeLabel(msg.createdAt),
-                          ChatBubble(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (showTime) _buildTimeLabel(msg.createdAt),
+                            ChatBubble(
                             message: msg,
                             userAvatar: userAvatar,
                             characterAvatar: characterAvatar,
@@ -1454,134 +1555,152 @@ class _ChatScreenState extends State<ChatScreen>
                                 _showBubbleMenu(message, bubbleKey),
                           ),
                         ],
-                      );
+                      ),
+                    );
                     },
                   ),
                 );
               },
             ),
           ),
-          // 多选模式：显示选择操作栏；否则显示错误条/引用条/输入框
+          // 多选模式：显示选择操作栏；否则显示错误条/引用条/输入框。
+          // 输入区用单个 Consumer 订阅 ChatProvider：AI 逐条回复时，
+          // 只有这里与消息列表局部重建，导航栏/页面骨架不再全量重建
           if (_selectMode)
             _buildSelectBar(context)
-          else ...[
-            // AI 请求失败错误提示条（可点击关闭）
+          else
             Consumer<ChatProvider>(
               builder: (context, chatProvider, _) {
+                // 当前模型是否已检测为视觉模型（检测过一次即记住）。
+                // 模型/设置变更极低频，只在此局部订阅，不重建页面骨架
+                final visionReady = context
+                        .watch<ApiProvider>()
+                        .isVisionSupported(context
+                            .watch<ChatSettingsProvider>()
+                            .selectedModelId) ==
+                    true;
+                // 对号按钮可用性：上一条消息是用户发送时才可点（角色还没回复）
+                final lastMessage =
+                    chatProvider.getMessages(widget.conversationId).lastOrNull;
+                final replyEnabled =
+                    lastMessage != null && lastMessage.isFromUser;
                 final error = chatProvider.lastError;
-              if (error == null || error.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                color: context.navBarColor,
-                child: Row(
+                return Column(
                   children: [
-                    const Icon(
-                      CupertinoIcons.exclamationmark_triangle_fill,
-                      size: 15,
-                      color: CupertinoColors.systemRed,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        error,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: CupertinoColors.systemRed,
+                    // AI 请求失败错误提示条（可点击关闭）
+                    if (error != null && error.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        color: context.navBarColor,
+                        child: Row(
+                          children: [
+                            const Icon(
+                              CupertinoIcons.exclamationmark_triangle_fill,
+                              size: 15,
+                              color: CupertinoColors.systemRed,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                error,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: CupertinoColors.systemRed,
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: chatProvider.clearError,
+                              child: Icon(
+                                CupertinoIcons.xmark_circle_fill,
+                                size: 16,
+                                color: context.textSecondaryColor,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    GestureDetector(
-                      onTap: chatProvider.clearError,
-                      child: Icon(
-                        CupertinoIcons.xmark_circle_fill,
-                        size: 16,
-                        color: context.textSecondaryColor,
+                    // 引用条（设置了引用时显示在输入框上方）
+                    if (_quoteMessage != null)
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        color: context.navBarColor,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: context.listBgColor,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _quoteMessage!.isFromUser
+                                          ? '引用 我'
+                                          : '引用 $displayName',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: context.accentColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _quoteMessage!.content,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: context.textSecondaryColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: _clearQuote,
+                                child: Icon(
+                                  CupertinoIcons.xmark_circle_fill,
+                                  size: 18,
+                                  color: context.textSecondaryColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
+                    MessageInput(
+                      key: _inputKey,
+                      onSend: _handleSend,
+                      onPickImage: _handlePickImage,
+                      onPickFile: _handlePickFile,
+                      onSettings: _openChatSettings,
+                      onExport: _exportChat,
+                      onImport: _importChat,
+                      onFeatureDetect: _runFeatureDetect,
+                      onRequestReply: () {
+                        // 对号按钮：触发角色回复。若最近发送的是图片，把该图片随回复传给模型
+                        final imagePath = _pendingImagePath;
+                        _pendingImagePath = null;
+                        _triggerProactiveMessages(
+                            imagePath: imagePath, replyToUser: true);
+                      },
+                      replyEnabled: replyEnabled,
+                      imageReady: visionReady,
                     ),
                   ],
-                ),
-              );
-            },
-          ),
-          // 引用条（设置了引用时显示在输入框上方）
-          if (_quoteMessage != null)
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              color: context.navBarColor,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: context.listBgColor,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _quoteMessage!.isFromUser
-                                ? '引用 我'
-                                : '引用 $displayName',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: context.accentColor,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _quoteMessage!.content,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: context.textSecondaryColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: _clearQuote,
-                      child: Icon(
-                        CupertinoIcons.xmark_circle_fill,
-                        size: 18,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                );
+              },
             ),
-          MessageInput(
-            key: _inputKey,
-            onSend: _handleSend,
-            onPickImage: _handlePickImage,
-            onPickFile: _handlePickFile,
-            onSettings: _openChatSettings,
-            onExport: _exportChat,
-            onImport: _importChat,
-            onFeatureDetect: _runFeatureDetect,
-            onRequestReply: () {
-              // 对号按钮：触发角色回复。若最近发送的是图片，把该图片随回复传给模型
-              final imagePath = _pendingImagePath;
-              _pendingImagePath = null;
-              _triggerProactiveMessages(imagePath: imagePath, replyToUser: true);
-            },
-            replyEnabled: replyEnabled,
-            imageReady: visionReady,
-          ),
-          ],
         ],
       ),
     );

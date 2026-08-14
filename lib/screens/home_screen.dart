@@ -20,6 +20,7 @@ import '../widgets/character_avatar.dart';
 import '../widgets/update_dialogs.dart';
 import 'moments_screen.dart';
 import 'profile_screen.dart';
+import 'chat_search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -264,8 +265,19 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildChatList() {
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('AiChat'),
+      navigationBar: CupertinoNavigationBar(
+        middle: const Text('AiChat'),
+        // 右上角搜索：进入全局聊天记录搜索页
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () {
+            Navigator.push(
+              context,
+              CupertinoPageRoute(builder: (_) => const ChatSearchScreen()),
+            );
+          },
+          child: const Icon(CupertinoIcons.search),
+        ),
       ),
       child: Consumer<ChatProvider>(
         builder: (context, chatProvider, _) {

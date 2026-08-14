@@ -30,6 +30,7 @@ class AppRoutes {
             conversationId: args['conversationId'],
             characterName: args['characterName'],
             characterAvatar: args['characterAvatar'],
+            initialMessageId: args['initialMessageId'],
           ),
         );
       case characterList:

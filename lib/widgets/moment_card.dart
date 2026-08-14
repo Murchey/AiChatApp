@@ -52,6 +52,9 @@ class _MomentCardState extends State<MomentCard> {
   /// 评论输入栏（Overlay 悬浮在软键盘上方，不占用页面路由）
   OverlayEntry? _commentInputEntry;
 
+  /// 长文是否已展开（折叠态默认最多 6 行，避免长文反复 layout 拖慢滚动）
+  bool _expanded = false;
+
   Character get character => widget.character;
   Moment get moment => widget.moment;
 
@@ -94,14 +97,7 @@ class _MomentCardState extends State<MomentCard> {
                     ),
                     if (moment.content.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(
-                        moment.content,
-                        style: TextStyle(
-                          fontSize: 15,
-                          height: 1.4,
-                          color: context.textPrimaryColor,
-                        ),
-                      ),
+                      _content(context),
                     ],
                     if (moment.images.isNotEmpty) ...[
                       const SizedBox(height: 8),
@@ -632,6 +628,77 @@ class _MomentCardState extends State<MomentCard> {
     );
   }
 
+  /// 动态正文：超过 6 行默认折叠为「全文」（微信风格）。
+  /// 折叠态只渲染 6 行，长文的换行排版成本被限制，滚动时帧率更稳。
+  Widget _content(BuildContext context) {
+    const maxLines = 6;
+    final style = TextStyle(
+      fontSize: 15,
+      height: 1.4,
+      color: context.textPrimaryColor,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final needFold = !_expanded &&
+            _textExceeds(context, moment.content, style, maxLines,
+                constraints.maxWidth);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              moment.content,
+              maxLines: _expanded ? null : maxLines,
+              overflow: _expanded ? null : TextOverflow.ellipsis,
+              style: style,
+            ),
+            if (needFold)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => _expanded = true),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '全文',
+                    style: TextStyle(fontSize: 14, color: context.accentColor),
+                  ),
+                ),
+              ),
+            if (_expanded)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => _expanded = false),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '收起',
+                    style: TextStyle(fontSize: 14, color: context.accentColor),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 用 TextPainter 测量正文是否超过 [maxLines] 行。
+  /// 仅折叠态且每张卡片一次 build 测量一次，成本与渲染该文本相当。
+  bool _textExceeds(
+    BuildContext context,
+    String text,
+    TextStyle style,
+    int maxLines,
+    double maxWidth,
+  ) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: maxLines,
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: maxWidth);
+    return tp.didExceedMaxLines;
+  }
+
   /// 图片文件存在性缓存：build 中不直接调用 File.existsSync（同步 IO 会阻塞
   /// 主线程，朋友圈图片多时滚动/重建卡顿）。图片文件只在删除动态时消失，
   /// 缓存命中后复用结果，超容量时整体清空。
@@ -689,6 +756,9 @@ class _MomentCardState extends State<MomentCard> {
                 gaplessPlayback: true,
                 cacheWidth: cellPx,
                 cacheHeight: cellPx,
+                // 缩略图尺寸小，低过滤质量视觉无差别，滚动光栅化更快
+                filterQuality: FilterQuality.low,
+                errorBuilder: (_, __, ___) => _imagePlaceholder(context),
               ),
             ),
           ),
@@ -821,6 +891,20 @@ class _MomentCardState extends State<MomentCard> {
     if (d.year == now.year) return '${two(d.month)}-${two(d.day)} $hm';
     return '${d.year}-${two(d.month)}-${two(d.day)} $hm';
   }
+}
+
+/// 图片解码失败占位：文件损坏等异常时不白屏，显示灰色相机占位
+Widget _imagePlaceholder(BuildContext context) {
+  return ColoredBox(
+    color: context.momentBlockColor,
+    child: const Center(
+      child: Icon(
+        CupertinoIcons.photo,
+        size: 20,
+        color: CupertinoColors.systemGrey,
+      ),
+    ),
+  );
 }
 
 /// 评论输入栏：Overlay 悬浮在软键盘上方（底部随键盘上移），
@@ -1042,6 +1126,9 @@ class _SingleImageThumbState extends State<_SingleImageThumb> {
             gaplessPlayback: true,
             cacheWidth: (w * dpr).round(),
             cacheHeight: (h * dpr).round(),
+            // 缩略图尺寸小，低过滤质量视觉无差别，滚动光栅化更快
+            filterQuality: FilterQuality.low,
+            errorBuilder: (_, __, ___) => _imagePlaceholder(context),
           ),
         ),
       ),
