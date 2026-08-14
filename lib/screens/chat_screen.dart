@@ -11,6 +11,7 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/memory_point_provider.dart';
 import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
 import '../utils/file_picker_helper.dart';
@@ -51,6 +52,7 @@ class _ChatScreenState extends State<ChatScreen>
   String? _pendingImagePath; // 最近发送的图片：对号按钮按下时随回复传给模型
   bool _selectMode = false; // 多选转发模式
   final Set<String> _selectedIds = {}; // 多选模式下选中的消息 id
+  bool _selectingMemory = false; // 多选模式用途：true=保存为记忆点，false=转发
   ChatProvider? _chatProvider; // 生命周期内复用（dispose 中仍需访问）
   int _lastRenderedCount = -1; // 已渲染消息条数（用于新消息自动滚底）
   bool _keyboardVisible = false; // 软键盘是否弹出（用于键盘弹出时保持列表滚底）
@@ -449,6 +451,17 @@ class _ChatScreenState extends State<ChatScreen>
 
     items.add(
       _menuItem(
+        icon: CupertinoIcons.bookmark,
+        label: '保存为记忆点',
+        onTap: () {
+          _closeMenu();
+          _enterSelectMode(message, forMemory: true);
+        },
+      ),
+    );
+
+    items.add(
+      _menuItem(
         icon: CupertinoIcons.square_stack,
         label: '多选',
         onTap: () {
@@ -613,10 +626,12 @@ class _ChatScreenState extends State<ChatScreen>
 
   // ─── 多选转发 ─────────────────────────────────────────────
 
-  /// 从长按菜单进入多选模式（默认选中当前长按的消息）
-  void _enterSelectMode(Message message) {
+  /// 从长按菜单进入多选模式（默认选中当前长按的消息）。
+  /// [forMemory] 为 true 时是「保存为记忆点」模式，否则为转发模式。
+  void _enterSelectMode(Message message, {bool forMemory = false}) {
     setState(() {
       _selectMode = true;
+      _selectingMemory = forMemory;
       _selectedIds.add(message.id);
     });
   }
@@ -624,8 +639,130 @@ class _ChatScreenState extends State<ChatScreen>
   void _exitSelectMode() {
     setState(() {
       _selectMode = false;
+      _selectingMemory = false;
       _selectedIds.clear();
     });
+  }
+
+  /// 保存选中的消息为角色的持久化记忆点：
+  /// 仅取文本类消息，内容带发送者标识（用户/角色名），便于模型理解语境。
+  /// 单次选取的多条消息合并为**一条**记忆点（一个栏目），
+  /// 在管理页作为整体编辑 / 删除。
+  Future<void> _saveSelectedAsMemory() async {
+    final chatProvider = context.read<ChatProvider>();
+    final conversation = chatProvider.conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    if (conversation == null) {
+      _exitSelectMode();
+      return;
+    }
+    final character = context
+        .read<CharacterProvider>()
+        .getCharacterById(conversation.characterId);
+    final characterName = character?.displayName ?? widget.characterName;
+    final userName =
+        context.read<AuthProvider>().user?.nickname ?? '用户';
+
+    final messages = chatProvider
+        .getMessages(widget.conversationId)
+        .where((m) => _selectedIds.contains(m.id))
+        .toList();
+    // 仅文本消息可作记忆点（图片/文件内容是路径，无语义）
+    final texts = messages
+        .where((m) => m.type == MessageType.text && m.content.trim().isNotEmpty)
+        .map((m) =>
+            '${m.isFromUser ? userName : characterName}说："${m.content.trim()}"')
+        .toList();
+    if (texts.isEmpty) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('提示'),
+          content: const Text('选中的消息中不包含可保存的文字内容'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    // 多条消息合并为一条记忆点（换行分隔），作为整体存储
+    final mergedContent = texts.join('\n');
+
+    final memoryProvider = context.read<MemoryPointProvider>();
+    // 弹窗确认要保存的内容
+    final confirm = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('保存为记忆点'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '将以下 ${texts.length} 条消息保存为「$characterName」的一条记忆点：',
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 220),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final t in texts)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(t,
+                              style: const TextStyle(fontSize: 13)),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    await memoryProvider.addPoints(conversation.characterId, [mergedContent]);
+    if (!mounted) return;
+    _exitSelectMode();
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('已保存'),
+        content: Text(
+          '已将 ${texts.length} 条消息合并为一条记忆点保存，后续对话中「$characterName」会自动记住这些内容。可在聊天详情「提示词设置 → 记忆点管理」中查看或修改。',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 多选模式下点击气泡切换选中状态
@@ -814,7 +951,7 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
-  /// 多选模式底部操作栏：取消 + 已选数量 + 逐条/合并转发
+  /// 多选模式底部操作栏：取消 + 已选数量 + 转发/存储记忆点操作
   Widget _buildSelectBar(BuildContext context) {
     final count = _selectedIds.length;
     return Container(
@@ -845,32 +982,53 @@ class _ChatScreenState extends State<ChatScreen>
                 ),
               ),
             ),
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              onPressed: count > 0 ? () => _forwardMessages(merge: false) : null,
-              child: Text(
-                '逐条转发',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: count > 0
-                      ? context.accentColor
-                      : context.textSecondaryColor,
+            if (_selectingMemory)
+              CupertinoButton(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                onPressed: count > 0 ? _saveSelectedAsMemory : null,
+                child: Text(
+                  '存储记忆点',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: count > 0
+                        ? context.accentColor
+                        : context.textSecondaryColor,
+                  ),
+                ),
+              )
+            else ...[
+              CupertinoButton(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                onPressed:
+                    count > 0 ? () => _forwardMessages(merge: false) : null,
+                child: Text(
+                  '逐条转发',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: count > 0
+                        ? context.accentColor
+                        : context.textSecondaryColor,
+                  ),
                 ),
               ),
-            ),
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              onPressed: count > 0 ? () => _forwardMessages(merge: true) : null,
-              child: Text(
-                '合并转发',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: count > 0
-                      ? context.accentColor
-                      : context.textSecondaryColor,
+              CupertinoButton(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                onPressed:
+                    count > 0 ? () => _forwardMessages(merge: true) : null,
+                child: Text(
+                  '合并转发',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: count > 0
+                        ? context.accentColor
+                        : context.textSecondaryColor,
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -1020,6 +1178,15 @@ class _ChatScreenState extends State<ChatScreen>
         : null;
     final characterName = character?.displayName ?? widget.characterName;
 
+    // 用户持久化记忆点：拼入系统提示词，让角色在本次回复中记住这些长期信息
+    final memoryPoints = conversation != null
+        ? context
+            .read<MemoryPointProvider>()
+            .pointsFor(conversation.characterId)
+            .map((p) => p.content)
+            .toList()
+        : const <String>[];
+
     // 会话压缩：压缩模型默认跟随聊天模型，可在「API 设置 → 会话压缩」中单独指定
     final api = context.read<ApiProvider>();
     final compressModel =
@@ -1042,6 +1209,7 @@ class _ChatScreenState extends State<ChatScreen>
       imagePath: imagePath,
       activeStart: character?.activeStart ?? '',
       activeEnd: character?.activeEnd ?? '',
+      memoryPoints: memoryPoints,
     );
     debugPrint('[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');
     if (!mounted) return;
@@ -1151,7 +1319,7 @@ class _ChatScreenState extends State<ChatScreen>
       navigationBar: CupertinoNavigationBar(
         // 多选模式显示标题；否则角色回复生成/渲染期间标题变为"对方正在输入……"
         middle: Text(_selectMode
-            ? '选择消息'
+            ? (_selectingMemory ? '选择记忆点' : '选择消息')
             : (chatProvider.isReplying(widget.conversationId)
                 ? '对方正在输入……'
                 : displayName)),

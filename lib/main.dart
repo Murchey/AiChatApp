@@ -7,6 +7,7 @@ import 'providers/auto_moment_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/chat_settings_provider.dart';
 import 'providers/character_provider.dart';
+import 'providers/memory_point_provider.dart';
 import 'providers/moment_notification_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/workshop_provider.dart';
@@ -22,6 +23,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => ApiProvider()),
         ChangeNotifierProvider(create: (_) => ChatSettingsProvider()),
         ChangeNotifierProvider(create: (_) => MomentNotificationProvider()),
+        ChangeNotifierProvider(create: (_) => MemoryPointProvider()),
         ChangeNotifierProvider(create: (_) => AutoMomentProvider()),
         ChangeNotifierProvider(create: (_) => WorkshopProvider()),
       ],

@@ -261,6 +261,7 @@ class ChatProvider extends ChangeNotifier {
     String? imagePath, // 非空时以"图片消息"发给模型（OpenAI 视觉格式）
     String activeStart = '',
     String activeEnd = '',
+    List<String> memoryPoints = const [], // 用户持久化的长期记忆点，拼入系统提示词
   }) async {
     final prompt = PromptBuilder.buildSystemPrompt(
       baseSystemPrompt: characterSystemPrompt,
@@ -271,6 +272,7 @@ class ChatProvider extends ChangeNotifier {
       replyToUser: replyToUser,
       activeStart: activeStart,
       activeEnd: activeEnd,
+      memoryPoints: memoryPoints,
     );
     final outputInstruction = PromptBuilder.buildOutputInstruction(
       characterName: characterName,
@@ -345,6 +347,7 @@ class ChatProvider extends ChangeNotifier {
     String? imagePath,
     String activeStart = '',
     String activeEnd = '',
+    List<String> memoryPoints = const [],
   }) {
     debugPrint('[ChatProvider] runProactiveReply 被调用: $conversationId replyToUser=$replyToUser');
     // 同一会话的回复进行中：直接复用同一次流程（防止重复触发/误报空回复）
@@ -370,6 +373,7 @@ class ChatProvider extends ChangeNotifier {
       imagePath: imagePath,
       activeStart: activeStart,
       activeEnd: activeEnd,
+      memoryPoints: memoryPoints,
     );
     _runningReply = future;
     return future;
@@ -391,6 +395,7 @@ class ChatProvider extends ChangeNotifier {
     String? imagePath,
     String activeStart = '',
     String activeEnd = '',
+    List<String> memoryPoints = const [],
   }) async {
     debugPrint('[ChatProvider] _doRunProactiveReply 开始: $conversationId');
     try {
@@ -410,6 +415,7 @@ class ChatProvider extends ChangeNotifier {
         imagePath: imagePath,
         activeStart: activeStart,
         activeEnd: activeEnd,
+        memoryPoints: memoryPoints,
       );
       final messages = result.messages;
       final random = Random();

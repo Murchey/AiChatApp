@@ -122,6 +122,9 @@ class MomentAiService {
         var success = false;
         while (!success && totalFailures < maxFailures) {
           try {
+            // 动态发布者身份：用于告知模型"朋友圈主人是谁"，
+            // 避免把发布者误认为是用户（角色发朋友圈场景的关键）
+            final owner = characterProvider.getCharacterById(momentOwnerId);
             // 角色与用户的最近聊天记录（条数与用户设置的上下文条数一致），
             // 让角色在回复用户朋友圈时了解与用户之间的历史语境
             final chatHistory = chatProvider.getRecentHistoryForCharacter(
@@ -136,6 +139,8 @@ class MomentAiService {
               // temperature，让模型使用默认值（部分模型不支持 temperature 字段）
               useDefaultTemperature: totalFailures >= 4,
               chatHistory: chatHistory,
+              ownerName: owner?.displayName ?? '',
+              ownerIsUser: momentOwnerId == CharacterProvider.selfCharacterId,
             );
             await _applyDecision(
               characterProvider,
@@ -302,12 +307,16 @@ class MomentAiService {
   /// 由模型使用自身默认值。
   /// [chatHistory] 为角色与用户的最近聊天记录（用户设置的上下文条数），
   /// 附加到 user 消息中，让角色互动时了解与用户的历史语境。
+  /// [ownerName] 为动态发布者的显示名（发布者是用户时传空）；
+  /// [ownerIsUser] 为 true 表示动态是用户本人发布的。
   static Future<MomentDecision> _askCharacter(
     ApiModel model,
     Character character,
     Moment moment, {
     bool useDefaultTemperature = false,
     List<Map<String, String>> chatHistory = const [],
+    String ownerName = '',
+    bool ownerIsUser = false,
   }) async {
     final system = character.systemPrompt.trim().isEmpty
         ? '你是「${character.displayName}」，正在浏览朋友圈。'
@@ -318,8 +327,10 @@ class MomentAiService {
       {
         'role': 'user',
         'content': moment.images.isEmpty
-            ? _buildUserPrompt(moment, relationship, chatHistory)
-            : _buildVisionUserContent(moment, relationship, chatHistory),
+            ? _buildUserPrompt(moment, relationship, chatHistory,
+                ownerName: ownerName, ownerIsUser: ownerIsUser)
+            : _buildVisionUserContent(moment, relationship, chatHistory,
+                ownerName: ownerName, ownerIsUser: ownerIsUser),
       },
     ];
     final result = await LLMService.fetchCompletion(
@@ -333,13 +344,17 @@ class MomentAiService {
     return _parseDecision(result.content);
   }
 
-  /// 动态文本部分：JSON 序列化动态 + 用户关系 + 输出格式指令。
+  /// 动态文本部分：JSON 序列化动态 + 发布者身份 + 关系 + 输出格式指令。
   /// [chatHistory] 非空时附带「最近聊天记录」段落。
+  /// [ownerName] 为动态发布者显示名（发布者是用户时为空）；
+  /// [ownerIsUser] 为 true 表示发布者是用户本人。
   static String _buildUserPrompt(
     Moment moment,
-    String relationship, [
-    List<Map<String, String>> chatHistory = const [],
-  ]) {
+    String relationship,
+    List<Map<String, String>> chatHistory, {
+    String ownerName = '',
+    bool ownerIsUser = false,
+  }) {
     final json = jsonEncode({
       'content': moment.content,
       'location': moment.location,
@@ -350,11 +365,24 @@ class MomentAiService {
           for (final p in moment.images.take(9)) p.split(RegExp(r'[/\\]')).last,
         ],
     });
-    return '以下是朋友圈主人刚发布的一条朋友圈（JSON 格式）：\n'
+    // 发布者身份：明确告知模型"朋友圈主人是谁"，避免把发布者误认为用户
+    final ownerDesc = ownerIsUser
+        ? '你'
+        : (ownerName.isEmpty ? '朋友圈主人' : '「$ownerName」');
+    // 关系：发布者是用户时沿用"与用户的关系"；
+    // 发布者是其他角色时，我们缺少角色间关系数据，明确说明是朋友圈社交关系，
+    // 避免把"与用户的关系"错套在发布者身上（这是误认用户的主要来源之一）
+    final relationDesc = ownerIsUser
+        ? '你和朋友圈主人的关系：${relationship.isEmpty ? '普通朋友' : relationship}'
+        : '你与$ownerDesc 同在一个朋友圈，是普通朋友关系';
+    // 聊天记录只在与"用户"相关的互动中附带：
+    // 发布者是其他角色时省略，否则"角色与用户的聊天记录"会诱导模型把发布者当成用户
+    final chatSection =
+        ownerIsUser ? _chatHistorySection(chatHistory) : '';
+    return '以下是$ownerDesc 刚发布的一条朋友圈（JSON 格式）：\n'
         '$json\n\n'
-        '你和朋友圈主人的关系：'
-        '${relationship.isEmpty ? '普通朋友' : relationship}\n\n'
-        '${_chatHistorySection(chatHistory)}'
+        '$relationDesc\n\n'
+        '${chatSection.isEmpty ? '' : '$chatSection\n'}'
         '请你以当前角色的身份决定互动方式，只输出一个 JSON 对象，'
         '不要输出任何其他文字，不要用代码块包裹。格式：\n'
         '{"like": true或false, "comment": "评论内容"}\n\n'
@@ -367,11 +395,17 @@ class MomentAiService {
   /// 图文动态：文本指令 + 图片（base64 data URL，OpenAI 视觉格式）
   static Object _buildVisionUserContent(
     Moment moment,
-    String relationship, [
-    List<Map<String, String>> chatHistory = const [],
-  ]) {
+    String relationship,
+    List<Map<String, String>> chatHistory, {
+    String ownerName = '',
+    bool ownerIsUser = false,
+  }) {
     final parts = <Map<String, Object>>[
-      {'type': 'text', 'text': _buildUserPrompt(moment, relationship, chatHistory)},
+      {
+        'type': 'text',
+        'text': _buildUserPrompt(moment, relationship, chatHistory,
+            ownerName: ownerName, ownerIsUser: ownerIsUser),
+      },
     ];
     for (final path in moment.images.take(9)) {
       try {

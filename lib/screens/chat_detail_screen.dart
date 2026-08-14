@@ -9,9 +9,11 @@ import '../models/visibility_group.dart';
 import '../providers/auto_moment_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/memory_point_provider.dart';
 import '../services/prompt_builder.dart';
 import '../widgets/character_avatar.dart';
 import 'character_detail_screen.dart';
+import 'memory_point_manage_screen.dart';
 import 'moment_visibility_screen.dart';
 
 /// 聊天详情/角色资料：上半部分可编辑角色卡（备注/昵称/个性签名/定位地区），
@@ -992,6 +994,38 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
             onTap: _togglePrompt,
           ),
+          Container(
+            height: 0.5,
+            margin: const EdgeInsets.only(left: 16),
+            color: context.separatorColor,
+          ),
+          CupertinoListTile(
+            leading: const Icon(CupertinoIcons.bookmark),
+            title: Text(
+              '记忆点管理',
+              style: TextStyle(color: context.textPrimaryColor),
+            ),
+            subtitle: Consumer<MemoryPointProvider>(
+              builder: (context, provider, _) {
+                final count = provider.pointsFor(_characterId).length;
+                return Text(
+                  count > 0
+                      ? '已保存 $count 条长期记忆，将自动拼入对话提示词 · 点击管理'
+                      : '把重要的约定与经历存下来，让角色长期记住 · 点击管理',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                );
+              },
+            ),
+            trailing: Icon(
+              CupertinoIcons.chevron_right,
+              size: 16,
+              color: context.textSecondaryColor,
+            ),
+            onTap: _openMemoryManage,
+          ),
           if (_promptExpanded)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -1034,6 +1068,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// 打开记忆点管理二级页
+  void _openMemoryManage() {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => MemoryPointManageScreen(characterId: _characterId),
       ),
     );
   }
