@@ -11,10 +11,22 @@ import 'visibility_group_manage_screen.dart';
 /// 点击固定选项 / 分组右侧圆点即选中并 `Navigator.pop` 返回范围 id；
 /// 点击分组行进入其管理页（编辑联系人 / 删除分组）；
 /// 底部【添加分组】创建新分组，创建后自动出现在列表中。
+///
+/// [excludeCharacterId] 非空时（角色设置自动朋友圈互动范围）：
+/// 包含该角色的分组**禁用但保留展示**（置灰、不可选，仍可进管理页编辑），
+/// 避免分组列表被整体隐藏造成"分组丢失"的误解。
 class MomentVisibilityScreen extends StatefulWidget {
   final String selectedId;
 
-  const MomentVisibilityScreen({super.key, required this.selectedId});
+  /// 排除角色 id：非空时，分组成员中包含该角色的分组不会出现在列表中
+  /// （用于角色设置自动朋友圈互动范围——角色不能给自己点赞评论）。
+  final String excludeCharacterId;
+
+  const MomentVisibilityScreen({
+    super.key,
+    required this.selectedId,
+    this.excludeCharacterId = '',
+  });
 
   @override
   State<MomentVisibilityScreen> createState() =>
@@ -84,6 +96,7 @@ class _MomentVisibilityScreenState extends State<MomentVisibilityScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<CharacterProvider>();
+    final excludeId = widget.excludeCharacterId;
     final groups = provider.visibilityGroups;
     final characters = provider.characters;
     return CupertinoPageScaffold(
@@ -111,12 +124,27 @@ class _MomentVisibilityScreenState extends State<MomentVisibilityScreen> {
                 if (groups.isNotEmpty) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
-                    child: Text(
-                      '自定义分组',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: context.textSecondaryColor,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '自定义分组',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                        if (excludeId.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            '包含该角色的分组不可选（角色不能互动自己）',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.textSecondaryColor,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   ...groups.map((g) {
@@ -124,80 +152,91 @@ class _MomentVisibilityScreenState extends State<MomentVisibilityScreen> {
                     final memberCount = g.memberIds
                         .where((id) => characters.any((c) => c.id == id))
                         .length;
+                    final isExcluded =
+                        excludeId.isNotEmpty && g.memberIds.contains(excludeId);
                     final isSelected = _selectedId == g.id;
-                    return Container(
-                      color: context.listBgColor,
-                      padding: const EdgeInsets.only(
-                        left: 16,
-                        right: 8,
-                        top: 10,
-                        bottom: 10,
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            CupertinoIcons.person_3_fill,
-                            size: 20,
-                            color: context.accentColor,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            // 点击分组行：进入管理页
-                            child: GestureDetector(
+                    return Opacity(
+                      opacity: isExcluded ? 0.45 : 1,
+                      child: Container(
+                        color: context.listBgColor,
+                        padding: const EdgeInsets.only(
+                          left: 16,
+                          right: 8,
+                          top: 10,
+                          bottom: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              CupertinoIcons.person_3_fill,
+                              size: 20,
+                              color: context.accentColor,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              // 点击分组行：进入管理页（被禁用的分组也可进入编辑）
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => _openManage(g),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        g.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          color: context.textPrimaryColor,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        isExcluded
+                                            ? '包含该角色，不可选'
+                                            : '$memberCount 位联系人',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: context.textSecondaryColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // 选中圆点：点击即选中该分组为展示范围（被禁用的分组不可选）
+                            GestureDetector(
                               behavior: HitTestBehavior.opaque,
-                              onTap: () => _openManage(g),
+                              onTap: isExcluded ? null : () => _select(g.id),
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      g.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        color: context.textPrimaryColor,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '$memberCount 位联系人',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: context.textSecondaryColor,
-                                      ),
-                                    ),
-                                  ],
+                                padding: const EdgeInsets.all(8),
+                                child: Icon(
+                                  isExcluded
+                                      ? CupertinoIcons.lock_fill
+                                      : (isSelected
+                                          ? CupertinoIcons.checkmark_circle_fill
+                                          : CupertinoIcons.circle),
+                                  size: 22,
+                                  color: isExcluded
+                                      ? CupertinoColors.systemGrey
+                                      : (isSelected
+                                          ? context.accentColor
+                                          : CupertinoColors.systemGrey),
                                 ),
                               ),
                             ),
-                          ),
-                          // 选中圆点：点击即选中该分组为展示范围
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => _select(g.id),
-                            child: Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Icon(
-                                isSelected
-                                    ? CupertinoIcons.checkmark_circle_fill
-                                    : CupertinoIcons.circle,
-                                size: 24,
-                                color: isSelected
-                                    ? context.accentColor
-                                    : CupertinoColors.systemGrey,
-                              ),
+                            Icon(
+                              CupertinoIcons.chevron_right,
+                              size: 16,
+                              color: context.textSecondaryColor,
                             ),
-                          ),
-                          Icon(
-                            CupertinoIcons.chevron_right,
-                            size: 16,
-                            color: context.textSecondaryColor,
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     );
                   }),

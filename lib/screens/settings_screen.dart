@@ -1,8 +1,16 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../providers/api_provider.dart';
+import '../providers/auto_moment_provider.dart';
+import '../providers/character_provider.dart';
+import '../providers/chat_provider.dart';
+import '../providers/chat_settings_provider.dart';
+import '../providers/moment_notification_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/auto_moment_service.dart';
 import '../services/update_service.dart';
+import '../utils/app_toast.dart';
 import 'storage_manage_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -23,6 +31,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return '深色';
       case AppThemeMode.system:
         return '跟随系统';
+    }
+  }
+
+  /// 快速测试：立即触发一次自动发朋友圈（开发者模式专用）。
+  /// 把所有已开启自动发朋友圈的角色到期时间设为现在，再调用调度器补发布。
+  Future<void> _quickTestAutoMoment() async {
+    final apiProvider = context.read<ApiProvider>();
+    final autoProvider = context.read<AutoMomentProvider>();
+    final characterProvider = context.read<CharacterProvider>();
+    final chatProvider = context.read<ChatProvider>();
+    final chatSettings = context.read<ChatSettingsProvider>();
+    final notificationProvider = context.read<MomentNotificationProvider>();
+
+    if (apiProvider.getModelById(apiProvider.momentModelId) == null) {
+      showAppToast('请先在「API 设置」中配置「朋友圈互动」模型');
+      return;
+    }
+    if (characterProvider.isLoading) {
+      showAppToast('角色数据加载中，请稍后再试');
+      return;
+    }
+    await autoProvider.expediteAllDue();
+    showAppToast('已触发，正在让角色发布朋友圈…');
+    await AutoMomentService.instance.checkAndPublish(
+      characterProvider: characterProvider,
+      apiProvider: apiProvider,
+      chatProvider: chatProvider,
+      chatSettings: chatSettings,
+      notificationProvider: notificationProvider,
+      autoMomentProvider: autoProvider,
+    );
+    if (mounted) {
+      showAppToast('测试完成，请到朋友圈查看');
     }
   }
 
@@ -475,6 +516,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onChanged: (v) => settings.setDeveloperMode(v),
                 ),
               ),
+              if (settings.developerMode) ...[
+                Container(
+                  height: 0.5,
+                  margin: const EdgeInsets.only(left: 16),
+                  color: context.separatorColor,
+                ),
+                CupertinoListTile(
+                  leading: const Icon(
+                    CupertinoIcons.bolt,
+                    color: CupertinoColors.systemOrange,
+                  ),
+                  title: const Text('快速测试自动发朋友圈'),
+                  subtitle: Text(
+                    '立即让所有已开启「自动发朋友圈」的角色到期并触发一次发布，'
+                    '用于快速验证效果（正常使用无需点击）',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  onTap: () => _quickTestAutoMoment(),
+                ),
+              ],
             ],
           ),
           // 更新检测：启动时自动检测 + 更新代理地址

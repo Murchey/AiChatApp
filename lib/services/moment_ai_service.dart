@@ -80,6 +80,7 @@ class MomentAiService {
     required Moment moment,
     required List<Character> characters,
     int initialFailures = 0,
+    String momentOwnerId = CharacterProvider.selfCharacterId,
   }) async {
     if (_interactionRunning) {
       const msg = '朋友圈互动正在进行中，已跳过本次';
@@ -109,6 +110,7 @@ class MomentAiService {
         pendingCharacterIds: pendingIds,
         totalFailures: totalFailures,
         modelId: model.id,
+        ownerId: momentOwnerId,
       );
 
       DevLogService.instance.log(
@@ -141,6 +143,7 @@ class MomentAiService {
               moment,
               character,
               decision,
+              momentOwnerId,
             );
             success = true;
             // 该角色互动完成：从断点移除并持久化（崩溃/退出后可续跑剩余角色）
@@ -150,6 +153,7 @@ class MomentAiService {
               pendingCharacterIds: pendingIds,
               totalFailures: totalFailures,
               modelId: model.id,
+              ownerId: momentOwnerId,
             );
             final actions = <String>[
               if (decision.like) '点赞',
@@ -166,6 +170,7 @@ class MomentAiService {
               pendingCharacterIds: pendingIds,
               totalFailures: totalFailures,
               modelId: model.id,
+              ownerId: momentOwnerId,
             );
             DevLogService.instance.log(
                 '「${character.displayName}」请求失败（累计 $totalFailures 次）：$lastError');
@@ -203,9 +208,9 @@ class MomentAiService {
     final bp = await _loadBreakpoint();
     if (bp == null) return;
 
-    final self = characterProvider.selfCharacter;
+    final owner = characterProvider.getCharacterById(bp.ownerId);
     final momentExists =
-        self != null && self.moments.any((m) => m.id == bp.moment.id);
+        owner != null && owner.moments.any((m) => m.id == bp.moment.id);
     if (!momentExists) {
       DevLogService.instance.log('朋友圈互动断点：动态已不存在，清除断点');
       await _clearBreakpoint();
@@ -242,6 +247,7 @@ class MomentAiService {
       moment: bp.moment,
       characters: remaining,
       initialFailures: bp.totalFailures,
+      momentOwnerId: bp.ownerId,
     );
   }
 
@@ -251,6 +257,7 @@ class MomentAiService {
     required List<String> pendingCharacterIds,
     required int totalFailures,
     required String modelId,
+    required String ownerId,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
@@ -260,6 +267,7 @@ class MomentAiService {
         pendingCharacterIds: pendingCharacterIds,
         totalFailures: totalFailures,
         modelId: modelId,
+        ownerId: ownerId,
       ).toJson()),
     );
   }
@@ -467,10 +475,11 @@ class MomentAiService {
     Moment moment,
     Character character,
     MomentDecision decision,
+    String ownerId,
   ) async {
-    final self = characterProvider.selfCharacter;
-    if (self == null) return;
-    final moments = [...self.moments];
+    final owner = characterProvider.getCharacterById(ownerId);
+    if (owner == null) return;
+    final moments = [...owner.moments];
     final index = moments.indexWhere((m) => m.id == moment.id);
     if (index == -1) return; // 动态已被删除，跳过
 
@@ -502,7 +511,7 @@ class MomentAiService {
       createdAt: cur.createdAt,
     );
     await characterProvider.updateMoments(
-      CharacterProvider.selfCharacterId,
+      ownerId,
       moments,
     );
     await notificationProvider.addActivity(MomentNotification(
@@ -514,6 +523,8 @@ class MomentAiService {
       liked: decision.like,
       comment: decision.comment,
       createdAt: DateTime.now(),
+      ownerCharacterId: owner.id,
+      ownerCharacterName: owner.displayName,
     ));
   }
 
@@ -689,6 +700,8 @@ class MomentAiService {
         comment: reply,
         isReply: true,
         createdAt: DateTime.now(),
+        ownerCharacterId: owner.id,
+        ownerCharacterName: owner.displayName,
       ));
       DevLogService.instance
           .log('「${character.displayName}」回复了 $userNickname 的评论：$reply');
@@ -778,12 +791,14 @@ class _InteractionBreakpoint {
   final List<String> pendingCharacterIds;
   final int totalFailures;
   final String modelId;
+  final String ownerId;
 
   const _InteractionBreakpoint({
     required this.moment,
     required this.pendingCharacterIds,
     required this.totalFailures,
     required this.modelId,
+    this.ownerId = CharacterProvider.selfCharacterId,
   });
 
   factory _InteractionBreakpoint.fromJson(Map<String, dynamic> json) {
@@ -795,6 +810,8 @@ class _InteractionBreakpoint {
           const [],
       totalFailures: (json['total_failures'] as num?)?.toInt() ?? 0,
       modelId: json['model_id'] as String? ?? '',
+      ownerId: json['owner_id'] as String? ??
+          CharacterProvider.selfCharacterId,
     );
   }
 
@@ -803,6 +820,7 @@ class _InteractionBreakpoint {
         'pending_character_ids': pendingCharacterIds,
         'total_failures': totalFailures,
         'model_id': modelId,
+        'owner_id': ownerId,
       };
 }
 

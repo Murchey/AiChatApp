@@ -110,13 +110,20 @@ class _MomentNotificationsScreenState extends State<MomentNotificationsScreen> {
                       final n = activities[index];
                       final character = characterProvider
                           .getCharacterById(n.characterId);
+                      // 动态发布者是「我」还是某个角色：决定「赞了你的动态」/「赞了 A 的朋友圈」
+                      final isMine = n.ownerCharacterId.isEmpty ||
+                          n.ownerCharacterId ==
+                              CharacterProvider.selfCharacterId;
+                      final target = isMine
+                          ? '你的动态'
+                          : '${n.ownerCharacterName.isEmpty ? '他' : n.ownerCharacterName}的朋友圈';
                       final actions = <String>[
-                        if (n.liked) '赞了你的动态',
-                        if (n.comment.isNotEmpty && !n.isReply) '评论了你的动态',
+                        if (n.liked) '赞了$target',
+                        if (n.comment.isNotEmpty && !n.isReply) '评论了$target',
                         if (n.isReply) '回复了你的评论',
                       ];
                       final actionText =
-                          actions.isEmpty ? '看了你的动态' : actions.join('、');
+                          actions.isEmpty ? '看了$target' : actions.join('、');
                       return CupertinoListTile(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,

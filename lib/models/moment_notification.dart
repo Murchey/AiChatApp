@@ -15,6 +15,11 @@ class MomentNotification {
   final DateTime createdAt; // 互动时间
   final bool read; // 是否已读（打开通知页后标记）
 
+  /// 动态发布者：空串表示发布者是用户「我」（旧数据/用户自发布），
+  /// 非空时为角色 id（角色自动发朋友圈后，其他角色点赞评论的是该角色的动态）。
+  final String ownerCharacterId;
+  final String ownerCharacterName;
+
   const MomentNotification({
     required this.id,
     required this.characterId,
@@ -26,6 +31,8 @@ class MomentNotification {
     this.isReply = false,
     required this.createdAt,
     this.read = false,
+    this.ownerCharacterId = '',
+    this.ownerCharacterName = '',
   });
 
   factory MomentNotification.fromJson(Map<String, dynamic> json) {
@@ -41,6 +48,8 @@ class MomentNotification {
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.now(),
       read: json['read'] as bool? ?? false,
+      ownerCharacterId: json['owner_character_id'] as String? ?? '',
+      ownerCharacterName: json['owner_character_name'] as String? ?? '',
     );
   }
 
@@ -55,6 +64,8 @@ class MomentNotification {
         'is_reply': isReply,
         'created_at': createdAt.toIso8601String(),
         'read': read,
+        'owner_character_id': ownerCharacterId,
+        'owner_character_name': ownerCharacterName,
       };
 
   MomentNotification copyWith({
@@ -76,6 +87,8 @@ class MomentNotification {
       isReply: isReply ?? this.isReply,
       createdAt: createdAt,
       read: read ?? this.read,
+      ownerCharacterId: ownerCharacterId,
+      ownerCharacterName: ownerCharacterName,
     );
   }
 }

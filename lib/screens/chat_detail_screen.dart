@@ -5,11 +5,14 @@ import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/conversation.dart';
+import '../models/visibility_group.dart';
+import '../providers/auto_moment_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
 import '../services/prompt_builder.dart';
 import '../widgets/character_avatar.dart';
 import 'character_detail_screen.dart';
+import 'moment_visibility_screen.dart';
 
 /// 聊天详情/角色资料：上半部分可编辑角色卡（备注/昵称/个性签名/定位地区），
 /// 中部聊天管理（聊天场景），最下方折叠的提示词设置 panel。
@@ -301,6 +304,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           const SizedBox(height: 16),
           _buildInfoSection(character),
           if (widget.showChatManage && conversation != null) ...[
+            const SizedBox(height: 24),
+            _buildAutoMomentSection(),
             const SizedBox(height: 24),
             _buildManageSection(),
           ],
@@ -750,6 +755,149 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
+  // ── 自动发朋友圈 ──
+  Widget _buildAutoMomentSection() {
+    return Consumer<AutoMomentProvider>(
+      builder: (context, autoProvider, _) {
+        final config = autoProvider.configFor(_characterId);
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: context.listBgColor,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            children: [
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.camera,
+                  color: context.textPrimaryColor,
+                ),
+                title: Text(
+                  '自动发朋友圈',
+                  style: TextStyle(color: context.textPrimaryColor),
+                ),
+                subtitle: Text(
+                  config.enabled
+                      ? _describeConfig(config)
+                      : '让角色定时自动发布朋友圈，其他角色会像真人一样点赞评论',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSwitch(
+                  value: config.enabled,
+                  onChanged: (v) => autoProvider.setEnabled(_characterId, v),
+                ),
+              ),
+              if (config.enabled) ...[
+                Container(
+                  height: 0.5,
+                  margin: const EdgeInsets.only(left: 16),
+                  color: context.separatorColor,
+                ),
+                _AutoMomentPickerSection(
+                  key: ValueKey('auto_moment_picker_$_characterId'),
+                  initialPeriodHours: config.periodHours,
+                  initialCount: config.count,
+                  onPeriodChanged: (h) =>
+                      autoProvider.setPeriod(_characterId, h),
+                  onCountChanged: (c) =>
+                      autoProvider.setCount(_characterId, c),
+                ),
+                Container(
+                  height: 0.5,
+                  margin: const EdgeInsets.only(left: 16),
+                  color: context.separatorColor,
+                ),
+                CupertinoListTile(
+                  leading: Icon(
+                    CupertinoIcons.person_2,
+                    color: context.textPrimaryColor,
+                  ),
+                  title: Text(
+                    '谁可以互动',
+                    style: TextStyle(color: context.textPrimaryColor),
+                  ),
+                  subtitle: Text(
+                    _visibilityLabel(context, config.visibility),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  trailing: Icon(
+                    CupertinoIcons.chevron_right,
+                    size: 16,
+                    color: context.textSecondaryColor,
+                  ),
+                  onTap: () => _openAutoMomentVisibility(
+                    context,
+                    autoProvider,
+                    config.visibility,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _describeConfig(AutoMomentConfig config) {
+    final idx = AutoMomentProvider.periodOptions.indexOf(config.periodHours);
+    final label = AutoMomentProvider.periodLabels[idx < 0 ? 3 : idx];
+    return '每 $label 发 ${config.count} 条，其他角色会像真人一样点赞评论';
+  }
+
+  /// 可见范围显示文案（分组被删除/包含该角色自己时回退到全部角色可见）
+  String _visibilityLabel(BuildContext context, String visibility) {
+    if (visibility == VisibilityScope.onlyMe) return '仅自己可见（无人互动）';
+    if (visibility == VisibilityScope.all) return '全部角色可见';
+    final groups = context.read<CharacterProvider>().visibilityGroups;
+    for (final g in groups) {
+      if (g.id == visibility) {
+        // 分组包含该角色自己（不能互动自己）：视为全部角色可见
+        if (g.memberIds.contains(_characterId)) return '全部角色可见';
+        return '分组「${g.name}」';
+      }
+    }
+    return '全部角色可见';
+  }
+
+  /// 打开可见范围选择页（固定选项 + 自定义分组），选中后保存到自动发朋友圈配置
+  Future<void> _openAutoMomentVisibility(
+    BuildContext context,
+    AutoMomentProvider autoProvider,
+    String currentId,
+  ) async {
+    // 当前分组若包含该角色自己，则从「全部角色可见」开始选择
+    var startId = currentId;
+    if (currentId != VisibilityScope.onlyMe &&
+        currentId != VisibilityScope.all) {
+      final groups = context.read<CharacterProvider>().visibilityGroups;
+      final g = groups.where((x) => x.id == currentId).firstOrNull;
+      if (g != null && g.memberIds.contains(_characterId)) startId = VisibilityScope.all;
+    }
+    final selected = await Navigator.push<String>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => MomentVisibilityScreen(
+          selectedId: startId,
+          // 角色不能互动自己：过滤掉包含该角色自己的分组
+          excludeCharacterId: _characterId,
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    await autoProvider.setVisibility(_characterId, selected);
+  }
+
   // ── 聊天管理 ──
   Widget _buildManageSection() {
     return Container(
@@ -895,6 +1043,215 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       height: 0.5,
       margin: const EdgeInsets.only(left: 16),
       color: context.separatorColor,
+    );
+  }
+}
+
+/// 「发送频率」可折叠区块（drawer 形式）：
+/// 平时只显示一行摘要，点击标题行伸出滚轮，修改后再点标题行收回。
+class _AutoMomentPickerSection extends StatefulWidget {
+  final int initialPeriodHours;
+  final int initialCount;
+  final ValueChanged<int> onPeriodChanged;
+  final ValueChanged<int> onCountChanged;
+
+  const _AutoMomentPickerSection({
+    super.key,
+    required this.initialPeriodHours,
+    required this.initialCount,
+    required this.onPeriodChanged,
+    required this.onCountChanged,
+  });
+
+  @override
+  State<_AutoMomentPickerSection> createState() =>
+      _AutoMomentPickerSectionState();
+}
+
+class _AutoMomentPickerSectionState extends State<_AutoMomentPickerSection> {
+  bool _expanded = false;
+
+  int _periodIndex(int hours) {
+    final idx = AutoMomentProvider.periodOptions.indexOf(hours);
+    return idx < 0 ? 3 : idx; // 默认 3 天（index 3）
+  }
+
+  void _toggle() => setState(() => _expanded = !_expanded);
+
+  @override
+  Widget build(BuildContext context) {
+    final label =
+        AutoMomentProvider.periodLabels[_periodIndex(widget.initialPeriodHours)];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 标题行（父节点）：点击展开 / 收回滚轮
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _toggle,
+          child: Container(
+            color: context.listBgColor,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Row(
+              children: [
+                Icon(
+                  CupertinoIcons.clock,
+                  size: 20,
+                  color: context.textPrimaryColor,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '发送频率',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '每 $label 发 ${widget.initialCount} 条',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  _expanded
+                      ? CupertinoIcons.chevron_up
+                      : CupertinoIcons.chevron_down,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+              ],
+            ),
+          ),
+        ),
+        // 展开内容：滚轮（AnimatedSize 平滑伸缩）
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: _expanded
+              ? _AutoMomentPicker(
+                  initialPeriodHours: widget.initialPeriodHours,
+                  initialCount: widget.initialCount,
+                  onPeriodChanged: widget.onPeriodChanged,
+                  onCountChanged: widget.onCountChanged,
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+}
+
+class _AutoMomentPicker extends StatefulWidget {
+  final int initialPeriodHours;
+  final int initialCount;
+  final ValueChanged<int> onPeriodChanged;
+  final ValueChanged<int> onCountChanged;
+
+  const _AutoMomentPicker({
+    required this.initialPeriodHours,
+    required this.initialCount,
+    required this.onPeriodChanged,
+    required this.onCountChanged,
+  });
+
+  @override
+  State<_AutoMomentPicker> createState() => _AutoMomentPickerState();
+}
+
+class _AutoMomentPickerState extends State<_AutoMomentPicker> {
+  late FixedExtentScrollController _periodController;
+  late FixedExtentScrollController _countController;
+
+  @override
+  void initState() {
+    super.initState();
+    _periodController = FixedExtentScrollController(
+      initialItem: _periodIndex(widget.initialPeriodHours),
+    );
+    _countController = FixedExtentScrollController(
+      initialItem: widget.initialCount - 1,
+    );
+  }
+
+  @override
+  void dispose() {
+    _periodController.dispose();
+    _countController.dispose();
+    super.dispose();
+  }
+
+  int _periodIndex(int hours) {
+    final idx = AutoMomentProvider.periodOptions.indexOf(hours);
+    return idx < 0 ? 3 : idx; // 默认 3 天（index 3）
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 160,
+      child: Row(
+        children: [
+          Expanded(
+            child: CupertinoPicker(
+              scrollController: _periodController,
+              itemExtent: 32,
+              onSelectedItemChanged: (i) =>
+                  widget.onPeriodChanged(AutoMomentProvider.periodOptions[i]),
+              children: AutoMomentProvider.periodLabels
+                  .map((l) => Center(
+                        child: Text(
+                          l,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+          Text(
+            '每',
+            style: TextStyle(fontSize: 13, color: context.textSecondaryColor),
+          ),
+          Expanded(
+            child: CupertinoPicker(
+              scrollController: _countController,
+              itemExtent: 32,
+              onSelectedItemChanged: (i) => widget.onCountChanged(i + 1),
+              children: [
+                for (var n = AutoMomentProvider.minCount;
+                    n <= AutoMomentProvider.maxCount;
+                    n++)
+                  Center(
+                    child: Text(
+                      '$n',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: context.textPrimaryColor,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            '条',
+            style: TextStyle(fontSize: 13, color: context.textSecondaryColor),
+          ),
+        ],
+      ),
     );
   }
 }

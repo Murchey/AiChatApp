@@ -7,9 +7,11 @@ import '../models/character.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/auto_moment_provider.dart';
 import '../providers/api_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/auto_moment_service.dart';
 import '../services/dev_log_service.dart';
 import '../services/moment_ai_service.dart';
 import '../services/update_service.dart';
@@ -26,7 +28,8 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with RouteAware {
+class _HomeScreenState extends State<HomeScreen>
+    with RouteAware, WidgetsBindingObserver {
   // 主内容横向滑动手势控制：与底部 tab 双向联动
   final PageController _pageController = PageController();
   int _currentTab = 0;
@@ -40,6 +43,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     context.read<ChatProvider>().init();
     // 角色加载完成后检查朋友圈互动断点：应用中途退出后，从上次未完成的
     // 位置续跑剩余角色的点赞/评论互动（防打断设计）
@@ -56,6 +60,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
         chatProvider: chatProvider,
         chatSettings: chatSettings,
       );
+      _checkAutoMoments();
     }).catchError((Object e) {
       DevLogService.instance.log('朋友圈互动断点恢复失败: $e');
     });
@@ -76,8 +81,31 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 应用回到前台时补发布已到期的自动朋友圈（前台补发布策略）
+    if (state == AppLifecycleState.resumed) {
+      _checkAutoMoments();
+    }
+  }
+
+  Future<void> _checkAutoMoments() async {
+    if (!mounted) return;
+    final characterProvider = context.read<CharacterProvider>();
+    if (characterProvider.isLoading) return;
+    await AutoMomentService.instance.checkAndPublish(
+      characterProvider: characterProvider,
+      apiProvider: context.read<ApiProvider>(),
+      chatProvider: context.read<ChatProvider>(),
+      chatSettings: context.read<ChatSettingsProvider>(),
+      notificationProvider: context.read<MomentNotificationProvider>(),
+      autoMomentProvider: context.read<AutoMomentProvider>(),
+    );
   }
 
   /// 主内容滑动结束后同步底部 tab 高亮

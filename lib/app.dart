@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'config/theme.dart';
 import 'config/routes.dart';
+import 'providers/auto_moment_provider.dart';
 import 'providers/api_provider.dart';
 import 'providers/chat_settings_provider.dart';
 import 'providers/moment_notification_provider.dart';
@@ -25,6 +26,7 @@ class _AiChatAppState extends State<AiChatApp> {
     context.read<ApiProvider>().init();
     context.read<ChatSettingsProvider>().init();
     context.read<MomentNotificationProvider>().init();
+    context.read<AutoMomentProvider>().init();
     context.read<WorkshopProvider>().init();
     // 初始化系统通知（创建渠道并请求 Android 13+ 通知权限）
     NotificationService.instance.init();
