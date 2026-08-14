@@ -182,6 +182,8 @@ class CharacterPackService {
       greeting: str('greeting'),
       systemPrompt: systemPrompt,
       userRelationship: str('user_relationship'),
+      activeStart: str('active_start'),
+      activeEnd: str('active_end'),
       tags: (data['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       moments: moments,
     );
@@ -379,6 +381,9 @@ class CharacterPackService {
         'greeting': c.greeting,
         'user_relationship': c.userRelationship,
         'tags': c.tags,
+        // 活跃时段（"HH:mm"，仅写入已设置的字段）
+        if (c.activeStart.isNotEmpty) 'active_start': c.activeStart,
+        if (c.activeEnd.isNotEmpty) 'active_end': c.activeEnd,
       };
       // 持久化记忆点：写入 memory_points（[{content, created_at}]）
       final memory = memoryByCharacter?[c.id] ?? const <MemoryPoint>[];

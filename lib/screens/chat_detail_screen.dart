@@ -649,8 +649,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     ],
                   ),
                   Text(
-                    '当前选择：${_fmtHm(start)} - ${_fmtHm(end)}'
-                    '（支持跨零点时段）',
+                    _formatActivePeriod(start, end),
                     style: TextStyle(
                       fontSize: 12,
                       color: context.textSecondaryColor,
@@ -697,6 +696,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         },
       ),
     );
+  }
+
+  /// 组装活跃时段展示文案：结束时间早于开始时间（跨零点）时标注为「次日」。
+  static String _formatActivePeriod(DateTime start, DateTime end) {
+    final startMin = start.hour * 60 + start.minute;
+    final endMin = end.hour * 60 + end.minute;
+    return endMin < startMin
+        ? '当前选择：本日 ${_fmtHm(start)} - 次日 ${_fmtHm(end)}'
+        : '当前选择：本日 ${_fmtHm(start)} - 本日 ${_fmtHm(end)}';
   }
 
   /// 解析 "HH:mm" 为日期（时/分），非法/空串返回 null
