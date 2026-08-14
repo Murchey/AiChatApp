@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:gal/gal.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
@@ -17,90 +16,19 @@ import '../widgets/character_avatar.dart';
 import '../widgets/moment_card.dart';
 import '../widgets/publish_moment_screen.dart';
 
-// #region debug-point cover-jitter
-/// 调试上报：封面动画抖动问题。节流高频滚动采样（8ms，较上次 30ms 更密，
-/// 避免丢失惯性振荡关键轨迹），其余关键事件逐条上报。
-const String _dbgServerUrl = 'http://192.168.3.138:7777/event';
-int _dbgLastTs = 0;
-Future<void> _dbgReport(
-  String hypothesisId,
-  String location,
-  String msg, [
-  Map<String, dynamic>? data,
-]) async {
-  final now = DateTime.now().millisecondsSinceEpoch;
-  if (hypothesisId == 'A' && now - _dbgLastTs < 8) return;
-  _dbgLastTs = now;
-  try {
-    await http.post(
-      Uri.parse(_dbgServerUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'sessionId': 'cover-animation-jitter',
-        'runId': 'post-fix3',
-        'hypothesisId': hypothesisId,
-        'location': location,
-        'msg': msg,
-        'data': data ?? {},
-        'ts': now,
-      }),
-    );
-  } catch (_) {}
-}
-
-/// 物理调用级插桩（诊断惯性滚动振荡）：
-/// - ballistic：每次 createBallisticSimulation 调用（含起点/速度/范围/序号）
-///   ——若惯性期间反复重启，seq 会快速递增；
-/// - boundary：每次 applyBoundaryConditions 调用（含返回值 r）
-///   ——r != 0 说明边界正在钳制位置；
-/// - pid：当前绑定的 ScrollPosition 对象身份（重建则递增）。
-int _dbgBoundarySeq = 0;
-int _dbgBallisticSeq = 0;
-int _dbgPhysPid = 0;
-Object? _dbgPhysLastPosition;
-void _dbgTrackPosition(ScrollMetrics position) {
-  if (!identical(position, _dbgPhysLastPosition)) {
-    _dbgPhysLastPosition = position;
-    _dbgPhysPid++;
-  }
-}
-
-int _dbgPhysLastTs = 0;
-void _dbgPhys(String tag, Map<String, dynamic> data) {
-  final now = DateTime.now().millisecondsSinceEpoch;
-  // 16ms 节流覆盖 30fps 帧率即可，物理调用量级远小于滚动事件
-  if (now - _dbgPhysLastTs < 16) return;
-  _dbgPhysLastTs = now;
-  _dbgReport('P', tag, 'ev', data);
-}
-// #endregion
-
 /// 朋友圈列表滚动物理：顶部保留 iOS 橡皮筋回弹（供封面下拉展开），
 /// 底部改为硬截止（到达列表末尾立即停止，不再越界回弹），
 /// 彻底消除快速滑动到底部时内容越界往复导致的"抖动"。
 class _MomentsScrollPhysics extends BouncingScrollPhysics {
-  const _MomentsScrollPhysics({super.parent, this.debug});
-
-  /// 物理调用级调试回调（仅在插桩期间非空，见 ListView 传入处）
-  final void Function(String tag, Map<String, dynamic> data)? debug;
+  const _MomentsScrollPhysics({super.parent});
 
   @override
   _MomentsScrollPhysics applyTo(ScrollPhysics? ancestor) =>
-      _MomentsScrollPhysics(parent: buildParent(ancestor), debug: debug);
+      _MomentsScrollPhysics(parent: buildParent(ancestor));
 
   @override
   double applyBoundaryConditions(ScrollMetrics position, double value) {
-    _dbgTrackPosition(position);
     final double result = _applyBoundaryConditions(position, value);
-    // #region debug-point P:boundary
-    debug?.call('boundary', {
-      'pid': _dbgPhysPid,
-      'p': position.pixels,
-      'v': value,
-      'r': result,
-      'seq': ++_dbgBoundarySeq,
-    });
-    // #endregion
     return result;
   }
 
@@ -123,18 +51,7 @@ class _MomentsScrollPhysics extends BouncingScrollPhysics {
   @override
   Simulation? createBallisticSimulation(
       ScrollMetrics position, double velocity) {
-    _dbgTrackPosition(position);
     final Tolerance tolerance = toleranceFor(position);
-    // #region debug-point P:ballistic
-    debug?.call('ballistic', {
-      'pid': _dbgPhysPid,
-      'p': position.pixels,
-      'v': velocity,
-      'min': position.minScrollExtent,
-      'max': position.maxScrollExtent,
-      'seq': ++_dbgBallisticSeq,
-    });
-    // #endregion
     // 顶部越界：橡皮筋回弹到 0（下拉展开封面后松手回弹）。
     // 速度取原始 velocity（与官方 BouncingScrollSimulation._underscrollSimulation
     // 一致）：负速度先继续深入越界区再回弹，避免 -velocity 造成的收敛振荡。
@@ -477,24 +394,12 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
       _coverExpanded = expanded;
       _coverDragOffset = expanded ? expandDelta : 0;
     });
-    // #region debug-point B:settle
-    _dbgReport('B', 'settleCover', 'settle', {
-      'expanded': expanded,
-      'target': targetHeight,
-      'rendered': _renderedCoverHeight,
-    });
-    // #endregion
     _playSettleAnimation(targetHeight);
   }
 
   /// 取消进行中的吸附动画（用户重新滚动/拖拽时调用），转回瞬时跟随
   void _cancelSettleAnimation() {
     if (_settleAnim == null) return;
-    // #region debug-point C:cancel
-    _dbgReport('C', 'cancelSettle', 'cancel', {
-      'rendered': _renderedCoverHeight,
-    });
-    // #endregion
     _settleController.stop();
     _settleAnim = null;
   }
@@ -502,12 +407,6 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
   /// 播放一次封面吸附动画：从当前渲染高度过渡到 [targetHeight]。
   /// 距离过小（<0.5px）时直接跳过，避免无意义的动画。
   void _playSettleAnimation(double targetHeight) {
-    // #region debug-point C:play
-    _dbgReport('C', 'playSettle', 'play', {
-      'from': _renderedCoverHeight,
-      'to': targetHeight,
-    });
-    // #endregion
     _settleController.stop();
     _settleAnim = null;
     final from = _renderedCoverHeight;
@@ -860,46 +759,14 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
                 _coverDragOffset = newDragOffset;
               });
             }
-            // #region debug-point A:scroll
-            _dbgReport('A', 'onScroll', 'upd', {
-              'p': pixels,
-              'sh': _coverShrink,
-              'of': _coverDragOffset,
-              'exp': _coverExpanded,
-              'set': coverChanged,
-              'drag': notification.dragDetails != null,
-              'out': notification.metrics.outOfRange,
-              'deg': degraded,
-              'max': notification.metrics.maxScrollExtent,
-              'view': notification.metrics.viewportDimension,
-            });
-            // #endregion
-          } else if (notification is ScrollMetricsNotification) {
-            // #region debug-point P:metrics
-            _dbgReport('P', 'metrics', 'ev', {
-              'p': notification.metrics.pixels,
-              'min': notification.metrics.minScrollExtent,
-              'max': notification.metrics.maxScrollExtent,
-              'view': notification.metrics.viewportDimension,
-            });
-            // #endregion
           } else if (notification is ScrollEndNotification) {
-            // #region debug-point C:scroll-end
-            _dbgReport('C', 'scrollEnd', 'end', {
-              'p': notification.metrics.pixels,
-              'sh': _coverShrink,
-              'of': _coverDragOffset,
-            });
-            // #endregion
             _settleCover();
           }
           return false;
         },
         child: ListView.builder(
-          // debug 回调仅插桩期间传入（_dbgPhys 顶层函数），修复后移除
-          physics: _MomentsScrollPhysics(
+          physics: const _MomentsScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
-            debug: _dbgPhys,
           ),
           // 底部留出悬浮按钮空间，避免遮挡最后一条内容
           padding: const EdgeInsets.only(top: 8, bottom: 100),

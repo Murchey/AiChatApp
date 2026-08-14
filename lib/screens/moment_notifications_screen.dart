@@ -6,7 +6,8 @@ import '../providers/character_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../widgets/character_avatar.dart';
 
-/// 朋友圈互动通知页：展示「某角色给某动态点了赞 / 评论了什么」。
+/// 朋友圈消息页：展示「某角色给某动态点了赞 / 评论了什么，
+/// 或回复了用户的评论」。
 ///
 /// 从朋友圈左上角铃铛图标进入；进入即全部标记已读（铃铛角标与底部
 /// tab 红点消失）。内容仅展示，无需点击跳转。
@@ -76,7 +77,7 @@ class _MomentNotificationsScreenState extends State<MomentNotificationsScreen> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: const CupertinoNavigationBar(
-        middle: Text('互动通知'),
+        middle: Text('朋友圈消息'),
       ),
       child: Consumer<MomentNotificationProvider>(
         builder: (context, provider, _) {
@@ -85,7 +86,7 @@ class _MomentNotificationsScreenState extends State<MomentNotificationsScreen> {
           if (activities.isEmpty) {
             return Center(
               child: Text(
-                '暂无互动通知',
+                '暂无消息',
                 style: TextStyle(
                   fontSize: 14,
                   color: context.textSecondaryColor,
@@ -111,7 +112,8 @@ class _MomentNotificationsScreenState extends State<MomentNotificationsScreen> {
                           .getCharacterById(n.characterId);
                       final actions = <String>[
                         if (n.liked) '赞了你的动态',
-                        if (n.comment.isNotEmpty) '评论了你的动态',
+                        if (n.comment.isNotEmpty && !n.isReply) '评论了你的动态',
+                        if (n.isReply) '回复了你的评论',
                       ];
                       final actionText =
                           actions.isEmpty ? '看了你的动态' : actions.join('、');

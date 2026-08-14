@@ -530,6 +530,7 @@ class MomentAiService {
     required ChatSettingsProvider chatSettings,
     required ChatProvider chatProvider,
     required CharacterProvider characterProvider,
+    required MomentNotificationProvider notificationProvider,
     required Character character,
     required Character owner,
     required Moment moment,
@@ -679,6 +680,16 @@ class MomentAiService {
         createdAt: cur.createdAt,
       );
       await characterProvider.updateMoments(owner.id, moments);
+      await notificationProvider.addActivity(MomentNotification(
+        id: 'mn_${DateTime.now().microsecondsSinceEpoch}',
+        characterId: character.id,
+        characterName: character.displayName,
+        momentId: moment.id,
+        momentContent: moment.content,
+        comment: reply,
+        isReply: true,
+        createdAt: DateTime.now(),
+      ));
       DevLogService.instance
           .log('「${character.displayName}」回复了 $userNickname 的评论：$reply');
     } catch (e) {

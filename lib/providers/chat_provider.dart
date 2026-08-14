@@ -865,6 +865,25 @@ class ChatProvider extends ChangeNotifier {
     _persist();
   }
 
+  /// 清空全部聊天数据（管理占用空间页使用）：
+  /// 清空内存中的会话/消息/上下文统计，并删除本地存储键。
+  Future<void> clearAllData() async {
+    _conversations.clear();
+    _messagesMap.clear();
+    _contextTokens.clear();
+    _systemTokens.clear();
+    _activeConversationId = null;
+    _replyingConversationId = null;
+    _runningReply = null;
+    _lastError = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_conversationsKey);
+    await prefs.remove(_messagesKey);
+    await prefs.remove(_contextTokensKey);
+    await prefs.remove(_systemTokensKey);
+    notifyListeners();
+  }
+
   /// 清空当前会话的全部消息（保留会话本身）。
   /// 再次打开该聊天不会显示任何记录，AI 也不会继承此前的上下文。
   /// 消息数据会被完全抹除（存储中不再保留该会话的任何消息）。

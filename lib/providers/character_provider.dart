@@ -340,6 +340,20 @@ class CharacterProvider extends ChangeNotifier {
       jsonEncode(_visibilityGroups.map((g) => g.toJson()).toList()),
     );
   }
+
+  /// 清除全部角色与朋友圈数据并恢复默认角色（管理占用空间页使用）：
+  /// 删除角色卡（含头像/背景 base64）、朋友圈动态、分组与被删记录，
+  /// 随后重新加载内置默认角色；用户资料（昵称/头像/签名）不受影响。
+  Future<void> resetAllData() async {
+    _characters = [];
+    _visibilityGroups = [];
+    _deletedDefaultIds = {};
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_storageKey);
+    await prefs.remove(_visibilityGroupsKey);
+    await prefs.remove(_deletedKey);
+    await loadCharacters();
+  }
 }
 
 // ─── 角色加载跨 isolate 传输的数据结构与解码函数 ─────────────────

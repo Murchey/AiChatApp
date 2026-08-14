@@ -3,8 +3,7 @@ import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/settings_provider.dart';
 import '../services/update_service.dart';
-import '../services/workshop_service.dart';
-import '../utils/app_toast.dart';
+import 'storage_manage_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -181,39 +180,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  /// 清除创意工坊下载缓存：确认后删除 workshop/ 目录下残留的
-  /// zip / .part 临时文件，不影响已导入的角色数据与朋友圈图片。
-  Future<void> _clearDownloadCache() async {
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('清除下载缓存'),
-        content: const Text(
-          '将删除创意工坊下载后残留的角色资源包 zip 与临时文件，'
-          '不影响已导入的角色数据和朋友圈图片。确定继续吗？',
-        ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('取消'),
-            onPressed: () => Navigator.pop(ctx, false),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    final removed = await WorkshopService.clearDownloadCache();
-    if (!mounted) return;
-    showAppToast(
-      removed > 0 ? '已清除 $removed 个下载缓存文件' : '没有需要清除的下载缓存',
     );
   }
 
@@ -556,7 +522,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-          // 存储空间：清理创意工坊下载后残留的 zip 缓存与临时文件
+          // 存储空间：管理应用自身占用（用户数据 + 软件缓存）
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
             decoration: BoxDecoration(
@@ -566,9 +532,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             header: const Text('存储空间'),
             children: [
               CupertinoListTile(
-                title: const Text('清除下载缓存'),
+                title: const Text('管理占用空间'),
                 subtitle: Text(
-                  '清理创意工坊下载后残留的角色资源包与临时文件',
+                  '扫描并清理聊天记录、角色数据、下载缓存等',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -579,7 +545,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   size: 16,
                   color: context.textSecondaryColor,
                 ),
-                onTap: _clearDownloadCache,
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const StorageManageScreen(),
+                  ),
+                ),
               ),
             ],
           ),

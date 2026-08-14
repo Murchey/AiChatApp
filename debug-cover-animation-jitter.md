@@ -1,6 +1,6 @@
 # Debug Session: cover-animation-jitter
 
-- **Status**: [OPEN]
+- **Status**: [CLOSED] — 修复经用户实机验证通过
 - **Issue**: 角色个人空间快速滑动到底部时，封面高度出现抖动（此前已尝试 AnimatedContainer→显式 AnimationController 两种方案，仍未解决）
 - **Debug Server**: http://127.0.0.1:<port>/event
 - **Log File**: .dbg/trae-debug-log-cover-animation-jitter.ndjson
@@ -55,10 +55,29 @@
 1. **滚动回调**（~L750-800）：由"无条件 setState"改为"**先计算目标状态，封面状态（shrink/dragOffset/expanded/吸附动画）无实际变化时跳过 setState**"；A 类上报新增 `set` 字段用于对比证明。
 2. **滚动物理**（新增 `_MomentsScrollPhysics`，~L55-130）：自定义物理，**顶部保留 Bouncing 橡皮筋**（供封面下拉展开），**底部改为 Clamping 硬截止**（到达列表末尾立即停止，不再越界回弹）；向下惯性用 `ClampingScrollSimulation`（到底即停），**向上惯性改官方 `BouncingScrollSimulation`**（摩擦→接近顶部时转入受限弹簧，不再穿透顶部）；顶部越界回弹速度由 `-velocity` 改为原始 `velocity`（与官方 `_underscrollSimulation` 一致，避免收敛振荡）。ListViews 由 `BouncingScrollPhysics` 换为 `_MomentsScrollPhysics`（~L811）。
 3. **高复杂度降级**（本轮，用户要求"复杂度过高时朋友圈不加动画滑动"）：滚动回调新增 `degraded` 判定——**松手后的越界回弹（非跟手 dragDetails==null 且 outOfRange）期间跳过封面跟手驱动**，朋友圈只做纯滚动（不加动画），封面在 ScrollEnd 时由 `_settleCover()` 吸附动画一次到位；跟手拖动（下拉展开）与正常范围内惯性滚动仍实时跟随。
-4. **post-fix3 插桩**（诊断惯性振荡，待收集日志）：物理类新增 `debug` 回调，记录每次 `createBallisticSimulation`（ballistic，含起点/速度/min/max/序号）与 `applyBoundaryConditions`（boundary，含返回值 r）；A 事件补充 `max`/`view`；新增 `ScrollMetricsNotification`（metrics）监听；A 节流 30ms→8ms；runId=post-fix3。用于判定：惯性是否反复重启（ballistic seq 暴增）、extent 是否变化（max/view/metrics）、position 是否重建（pid）。
+4. **post-fix3 插桩**（诊断惯性振荡，已回收）：物理类新增 `debug` 回调，记录每次 `createBallisticSimulation`（ballistic，含起点/速度/min/max/序号）与 `applyBoundaryConditions`（boundary，含返回值 r）；A 事件补充 `max`/`view`；新增 `ScrollMetricsNotification`（metrics）监听；A 节流 30ms→8ms；runId=post-fix3。用于判定：惯性是否反复重启（ballistic seq 暴增）、extent 是否变化（max/view/metrics）、position 是否重建（pid）。**结论见下节，插桩已于验证通过后全部移除。**
+
+### post-fix3（runId: post-fix3，2068 行）→ **根因确认**
+
+post-fix3 日志（物理级插桩：ballistic/boundary/metrics/pid）定位到真正的抖动来源：
+
+| 证据 | 数值 |
+|------|------|
+| 惯性期间 extent 反复振荡 | `max` 在 864.169 ↔ 953.057 之间往返（差 88.888px），伴随 ScrollMetricsNotification |
+| ballistic 反复重启 | 惯性滚动期间 seq 33→54 持续递增（官方仅在 applyNewDimensions / extent 变化时 goBallistic） |
+| correctBy 绕过边界 | 位置跳变由 `RenderViewport.correctBy()` 直接修正（sliver correction 路径，绕过 applyBoundaryConditions） |
+
+**根因**：`moment_card.dart` 的 `_SingleImageThumb`（朋友圈单图缩略图）无尺寸缓存——惯性滚动中卡片滚出可视区被 dispose、滑回时重新 build，缩略图在「占位高 220（3:4）」与「实际图片比例」之间反复切换 → 卡片高度变化 → `RenderSliverList` 检测到子项 extent 与 offset 失配返回 `scrollOffsetCorrection` → `RenderViewport.correctBy()` 直接跳变滚动位置（绕过边界条件）→ extent 变化再次触发 `applyNewDimensions` → ballistic 反复重启 → 位置来回跳 → 用户感知的"抖动"（含"从上向下拉动严重抖动"）。
+
+**修复**（`moment_card.dart`）：`_SingleImageThumb` 增加静态尺寸缓存（`static final Map<String, Size> _sizeCache`），同一图片路径只异步解码一次并缓存尺寸；滚动中重新 build 直接命中缓存，不再回到占位高度 → 卡片高度稳定 → extent 恒定 → 不再触发 correctBy / ballistic 重启。
 
 > 注：修复 1 的 post-fix 日志已证明底部回弹期 `set:false`（整页零重建），但用户仍反馈"抖动" → 定位到假设 E（顶部惯性穿透）+ F（越界回弹跟手动画）→ 实施修复 2 与 3。post-fix2 证实 2/3 生效，但暴露新的中段惯性振荡 → 启动 post-fix3 插桩。
 
 ## Verification Conclusion
 
-[待对比：post-fix3 日志应显示向上惯性不再穿透（`p` 不再跳到 -100 以下深度）、越界回弹期 `deg:true`（封面零跟手）；用户确认"从底部往上滑"不再抖动]
+✅ **已修复并经用户实机验证通过**（2026-08-14）。
+
+- 抖动根因：`_SingleImageThumb` 无尺寸缓存 → 滚动中缩略图在占位/实际比例间切换 → 卡片高度（extent）振荡 → sliver correction → `correctBy` 跳变 → ballistic 反复重启。
+- 修复：静态尺寸缓存（`_SingleImageThumb`，`moment_card.dart`），同路径图片只解码一次。
+- 此前实施的四项修复（滚动回调条件 setState、`_MomentsScrollPhysics` 混合物理、高复杂度降级、post-fix3 插桩）保留：前两者为真实改进，物理行为不变；插桩已全部移除。
+- 日志归档：`.dbg/trae-debug-log-cover-animation-jitter.ndjson`（pre-fix / post-fix / post-fix2 / post-fix3）。

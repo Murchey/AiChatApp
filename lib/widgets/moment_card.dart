@@ -13,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
+import '../providers/moment_notification_provider.dart';
 import '../services/moment_ai_service.dart';
 import '../utils/app_toast.dart';
 import 'character_avatar.dart';
@@ -476,6 +477,7 @@ class _MomentCardState extends State<MomentCard> {
       chatSettings: context.read<ChatSettingsProvider>(),
       chatProvider: context.read<ChatProvider>(),
       characterProvider: context.read<CharacterProvider>(),
+      notificationProvider: context.read<MomentNotificationProvider>(),
       character: replier,
       owner: character,
       moment: moment,

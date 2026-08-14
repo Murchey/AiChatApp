@@ -89,6 +89,20 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 清除用户资料中的大体积/扩展字段（管理占用空间页使用）：
+  /// 头像、地区、签名、性别；昵称与账号 ID 保留。
+  Future<void> clearProfileData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('user_avatar');
+    await prefs.remove('user_region');
+    await prefs.remove('user_signature');
+    await prefs.remove('user_gender');
+    if (_user != null) {
+      _user = _user!.copyWith(avatar: '', region: '', signature: '', gender: '');
+    }
+    notifyListeners();
+  }
+
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
