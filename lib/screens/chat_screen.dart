@@ -1174,7 +1174,7 @@ class _ChatScreenState extends State<ChatScreen>
         .read<ApiProvider>()
         .getModelById(chatSettings.selectedModelId);
     if (model == null) {
-      _showFeatureResult('请先在「聊天设置」中选择一个模型，再进行功能检测。', false);
+      _showNoModelDialog('进行功能检测');
       return false;
     }
     try {
@@ -1213,6 +1213,32 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  /// 未选择模型时的引导弹窗：告知「聊天设置」在输入框左下角的加号面板里，
+  /// 并提供【去设置】按钮直达聊天设置页。
+  void _showNoModelDialog(String action) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('未选择模型'),
+        content: Text('无法$action。请点击输入框左下角的「+」按钮打开「聊天设置」，选择模型后再试。'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () {
+              Navigator.pop(ctx);
+              _openChatSettings();
+            },
+            child: const Text('去设置'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─── 角色主动发消息 ───────────────────────────────────────
 
   /// 触发"角色主动发消息/回复"：组装参数后交给 [ChatProvider.runProactiveReply]
@@ -1230,20 +1256,7 @@ class _ChatScreenState extends State<ChatScreen>
         .read<ApiProvider>()
         .getModelById(chatSettings.selectedModelId);
     if (model == null) {
-      showCupertinoDialog(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('提示'),
-          content: const Text('请先在「聊天设置」中选择一个模型，再进行角色回复'),
-          actions: [
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('确定'),
-            ),
-          ],
-        ),
-      );
+      _showNoModelDialog('进行角色回复');
       return;
     }
 

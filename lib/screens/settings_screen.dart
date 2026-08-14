@@ -347,7 +347,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
             ],
           ),
-          // 显示设置：聊天气泡颜色与气泡内字体颜色（自己/对方 × 浅色/深色）
+          // 显示设置：气泡颜色（收进底部弹层，避免设置页过长）
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
             decoration: BoxDecoration(
@@ -356,114 +356,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             header: const Text('显示设置'),
             children: [
-              _BubbleColorRow(
-                title: '自己气泡（浅色）',
-                color: settings.bubbleColor(BubbleColorSlot.selfLight),
-                onTap: () => _showColorPicker(
-                  context: context,
-                  title: '自己气泡颜色（浅色模式）',
-                  initialColor: settings.bubbleColor(BubbleColorSlot.selfLight),
-                  onColorChanged: (c) =>
-                      settings.setBubbleColor(BubbleColorSlot.selfLight, c),
-                  onReset: () =>
-                      settings.resetBubbleColor(BubbleColorSlot.selfLight),
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.paintbrush,
+                  color: context.accentColor,
                 ),
-              ),
-              _BubbleColorRow(
-                title: '对方气泡（浅色）',
-                color: settings.bubbleColor(BubbleColorSlot.otherLight),
-                onTap: () => _showColorPicker(
-                  context: context,
-                  title: '对方气泡颜色（浅色模式）',
-                  initialColor:
-                      settings.bubbleColor(BubbleColorSlot.otherLight),
-                  onColorChanged: (c) =>
-                      settings.setBubbleColor(BubbleColorSlot.otherLight, c),
-                  onReset: () =>
-                      settings.resetBubbleColor(BubbleColorSlot.otherLight),
+                title: const Text('自定义气泡颜色'),
+                subtitle: Text(
+                  '自己 / 对方 × 浅色 / 深色：气泡与字体颜色',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
                 ),
-              ),
-              _BubbleColorRow(
-                title: '自己气泡（深色）',
-                color: settings.bubbleColor(BubbleColorSlot.selfDark),
-                onTap: () => _showColorPicker(
-                  context: context,
-                  title: '自己气泡颜色（深色模式）',
-                  initialColor: settings.bubbleColor(BubbleColorSlot.selfDark),
-                  onColorChanged: (c) =>
-                      settings.setBubbleColor(BubbleColorSlot.selfDark, c),
-                  onReset: () =>
-                      settings.resetBubbleColor(BubbleColorSlot.selfDark),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
                 ),
-              ),
-              _BubbleColorRow(
-                title: '对方气泡（深色）',
-                color: settings.bubbleColor(BubbleColorSlot.otherDark),
-                onTap: () => _showColorPicker(
-                  context: context,
-                  title: '对方气泡颜色（深色模式）',
-                  initialColor: settings.bubbleColor(BubbleColorSlot.otherDark),
-                  onColorChanged: (c) =>
-                      settings.setBubbleColor(BubbleColorSlot.otherDark, c),
-                  onReset: () =>
-                      settings.resetBubbleColor(BubbleColorSlot.otherDark),
-                ),
-              ),
-              _BubbleColorRow(
-                title: '自己气泡字体（浅色）',
-                color: settings.bubbleTextColor(BubbleTextSlot.selfLight),
-                onTap: () => _showColorPicker(
-                  context: context,
-                  title: '自己气泡字体颜色（浅色模式）',
-                  initialColor:
-                      settings.bubbleTextColor(BubbleTextSlot.selfLight),
-                  onColorChanged: (c) =>
-                      settings.setBubbleTextColor(BubbleTextSlot.selfLight, c),
-                  onReset: () =>
-                      settings.resetBubbleTextColor(BubbleTextSlot.selfLight),
-                ),
-              ),
-              _BubbleColorRow(
-                title: '对方气泡字体（浅色）',
-                color: settings.bubbleTextColor(BubbleTextSlot.otherLight),
-                onTap: () => _showColorPicker(
-                  context: context,
-                  title: '对方气泡字体颜色（浅色模式）',
-                  initialColor:
-                      settings.bubbleTextColor(BubbleTextSlot.otherLight),
-                  onColorChanged: (c) =>
-                      settings.setBubbleTextColor(BubbleTextSlot.otherLight, c),
-                  onReset: () =>
-                      settings.resetBubbleTextColor(BubbleTextSlot.otherLight),
-                ),
-              ),
-              _BubbleColorRow(
-                title: '自己气泡字体（深色）',
-                color: settings.bubbleTextColor(BubbleTextSlot.selfDark),
-                onTap: () => _showColorPicker(
-                  context: context,
-                  title: '自己气泡字体颜色（深色模式）',
-                  initialColor:
-                      settings.bubbleTextColor(BubbleTextSlot.selfDark),
-                  onColorChanged: (c) =>
-                      settings.setBubbleTextColor(BubbleTextSlot.selfDark, c),
-                  onReset: () =>
-                      settings.resetBubbleTextColor(BubbleTextSlot.selfDark),
-                ),
-              ),
-              _BubbleColorRow(
-                title: '对方气泡字体（深色）',
-                color: settings.bubbleTextColor(BubbleTextSlot.otherDark),
-                onTap: () => _showColorPicker(
-                  context: context,
-                  title: '对方气泡字体颜色（深色模式）',
-                  initialColor:
-                      settings.bubbleTextColor(BubbleTextSlot.otherDark),
-                  onColorChanged: (c) =>
-                      settings.setBubbleTextColor(BubbleTextSlot.otherDark, c),
-                  onReset: () =>
-                      settings.resetBubbleTextColor(BubbleTextSlot.otherDark),
-                ),
+                onTap: () => _showBubbleColorDrawer(context, settings),
               ),
             ],
           ),
@@ -480,7 +391,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('未读消息发送系统通知'),
                 subtitle: Text(
                   settings.unreadNotify
-                      ? '已开启，离开聊天界面时角色新消息将通过系统通知提醒'
+                      ? '离开聊天界面时角色新消息将通过系统通知提醒'
                       : '已关闭',
                   style: TextStyle(
                     fontSize: 12,
@@ -507,8 +418,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('开发者模式'),
                 subtitle: Text(
                   settings.developerMode
-                      ? '已开启，「我」页底部显示软件通知与朋友圈 AI 互动日志'
-                      : '已关闭',
+                      ? '已开启，「我」页底部显示软件通知互动日志'
+                      : '已关闭，「我」页底部显示软件通知互动日志',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -702,6 +613,181 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     initialColor: initialColor,
                     onChanged: onColorChanged,
                   ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 弹出「自定义气泡颜色」底部弹层（drawer）：
+  /// 列出自己 / 对方 × 浅色 / 深色的气泡与字体颜色 8 项，
+  /// 点击任一行再打开该颜色的选择器（弹层叠加在选择器之下）。
+  void _showBubbleColorDrawer(BuildContext context, SettingsProvider settings) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+        ),
+        decoration: BoxDecoration(
+          color: context.listBgColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '自定义气泡颜色',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text(
+                        '完成',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: context.accentColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(height: 0.5, color: context.separatorColor),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    _BubbleColorRow(
+                      title: '自己气泡（浅色）',
+                      color: settings.bubbleColor(BubbleColorSlot.selfLight),
+                      onTap: () => _showColorPicker(
+                        context: ctx,
+                        title: '自己气泡颜色（浅色模式）',
+                        initialColor:
+                            settings.bubbleColor(BubbleColorSlot.selfLight),
+                        onColorChanged: (c) =>
+                            settings.setBubbleColor(BubbleColorSlot.selfLight, c),
+                        onReset: () =>
+                            settings.resetBubbleColor(BubbleColorSlot.selfLight),
+                      ),
+                    ),
+                    _BubbleColorRow(
+                      title: '对方气泡（浅色）',
+                      color: settings.bubbleColor(BubbleColorSlot.otherLight),
+                      onTap: () => _showColorPicker(
+                        context: ctx,
+                        title: '对方气泡颜色（浅色模式）',
+                        initialColor:
+                            settings.bubbleColor(BubbleColorSlot.otherLight),
+                        onColorChanged: (c) => settings
+                            .setBubbleColor(BubbleColorSlot.otherLight, c),
+                        onReset: () =>
+                            settings.resetBubbleColor(BubbleColorSlot.otherLight),
+                      ),
+                    ),
+                    _BubbleColorRow(
+                      title: '自己气泡（深色）',
+                      color: settings.bubbleColor(BubbleColorSlot.selfDark),
+                      onTap: () => _showColorPicker(
+                        context: ctx,
+                        title: '自己气泡颜色（深色模式）',
+                        initialColor:
+                            settings.bubbleColor(BubbleColorSlot.selfDark),
+                        onColorChanged: (c) =>
+                            settings.setBubbleColor(BubbleColorSlot.selfDark, c),
+                        onReset: () =>
+                            settings.resetBubbleColor(BubbleColorSlot.selfDark),
+                      ),
+                    ),
+                    _BubbleColorRow(
+                      title: '对方气泡（深色）',
+                      color: settings.bubbleColor(BubbleColorSlot.otherDark),
+                      onTap: () => _showColorPicker(
+                        context: ctx,
+                        title: '对方气泡颜色（深色模式）',
+                        initialColor:
+                            settings.bubbleColor(BubbleColorSlot.otherDark),
+                        onColorChanged: (c) => settings
+                            .setBubbleColor(BubbleColorSlot.otherDark, c),
+                        onReset: () =>
+                            settings.resetBubbleColor(BubbleColorSlot.otherDark),
+                      ),
+                    ),
+                    _BubbleColorRow(
+                      title: '自己气泡字体（浅色）',
+                      color: settings.bubbleTextColor(BubbleTextSlot.selfLight),
+                      onTap: () => _showColorPicker(
+                        context: ctx,
+                        title: '自己气泡字体颜色（浅色模式）',
+                        initialColor:
+                            settings.bubbleTextColor(BubbleTextSlot.selfLight),
+                        onColorChanged: (c) => settings
+                            .setBubbleTextColor(BubbleTextSlot.selfLight, c),
+                        onReset: () => settings
+                            .resetBubbleTextColor(BubbleTextSlot.selfLight),
+                      ),
+                    ),
+                    _BubbleColorRow(
+                      title: '对方气泡字体（浅色）',
+                      color: settings.bubbleTextColor(BubbleTextSlot.otherLight),
+                      onTap: () => _showColorPicker(
+                        context: ctx,
+                        title: '对方气泡字体颜色（浅色模式）',
+                        initialColor:
+                            settings.bubbleTextColor(BubbleTextSlot.otherLight),
+                        onColorChanged: (c) => settings
+                            .setBubbleTextColor(BubbleTextSlot.otherLight, c),
+                        onReset: () => settings
+                            .resetBubbleTextColor(BubbleTextSlot.otherLight),
+                      ),
+                    ),
+                    _BubbleColorRow(
+                      title: '自己气泡字体（深色）',
+                      color: settings.bubbleTextColor(BubbleTextSlot.selfDark),
+                      onTap: () => _showColorPicker(
+                        context: ctx,
+                        title: '自己气泡字体颜色（深色模式）',
+                        initialColor:
+                            settings.bubbleTextColor(BubbleTextSlot.selfDark),
+                        onColorChanged: (c) => settings
+                            .setBubbleTextColor(BubbleTextSlot.selfDark, c),
+                        onReset: () =>
+                            settings.resetBubbleTextColor(BubbleTextSlot.selfDark),
+                      ),
+                    ),
+                    _BubbleColorRow(
+                      title: '对方气泡字体（深色）',
+                      color: settings.bubbleTextColor(BubbleTextSlot.otherDark),
+                      onTap: () => _showColorPicker(
+                        context: ctx,
+                        title: '对方气泡字体颜色（深色模式）',
+                        initialColor:
+                            settings.bubbleTextColor(BubbleTextSlot.otherDark),
+                        onColorChanged: (c) => settings
+                            .setBubbleTextColor(BubbleTextSlot.otherDark, c),
+                        onReset: () =>
+                            settings.resetBubbleTextColor(BubbleTextSlot.otherDark),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

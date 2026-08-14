@@ -486,9 +486,9 @@ class _MomentCardState extends State<MomentCard> {
     ));
   }
 
-  /// 长按自己的评论（或管理模式下任意评论）：在长按位置弹出悬浮菜单，
-  /// 可选择【编辑】或【删除】该条评论
-  void _showCommentMenu(Offset globalPos, int index) {
+  /// 长按可管理的评论：在长按位置弹出悬浮菜单。
+  /// 自己的评论可【编辑】【删除】；回复自己的 / 自己贴文下的评论仅【删除】。
+  void _showCommentMenu(Offset globalPos, int index, {required bool canEdit}) {
     if (_menuEntry != null) _dismissMenu();
     final overlay = Overlay.of(context);
     final overlayBox = overlay.context.findRenderObject() as RenderBox?;
@@ -534,15 +534,17 @@ class _MomentCardState extends State<MomentCard> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _menuItem(
-                    icon: CupertinoIcons.pencil,
-                    label: '编辑评论',
-                    onTap: () {
-                      _dismissMenu();
-                      _openCommentInput(editIndex: index);
-                    },
-                  ),
-                  _menuDivider(),
+                  if (canEdit) ...[
+                    _menuItem(
+                      icon: CupertinoIcons.pencil,
+                      label: '编辑评论',
+                      onTap: () {
+                        _dismissMenu();
+                        _openCommentInput(editIndex: index);
+                      },
+                    ),
+                    _menuDivider(),
+                  ],
                   _menuItem(
                     icon: CupertinoIcons.delete,
                     label: '删除评论',
@@ -817,14 +819,25 @@ class _MomentCardState extends State<MomentCard> {
               (entry) {
                 final i = entry.key;
                 final c = entry.value;
-                // 自己的评论支持长按删除；管理模式下任意角色的评论也可长按删除/编辑
+                // 长按评论可管理的情形：
+                // - 评论是"我"发的（可编辑/删除）
+                // - 评论回复了"我"（回复自己的，可删除）
+                // - 这条贴文是"我"发布的（自己贴文下的评论，可删除）
+                // - 管理模式下任意评论（可编辑/删除）
                 final isMine = c.sender == _myName;
-                final canCommentMenu = isMine || widget.manageMode;
+                final repliedToMe = c.replyTo.isNotEmpty &&
+                    (c.replyTo == _myName || c.replyTo == '我');
+                final canDelete =
+                    isMine || repliedToMe || _isSelf || widget.manageMode;
+                final canEdit = isMine || widget.manageMode;
                 return GestureDetector(
                   onTap: () => _openCommentInput(replyToName: c.sender),
-                  onLongPressStart: canCommentMenu
-                      ? (details) =>
-                          _showCommentMenu(details.globalPosition, i)
+                  onLongPressStart: canDelete
+                      ? (details) => _showCommentMenu(
+                            details.globalPosition,
+                            i,
+                            canEdit: canEdit,
+                          )
                       : null,
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 2),

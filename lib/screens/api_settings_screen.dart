@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/api_provider.dart';
+import 'chat_settings_screen.dart';
 import 'model_edit_screen.dart';
 import 'provider_preset_screen.dart';
 
@@ -440,6 +441,44 @@ class ApiSettingsScreen extends StatelessWidget {
                   color: context.textSecondaryColor,
                 ),
                 onTap: () => _showMomentModelPicker(context),
+              ),
+            ],
+          ),
+          // 聊天设置（与聊天输入框加号面板中的「聊天设置」同一页面）
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('聊天设置'),
+            children: [
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.settings,
+                  color: context.accentColor,
+                ),
+                title: const Text('上下文、压缩与使用的模型'),
+                subtitle: Text(
+                  '设置携带上下文条数、自动压缩策略及当前使用的模型',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                      builder: (_) => const ChatSettingsScreen(),
+                    ),
+                  );
+                },
               ),
             ],
           ),

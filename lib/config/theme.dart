@@ -17,7 +17,7 @@ class AppColors {
 
   // 暗色模式（页面背景统一 #111111）
   static const scaffoldDark = Color(0xFF111111);
-  static const navBarDark = Color(0xFF111111);
+  static const navBarDark = Color(0xFF1E1E1E);
   static const listBgDark = Color(0xFF222222);
   static const chatBgDark = Color(0xFF111111);
   static const bubbleSelfDark = Color(0xFF40B475); // 自己气泡

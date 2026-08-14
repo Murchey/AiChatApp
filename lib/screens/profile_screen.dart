@@ -17,6 +17,21 @@ import 'profile_edit_screen.dart';
 import 'settings_screen.dart';
 import 'workshop_screen.dart';
 
+/// 用户头像解码缓存：同一个 base64 只解码一次，并复用同一个 [MemoryImage]。
+/// 若每次 build 都新建 [MemoryImage]，图片缓存键会随之改变（Dart 的 List ==
+/// 是引用比较），导致解码缓存失效——修改主题色等触发页面重建时头像反复解码、闪烁。
+final Map<String, MemoryImage> _userAvatarImageCache = {};
+
+MemoryImage _cachedUserAvatarImage(String base64) {
+  return _userAvatarImageCache.putIfAbsent(
+    base64,
+    () {
+      if (_userAvatarImageCache.length > 16) _userAvatarImageCache.clear();
+      return MemoryImage(base64Decode(base64));
+    },
+  );
+}
+
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -448,7 +463,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: const Color(0x00000000),
         image: hasAvatar
             ? DecorationImage(
-                image: MemoryImage(base64Decode(user.avatar)),
+                image: _cachedUserAvatarImage(user.avatar),
                 fit: BoxFit.cover,
               )
             : null,

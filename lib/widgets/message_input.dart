@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/theme.dart';
+import '../utils/app_toast.dart';
 
 class MessageInput extends StatefulWidget {
   final Function(String) onSend;
@@ -167,7 +168,7 @@ class MessageInputState extends State<MessageInput> {
                     ),
                     decoration: BoxDecoration(
                       color: context.fieldBgColor,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(5),
                     ),
                   ),
                 ),
@@ -322,7 +323,10 @@ class MessageInputState extends State<MessageInput> {
   Widget _buildGridTile(BuildContext context, _GridItem item) {
     final enabled = item.enabled;
     return GestureDetector(
-      onTap: enabled ? item.onTap : null,
+      // 禁用的【相册】【拍照】：点击提示先做功能检测
+      onTap: enabled
+          ? item.onTap
+          : () => showAppToast('请先点击【功能检测】进行模型能力测试'),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
