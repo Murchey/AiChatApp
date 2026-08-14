@@ -7,6 +7,9 @@ class Conversation {
   final DateTime lastMessageTime;
   final int unreadCount;
 
+  /// 是否置顶（置顶会话在首页会话列表排最前）
+  final bool pinned;
+
   Conversation({
     required this.id,
     required this.characterId,
@@ -15,6 +18,7 @@ class Conversation {
     this.lastMessage = '',
     DateTime? lastMessageTime,
     this.unreadCount = 0,
+    this.pinned = false,
   }) : lastMessageTime = lastMessageTime ?? DateTime.now();
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
@@ -28,6 +32,7 @@ class Conversation {
           ? DateTime.parse(json['last_message_time'] as String)
           : DateTime.now(),
       unreadCount: json['unread_count'] as int? ?? 0,
+      pinned: json['pinned'] as bool? ?? false,
     );
   }
 
@@ -40,6 +45,7 @@ class Conversation {
       'last_message': lastMessage,
       'last_message_time': lastMessageTime.toIso8601String(),
       'unread_count': unreadCount,
+      'pinned': pinned,
     };
   }
 
@@ -50,6 +56,7 @@ class Conversation {
     String? lastMessage,
     DateTime? lastMessageTime,
     int? unreadCount,
+    bool? pinned,
   }) {
     return Conversation(
       id: id,
@@ -59,6 +66,7 @@ class Conversation {
       lastMessage: lastMessage ?? this.lastMessage,
       lastMessageTime: lastMessageTime ?? this.lastMessageTime,
       unreadCount: unreadCount ?? this.unreadCount,
+      pinned: pinned ?? this.pinned,
     );
   }
 }

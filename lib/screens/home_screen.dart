@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
+import '../models/conversation.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
@@ -41,6 +42,9 @@ class _HomeScreenState extends State<HomeScreen>
   bool _showCharIndexTooltip = false;
   String _currentCharTooltipLetter = '';
   bool _routeSubscribed = false;
+
+  // 会话长按悬浮菜单（Overlay，长按位置旁弹出）
+  OverlayEntry? _chatMenuEntry;
 
   @override
   void initState() {
@@ -84,6 +88,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _chatMenuEntry?.remove();
     routeObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
@@ -308,74 +313,86 @@ class _HomeScreenState extends State<HomeScreen>
               ),
               itemBuilder: (context, index) {
                 final conversation = chatProvider.conversations[index];
-                return CupertinoListTile(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
+                return GestureDetector(
+                  // 长按会话：在长按位置旁弹出悬浮菜单（置顶/取消置顶）
+                  onLongPressStart: (details) => _showChatMenu(
+                    context,
+                    details.globalPosition,
+                    conversation,
                   ),
-                  // CupertinoListTile 默认把 leading 约束在 28×28，
-                  // 必须显式指定与头像一致的尺寸，否则头像被压缩
-                  leadingSize: 45,
-                  leading: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      _buildSquareAvatar(
-                        context,
-                        conversation.characterName,
-                        conversation.characterAvatar,
-                      ),
-                      // 未读消息数字角标（退出聊天界面期间角色发来的新消息）
-                      if (conversation.unreadCount > 0)
-                        Positioned(
-                          right: -8,
-                          top: -6,
-                          child: _buildUnreadBadge(
-                            conversation.unreadCount,
-                            context.scaffoldColor,
-                          ),
-                        ),
-                    ],
-                  ),
-                  title: Text(
-                    conversation.characterName,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w500,
-                      color: context.textPrimaryColor,
+                  child: CupertinoListTile(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
                     ),
-                  ),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      conversation.lastMessage.isEmpty
-                          ? '开始对话...'
-                          : conversation.lastMessage,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    // 置顶会话背景变灰，区分普通会话
+                    backgroundColor: conversation.pinned
+                        ? context.pinnedChatColor
+                        : null,
+                    // CupertinoListTile 默认把 leading 约束在 28×28，
+                    // 必须显式指定与头像一致的尺寸，否则头像被压缩
+                    leadingSize: 45,
+                    leading: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _buildSquareAvatar(
+                          context,
+                          conversation.characterName,
+                          conversation.characterAvatar,
+                        ),
+                        // 未读消息数字角标（退出聊天界面期间角色发来的新消息）
+                        if (conversation.unreadCount > 0)
+                          Positioned(
+                            right: -8,
+                            top: -6,
+                            child: _buildUnreadBadge(
+                              conversation.unreadCount,
+                              context.scaffoldColor,
+                            ),
+                          ),
+                      ],
+                    ),
+                    title: Text(
+                      conversation.characterName,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w500,
+                        color: context.textPrimaryColor,
+                      ),
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        conversation.lastMessage.isEmpty
+                            ? '开始对话...'
+                            : conversation.lastMessage,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                    ),
+                    trailing: Text(
+                      _formatTime(conversation.lastMessageTime),
+                      style: TextStyle(
+                        fontSize: 12,
                         color: context.textSecondaryColor,
                       ),
                     ),
+                    onTap: () {
+                      Navigator.pushNamed(
+                        context,
+                        AppRoutes.chat,
+                        arguments: {
+                          'conversationId': conversation.id,
+                          'characterName': conversation.characterName,
+                          'characterAvatar': conversation.characterAvatar,
+                        },
+                      );
+                    },
                   ),
-                  trailing: Text(
-                    _formatTime(conversation.lastMessageTime),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pushNamed(
-                      context,
-                      AppRoutes.chat,
-                      arguments: {
-                        'conversationId': conversation.id,
-                        'characterName': conversation.characterName,
-                        'characterAvatar': conversation.characterAvatar,
-                      },
-                    );
-                  },
                 );
               },
             ),
@@ -687,6 +704,112 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildSquareAvatar(BuildContext context, String name, String avatar) {
     // 头像框样式跟随全局设置（方形 / 仿 QQ 圆形）
     return CharacterAvatar(base64: avatar, size: 45);
+  }
+
+  /// 长按会话弹出悬浮菜单（在长按位置旁），提供【置顶聊天】/【取消置顶】
+  void _showChatMenu(
+    BuildContext context,
+    Offset globalPos,
+    Conversation conversation,
+  ) {
+    _dismissChatMenu();
+    final overlay = Overlay.of(context);
+    final overlayBox =
+        overlay.context.findRenderObject() as RenderBox?;
+    if (overlayBox == null) return;
+
+    const panelWidth = 160.0;
+    const panelHeight = 44.0;
+    // 菜单尽量保持在屏幕内（留 8px 边距）
+    var left = globalPos.dx;
+    if (left + panelWidth > overlayBox.size.width - 8) {
+      left = overlayBox.size.width - panelWidth - 8;
+    }
+    var top = globalPos.dy;
+    if (top + panelHeight > overlayBox.size.height - 8) {
+      top = overlayBox.size.height - panelHeight - 8;
+    }
+
+    final pinned = conversation.pinned;
+    _chatMenuEntry = OverlayEntry(
+      builder: (ctx) => Stack(
+        children: [
+          // 透明遮罩：点击其他区域关闭菜单
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _dismissChatMenu,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          Positioned(
+            left: left,
+            top: top,
+            child: Container(
+              width: panelWidth,
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF000000).withValues(alpha: 0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: _chatMenuItem(
+                icon: pinned ? CupertinoIcons.pin_slash : CupertinoIcons.pin,
+                label: pinned ? '取消置顶' : '置顶聊天',
+                onTap: () {
+                  _dismissChatMenu();
+                  context.read<ChatProvider>().setPinned(
+                        conversation.id,
+                        !pinned,
+                      );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    overlay.insert(_chatMenuEntry!);
+  }
+
+  void _dismissChatMenu() {
+    _chatMenuEntry?.remove();
+    _chatMenuEntry = null;
+  }
+
+  /// 悬浮菜单单项样式（图标 + 文字，高亮色图标）
+  Widget _chatMenuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: context.accentColor),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 15,
+                color: context.textPrimaryColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _formatTime(DateTime time) {

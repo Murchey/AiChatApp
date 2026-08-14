@@ -32,8 +32,26 @@ class ChatProvider extends ChangeNotifier {
   final Map<String, int> _contextTokens = {}; // 会话 → 上下文 token 用量（输入侧，API usage 优先）
   final Map<String, int> _systemTokens = {}; // 会话 → 系统提示词 + 输出指令 token（内存态，供乐观更新）
 
-  List<Conversation> get conversations => _conversations;
+  /// 会话列表：置顶会话排最前，其余按最近消息时间倒序
+  List<Conversation> get conversations {
+    final list = List.of(_conversations);
+    list.sort((a, b) {
+      if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+      return b.lastMessageTime.compareTo(a.lastMessageTime);
+    });
+    return list;
+  }
+
   String? get lastError => _lastError;
+
+  /// 设置/取消会话置顶（置顶后移到会话列表最前）
+  void setPinned(String conversationId, bool pinned) {
+    final index = _conversations.indexWhere((c) => c.id == conversationId);
+    if (index == -1 || _conversations[index].pinned == pinned) return;
+    _conversations[index] = _conversations[index].copyWith(pinned: pinned);
+    notifyListeners();
+    _persist();
+  }
 
   /// 是否正在为该会话生成回复（聊天标题据此显示"对方正在输入……"）
   bool isReplying(String conversationId) =>

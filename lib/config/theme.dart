@@ -14,6 +14,7 @@ class AppColors {
   static const textPrimaryLight = Color(0xFF1F1F1F);
   static const textSecondaryLight = Color(0xFF8A8A8E);
   static const fieldBgLight = Color(0xFFEDEDED); // 输入框背景
+  static const pinnedChatLight = Color(0xFFEDEDED); // 置顶会话条目背景（浅色）
 
   // 暗色模式（页面背景统一 #111111）
   static const scaffoldDark = Color(0xFF111111);
@@ -25,6 +26,7 @@ class AppColors {
   static const textPrimaryDark = Color(0xFFF0F0F0);
   static const textSecondaryDark = Color(0xFF8E8E93);
   static const fieldBgDark = Color(0xFF2A2A2C);
+  static const pinnedChatDark = Color(0xFF242424); // 置顶会话条目背景（深色）
 
   // 气泡内字体颜色（自己/对方 × 浅色/深色）
   static const bubbleTextSelfLight = Color(0xFF000000);
@@ -100,6 +102,10 @@ extension AppThemeX on BuildContext {
   Color get listBgColor => isDark ? AppColors.listBgDark : AppColors.listBgLight;
 
   Color get chatBgColor => isDark ? AppColors.chatBgDark : AppColors.chatBgLight;
+
+  /// 置顶会话条目背景色
+  Color get pinnedChatColor =>
+      isDark ? AppColors.pinnedChatDark : AppColors.pinnedChatLight;
 
   /// 自己气泡颜色：支持在设置中按明暗模式单独自定义
   Color get bubbleSelfColor {
