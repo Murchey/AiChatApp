@@ -25,6 +25,10 @@ class AutoMomentService {
 
   bool _running = false;
 
+  /// 低频（一周<7条）补发积压的上限：最多一次补发 3 条，
+  /// 防止用户长时间未打开时一次刷出过多动态。
+  static const int maxCatchupCount = 3;
+
   /// 扫描并补发布已到期的角色朋友圈。
   Future<void> checkAndPublish({
     required CharacterProvider characterProvider,
@@ -71,34 +75,70 @@ class AutoMomentService {
         final latest = characterProvider.getCharacterById(character.id);
         if (latest == null) continue;
 
-        try {
-          final chatHistory = chatProvider.getRecentHistoryForCharacter(
-            character.id,
-            chatSettings.contextCount,
-          );
-          final content = await _generateContent(
-            model: model,
-            character: latest,
-            chatHistory: chatHistory,
-          );
-          if (content != null && content.isNotEmpty) {
-            final moment = await _publishMoment(
-              characterProvider: characterProvider,
-              character: latest,
-              content: content,
-              visibility: config.visibility,
-            );
-            DevLogService.instance
-                .log('「${latest.displayName}」自动发布朋友圈：$content');
-            toPublish.add((latest, moment));
-          } else {
-            DevLogService.instance
-                .log('「${latest.displayName}」自动朋友圈文案为空，跳过本次');
-          }
-        } catch (e) {
+        // 积压条数（含当前这条）：从上次到期至今过了几个子间隔
+        final elapsedMinutes = now.difference(dueAt).inMinutes;
+        final missed = (elapsedMinutes / (subInterval * 60)).floor() + 1;
+
+        // 高频（一周≥7条，子间隔≤24h）：错过多条时不补发积压，
+        // 把排期后延到下一个子间隔，保持密度但不刷屏；只错过 1 条时正常补发。
+        if (subInterval <= 24 && missed >= 2) {
           DevLogService.instance.log(
-              '「${character.displayName}」自动朋友圈生成失败：'
-              '${LLMService.describeException(e)}');
+              '「${latest.displayName}」自动朋友圈积压 $missed 条（高频），'
+              '不补发，排期后延');
+          await _advanceNextDue(
+            autoMomentProvider,
+            character.id,
+            now,
+            subInterval,
+          );
+          continue;
+        }
+
+        // 本次要发布的条数：
+        // - 高频（子间隔≤24h）：最多补发当前这条（积压≥2 已在上方后延）；
+        // - 低频（子间隔>24h）：允许补发积压，但上限 maxCatchupCount 条，
+        //   防止长时间未打开时一次刷出过多动态。
+        final catchupCount =
+            subInterval <= 24 ? 1 : min(missed, AutoMomentService.maxCatchupCount);
+
+        for (var i = 0; i < catchupCount; i++) {
+          try {
+            final chatHistory = chatProvider.getRecentHistoryForCharacter(
+              character.id,
+              chatSettings.contextCount,
+            );
+            final content = await _generateContent(
+              model: model,
+              character: latest,
+              chatHistory: chatHistory,
+            );
+            if (content != null && content.isNotEmpty) {
+              // 补发时间戳：按子间隔从最早错过时刻均匀错开到 now，
+              // 避免多条补发挤在同一时刻（朋友圈按 createdAt 降序展示）
+              final createdAt = i == catchupCount - 1
+                  ? now
+                  : now.subtract(Duration(
+                      minutes: ((catchupCount - 1 - i) * subInterval * 60)
+                          .round()));
+              final moment = await _publishMoment(
+                characterProvider: characterProvider,
+                character: latest,
+                content: content,
+                visibility: config.visibility,
+                createdAt: createdAt,
+              );
+              DevLogService.instance
+                  .log('「${latest.displayName}」自动发布朋友圈：$content');
+              toPublish.add((latest, moment));
+            } else {
+              DevLogService.instance
+                  .log('「${latest.displayName}」自动朋友圈文案为空，跳过本次');
+            }
+          } catch (e) {
+            DevLogService.instance.log(
+                '「${character.displayName}」自动朋友圈生成失败：'
+                '${LLMService.describeException(e)}');
+          }
         }
         // 无论成功失败都推进下次到期，避免同一角色反复重试
         await _advanceNextDue(
@@ -205,18 +245,21 @@ class AutoMomentService {
     return buf.toString();
   }
 
-  /// 往角色自己的朋友圈列表头部插入一条动态（朋友圈 feed 会自动聚合展示）
+  /// 往角色自己的朋友圈列表头部插入一条动态（朋友圈 feed 会自动聚合展示）。
+  /// [createdAt] 默认取当前时间；补发积压时可传入错开的历史时间戳，
+  /// 让多条补发在 feed 中按时间自然排开。
   Future<Moment> _publishMoment({
     required CharacterProvider characterProvider,
     required Character character,
     required String content,
     required String visibility,
+    DateTime? createdAt,
   }) async {
     final moment = Moment(
       id: 'auto_${DateTime.now().microsecondsSinceEpoch}',
       content: content,
       visibility: visibility,
-      createdAt: DateTime.now(),
+      createdAt: createdAt ?? DateTime.now(),
     );
     await characterProvider.updateMoments(character.id, [
       moment,
