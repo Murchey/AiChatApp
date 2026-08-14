@@ -184,6 +184,8 @@ class CharacterPackService {
       userRelationship: str('user_relationship'),
       activeStart: str('active_start'),
       activeEnd: str('active_end'),
+      modelId: str('model_id'),
+      defaultModelId: str('default_model_id'),
       tags: (data['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       moments: moments,
     );
@@ -384,6 +386,10 @@ class CharacterPackService {
         // 活跃时段（"HH:mm"，仅写入已设置的字段）
         if (c.activeStart.isNotEmpty) 'active_start': c.activeStart,
         if (c.activeEnd.isNotEmpty) 'active_end': c.activeEnd,
+        // 角色独立使用的模型（空表示跟随全局聊天模型）
+        if (c.modelId.isNotEmpty) 'model_id': c.modelId,
+        // 缺省模型（全局模型未配置时的兜底）
+        if (c.defaultModelId.isNotEmpty) 'default_model_id': c.defaultModelId,
       };
       // 持久化记忆点：写入 memory_points（[{content, created_at}]）
       final memory = memoryByCharacter?[c.id] ?? const <MemoryPoint>[];

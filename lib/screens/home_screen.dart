@@ -4,10 +4,10 @@ import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
-import '../models/conversation.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/group_chat_provider.dart';
 import '../providers/auto_moment_provider.dart';
 import '../providers/api_provider.dart';
 import '../providers/moment_notification_provider.dart';
@@ -23,6 +23,8 @@ import '../widgets/update_dialogs.dart';
 import 'moments_screen.dart';
 import 'profile_screen.dart';
 import 'chat_search_screen.dart';
+import 'create_group_screen.dart';
+import 'group_chat_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -276,21 +278,33 @@ class _HomeScreenState extends State<HomeScreen>
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('AiChat'),
-        // 右上角搜索：进入全局聊天记录搜索页
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () {
-            Navigator.push(
-              context,
-              CupertinoPageRoute(builder: (_) => const ChatSearchScreen()),
-            );
-          },
-          child: const Icon(CupertinoIcons.search),
+        // 右上角：搜索 + 加号（加号用于创建群聊）
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  CupertinoPageRoute(builder: (_) => const ChatSearchScreen()),
+                );
+              },
+              child: const Icon(CupertinoIcons.search),
+            ),
+            const SizedBox(width: 8),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _openCreateGroup,
+              child: const Icon(CupertinoIcons.add),
+            ),
+          ],
         ),
       ),
-      child: Consumer<ChatProvider>(
-        builder: (context, chatProvider, _) {
-          if (chatProvider.conversations.isEmpty) {
+      child: Consumer2<ChatProvider, GroupChatProvider>(
+        builder: (context, chatProvider, groupProvider, _) {
+          final entries = _buildChatEntries(chatProvider, groupProvider);
+          if (entries.isEmpty) {
             return Center(
               child: Text(
                 '暂无会话',
@@ -305,20 +319,20 @@ class _HomeScreenState extends State<HomeScreen>
           return Container(
             color: context.scaffoldColor,
             child: ListView.separated(
-              itemCount: chatProvider.conversations.length,
+              itemCount: entries.length,
               separatorBuilder: (_, __) => Container(
                 height: 0.5,
                 margin: const EdgeInsets.only(left: 57),
                 color: context.separatorColor,
               ),
               itemBuilder: (context, index) {
-                final conversation = chatProvider.conversations[index];
+                final entry = entries[index];
                 return GestureDetector(
                   // 长按会话：在长按位置旁弹出悬浮菜单（置顶/取消置顶）
-                  onLongPressStart: (details) => _showChatMenu(
+                  onLongPressStart: (details) => _showEntryMenu(
                     context,
                     details.globalPosition,
-                    conversation,
+                    entry,
                   ),
                   child: CupertinoListTile(
                     padding: const EdgeInsets.symmetric(
@@ -326,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen>
                       vertical: 10,
                     ),
                     // 置顶会话背景变灰，区分普通会话
-                    backgroundColor: conversation.pinned
+                    backgroundColor: entry.pinned
                         ? context.pinnedChatColor
                         : null,
                     // CupertinoListTile 默认把 leading 约束在 28×28，
@@ -337,23 +351,26 @@ class _HomeScreenState extends State<HomeScreen>
                       children: [
                         _buildSquareAvatar(
                           context,
-                          conversation.characterName,
-                          conversation.characterAvatar,
+                          entry.title,
+                          entry.avatar,
+                          fallbackIcon: entry.isGroup
+                              ? CupertinoIcons.person_3_fill
+                              : CupertinoIcons.person_fill,
                         ),
-                        // 未读消息数字角标（退出聊天界面期间角色发来的新消息）
-                        if (conversation.unreadCount > 0)
+                        // 未读消息数字角标（仅私聊；群聊暂无未读跟踪）
+                        if (!entry.isGroup && entry.unreadCount > 0)
                           Positioned(
                             right: -8,
                             top: -6,
                             child: _buildUnreadBadge(
-                              conversation.unreadCount,
+                              entry.unreadCount,
                               context.scaffoldColor,
                             ),
                           ),
                       ],
                     ),
                     title: Text(
-                      conversation.characterName,
+                      entry.title,
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w500,
@@ -363,9 +380,9 @@ class _HomeScreenState extends State<HomeScreen>
                     subtitle: Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        conversation.lastMessage.isEmpty
+                        entry.lastMessage.isEmpty
                             ? '开始对话...'
-                            : conversation.lastMessage,
+                            : entry.lastMessage,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -375,23 +392,13 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                     trailing: Text(
-                      _formatTime(conversation.lastMessageTime),
+                      _formatTime(entry.lastMessageTime),
                       style: TextStyle(
                         fontSize: 12,
                         color: context.textSecondaryColor,
                       ),
                     ),
-                    onTap: () {
-                      Navigator.pushNamed(
-                        context,
-                        AppRoutes.chat,
-                        arguments: {
-                          'conversationId': conversation.id,
-                          'characterName': conversation.characterName,
-                          'characterAvatar': conversation.characterAvatar,
-                        },
-                      );
-                    },
+                    onTap: () => _openChatEntry(entry),
                   ),
                 );
               },
@@ -399,6 +406,70 @@ class _HomeScreenState extends State<HomeScreen>
           );
         },
       ),
+    );
+  }
+
+  /// 合并私聊与会话为统一会话列表：置顶优先，其余按最近消息时间倒序
+  List<_HomeChatEntry> _buildChatEntries(
+    ChatProvider chatProvider,
+    GroupChatProvider groupProvider,
+  ) {
+    final entries = <_HomeChatEntry>[
+      for (final c in chatProvider.conversations)
+        _HomeChatEntry(
+          isGroup: false,
+          id: c.id,
+          title: c.characterName,
+          avatar: c.characterAvatar,
+          lastMessage: c.lastMessage,
+          lastMessageTime: c.lastMessageTime,
+          pinned: c.pinned,
+          unreadCount: c.unreadCount,
+        ),
+      for (final g in groupProvider.groups)
+        _HomeChatEntry(
+          isGroup: true,
+          id: g.id,
+          title: '${g.name}（${g.memberCount}）',
+          avatar: g.avatar,
+          lastMessage: g.lastMessage,
+          lastMessageTime: g.lastMessageTime,
+          pinned: g.pinned,
+          unreadCount: 0,
+        ),
+    ];
+    entries.sort((a, b) {
+      if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+      return b.lastMessageTime.compareTo(a.lastMessageTime);
+    });
+    return entries;
+  }
+
+  void _openCreateGroup() {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(builder: (_) => const CreateGroupScreen()),
+    );
+  }
+
+  void _openChatEntry(_HomeChatEntry entry) {
+    if (entry.isGroup) {
+      Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (_) => GroupChatScreen(groupId: entry.id),
+        ),
+      );
+      return;
+    }
+    Navigator.pushNamed(
+      context,
+      AppRoutes.chat,
+      arguments: {
+        'conversationId': entry.id,
+        'characterName': entry.title,
+        'characterAvatar': entry.avatar,
+      },
     );
   }
 
@@ -701,16 +772,25 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildSquareAvatar(BuildContext context, String name, String avatar) {
+  Widget _buildSquareAvatar(
+    BuildContext context,
+    String name,
+    String avatar, {
+    IconData fallbackIcon = CupertinoIcons.person_fill,
+  }) {
     // 头像框样式跟随全局设置（方形 / 仿 QQ 圆形）
-    return CharacterAvatar(base64: avatar, size: 45);
+    return CharacterAvatar(
+      base64: avatar,
+      size: 45,
+      fallbackIcon: fallbackIcon,
+    );
   }
 
   /// 长按会话弹出悬浮菜单（在长按位置旁），提供【置顶聊天】/【取消置顶】
-  void _showChatMenu(
+  void _showEntryMenu(
     BuildContext context,
     Offset globalPos,
-    Conversation conversation,
+    _HomeChatEntry entry,
   ) {
     _dismissChatMenu();
     final overlay = Overlay.of(context);
@@ -730,7 +810,7 @@ class _HomeScreenState extends State<HomeScreen>
       top = overlayBox.size.height - panelHeight - 8;
     }
 
-    final pinned = conversation.pinned;
+    final pinned = entry.pinned;
     _chatMenuEntry = OverlayEntry(
       builder: (ctx) => Stack(
         children: [
@@ -764,10 +844,17 @@ class _HomeScreenState extends State<HomeScreen>
                 label: pinned ? '取消置顶' : '置顶聊天',
                 onTap: () {
                   _dismissChatMenu();
-                  context.read<ChatProvider>().setPinned(
-                        conversation.id,
-                        !pinned,
-                      );
+                  if (entry.isGroup) {
+                    context.read<GroupChatProvider>().setPinned(
+                          entry.id,
+                          !pinned,
+                        );
+                  } else {
+                    context.read<ChatProvider>().setPinned(
+                          entry.id,
+                          !pinned,
+                        );
+                  }
                 },
               ),
             ),
@@ -820,4 +907,27 @@ class _HomeScreenState extends State<HomeScreen>
     if (diff.inMinutes > 0) return '${diff.inMinutes}分钟前';
     return '刚刚';
   }
+}
+
+/// 首页会话列表统一条目：私聊与群聊混排使用同一份数据快照
+class _HomeChatEntry {
+  final bool isGroup;
+  final String id;
+  final String title;
+  final String avatar;
+  final String lastMessage;
+  final DateTime lastMessageTime;
+  final bool pinned;
+  final int unreadCount;
+
+  const _HomeChatEntry({
+    required this.isGroup,
+    required this.id,
+    required this.title,
+    required this.avatar,
+    required this.lastMessage,
+    required this.lastMessageTime,
+    required this.pinned,
+    required this.unreadCount,
+  });
 }

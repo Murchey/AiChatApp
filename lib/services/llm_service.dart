@@ -111,6 +111,48 @@ class LLMService {
     return ProactiveResult(result, completion.usage);
   }
 
+  /// 群聊「是否插话」轻量判定：让模型仅回答「是/否」。
+  ///
+  /// [systemPrompt] 为该成员的人设提示词，[historyMessages] 为群聊上下文。
+  /// 返回 true 表示该成员此刻要插话回复，false 表示跳过。
+  /// 模型偶发返回空内容（部分快速/推理模型在小 max_tokens 下会空响应）时
+  /// 视为「沉默」（返回 false），不让单个成员的判定失败打断整个群聊；
+  /// 其他 API 错误（网络/鉴权/配置）仍抛出 [LLMException] 由调用方提示。
+  static Future<bool> shouldReply({
+    required ApiModel model,
+    required String systemPrompt,
+    List<Map<String, Object>> historyMessages = const [],
+  }) async {
+    bool shouldInterject;
+    try {
+      final completion = await fetchCompletion(
+        model: model,
+        messages: [
+          {'role': 'system', 'content': systemPrompt},
+          ...historyMessages,
+          {
+            'role': 'user',
+            'content': '【系统指令】群聊中其他成员可能正在发言。请仅回答一个字：'
+                '「是」表示你此刻要插话回复，「否」表示保持沉默。不要输出任何其他内容。',
+          },
+        ],
+        temperature: 0.3,
+        // 8 过小：部分模型（尤其 DeepSeek 推理系）在小 max_tokens 下会返回空内容；
+        // 64 足够输出"是/否"，同时不会让判定请求浪费过多 token
+        maxTokens: 64,
+      );
+      final raw = completion.content.trim();
+      shouldInterject = raw.contains('是') && !raw.contains('否');
+    } on LLMException catch (e) {
+      if (e.message.contains('返回内容为空') ||
+          e.message.contains('未包含任何回复内容')) {
+        return false;
+      }
+      rethrow;
+    }
+    return shouldInterject;
+  }
+
   /// 发送图片消息：以 OpenAI 兼容的视觉消息格式，把用户选择的图片
   /// （转 base64 data URL）连同输出指令作为最后一条 user 消息发给模型，
   /// 让角色"看到"图片后按 JSON 数组格式回复。

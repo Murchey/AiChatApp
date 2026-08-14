@@ -123,6 +123,26 @@ class CharacterProvider extends ChangeNotifier {
     await _persistCharacters();
   }
 
+  /// 更新角色独立使用的模型（空表示跟随全局聊天模型）并持久化
+  Future<void> updateCharacterModel(String id, String modelId) async {
+    final index = _characters.indexWhere((c) => c.id == id);
+    if (index == -1) return;
+    _characters[index] = _characters[index].copyWith(modelId: modelId);
+    notifyListeners();
+    await _persistCharacters();
+  }
+
+  /// 更新角色缺省模型（空表示无缺省模型）。
+  /// 角色未指定具体模型且全局聊天模型未配置时，群聊将用该模型兜底，
+  /// 避免角色因无模型而不应答。
+  Future<void> updateCharacterDefaultModel(String id, String modelId) async {
+    final index = _characters.indexWhere((c) => c.id == id);
+    if (index == -1) return;
+    _characters[index] = _characters[index].copyWith(defaultModelId: modelId);
+    notifyListeners();
+    await _persistCharacters();
+  }
+
   /// 更新角色头像并持久化
   Future<void> updateAvatar(String id, String avatarBase64) async {
     final index = _characters.indexWhere((c) => c.id == id);
@@ -442,6 +462,9 @@ _CharacterDecoded _decodeCharacterStore(_CharacterRawStore raw) {
               custom['user_relationship'] as String? ?? c.userRelationship,
           activeStart: custom['active_start'] as String? ?? c.activeStart,
           activeEnd: custom['active_end'] as String? ?? c.activeEnd,
+          modelId: custom['model_id'] as String? ?? c.modelId,
+          defaultModelId:
+              custom['default_model_id'] as String? ?? c.defaultModelId,
           tags: (custom['tags'] as List<dynamic>?)?.cast<String>() ?? c.tags,
         );
       }

@@ -37,6 +37,9 @@ class ChatRecordsService {
         'created_at': m.createdAt.toIso8601String(),
         'quote_content': m.quoteContent,
         'quote_sender': m.quoteSender,
+        // 群聊专属：记录发送者角色，导入后可还原多角色发言
+        'sender_character_id': m.senderCharacterId,
+        'sender_name': m.senderName,
       };
       if (m.isForwardCard) {
         data['forwarded_items'] =
@@ -162,6 +165,8 @@ class ChatRecordsService {
             DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
         quoteContent: map['quote_content'] as String? ?? '',
         quoteSender: map['quote_sender'] as String? ?? '',
+        senderCharacterId: map['sender_character_id'] as String? ?? '',
+        senderName: map['sender_name'] as String? ?? '',
         forwardedItems: forwarded,
       ));
     }

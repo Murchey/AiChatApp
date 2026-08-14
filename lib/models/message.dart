@@ -45,6 +45,14 @@ class Message {
   final String content;
   final MessageType type;
   final MessageSender sender;
+
+  /// 群聊中该角色消息对应的角色 id（私聊/用户消息为空串）。
+  /// 用于群聊气泡解析发送者头像/昵称与取对应模型。
+  final String senderCharacterId;
+
+  /// 群聊中角色消息的发送者显示名（私聊/用户消息为空串）。
+  /// 群聊历史上下文需要知道每条角色消息是谁发的。
+  final String senderName;
   final DateTime createdAt;
   final bool isRead;
   // 引用消息内容（可选）
@@ -61,6 +69,8 @@ class Message {
     required this.content,
     this.type = MessageType.text,
     required this.sender,
+    this.senderCharacterId = '',
+    this.senderName = '',
     DateTime? createdAt,
     this.isRead = false,
     this.quoteContent = '',
@@ -86,6 +96,8 @@ class Message {
         (e) => e.name == json['sender'],
         orElse: () => MessageSender.user,
       ),
+      senderCharacterId: json['sender_character_id'] as String? ?? '',
+      senderName: json['sender_name'] as String? ?? '',
       createdAt: DateTime.parse(json['created_at'] as String),
       isRead: json['is_read'] as bool? ?? false,
       quoteContent: json['quote_content'] as String? ?? '',
@@ -105,6 +117,8 @@ class Message {
       'content': content,
       'type': type.name,
       'sender': sender.name,
+      'sender_character_id': senderCharacterId,
+      'sender_name': senderName,
       'created_at': createdAt.toIso8601String(),
       'is_read': isRead,
       'quote_content': quoteContent,

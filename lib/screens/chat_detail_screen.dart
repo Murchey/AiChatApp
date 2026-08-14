@@ -7,12 +7,14 @@ import '../models/character.dart';
 import '../models/conversation.dart';
 import '../models/visibility_group.dart';
 import '../providers/auto_moment_provider.dart';
+import '../providers/api_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../services/prompt_builder.dart';
 import '../widgets/character_avatar.dart';
 import 'character_detail_screen.dart';
+import 'create_group_screen.dart';
 import 'memory_point_manage_screen.dart';
 import 'moment_visibility_screen.dart';
 
@@ -464,6 +466,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         ? '$activeStart - $activeEnd'
         : '';
 
+    // 角色模型展示：指定模型 → 缺省模型（标「缺省」）→ 跟随全局模型
+    final api = context.read<ApiProvider>();
+    final model = api.getModelById(character?.modelId);
+    final defaultModel =
+        model == null ? api.getModelById(character?.defaultModelId) : null;
+    final modelLabel = model != null
+        ? model.displayName
+        : defaultModel != null
+            ? '${defaultModel.displayName}（缺省）'
+            : '跟随全局模型';
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -549,7 +562,157 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               activeEnd: activeEnd,
             ),
           ),
+          _separator(),
+          _infoTile(
+            icon: CupertinoIcons.chat_bubble_2,
+            label: '使用的模型',
+            value: modelLabel,
+            placeholder: '跟随全局模型',
+            onTap: _showModelPicker,
+          ),
         ],
+      ),
+    );
+  }
+
+  /// 弹出角色模型选择面板：
+  /// 1. 跟随全局模型（使用「聊天设置」中的全局聊天模型）
+  /// 2. 缺省模型（全局模型未配置时的兜底，保证角色群聊中总能应答）
+  /// 3. 指定模型（该角色始终使用此模型）
+  void _showModelPicker() {
+    final characterId = _characterId;
+    if (characterId.isEmpty) return;
+    final api = context.read<ApiProvider>();
+    final character =
+        context.read<CharacterProvider>().getCharacterById(characterId);
+    final currentId = character?.modelId ?? '';
+    final defaultId = character?.defaultModelId ?? '';
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        decoration: BoxDecoration(
+          color: context.listBgColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Text(
+                  '选择角色使用的模型',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    CupertinoListTile(
+                      leading: Icon(
+                        currentId.isEmpty && defaultId.isEmpty
+                            ? CupertinoIcons.check_mark_circled_solid
+                            : CupertinoIcons.circle,
+                        color: currentId.isEmpty && defaultId.isEmpty
+                            ? context.accentColor
+                            : context.textSecondaryColor,
+                      ),
+                      title: const Text('跟随全局模型'),
+                      subtitle: Text(
+                        '使用「聊天设置」中选中的全局聊天模型',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        final provider = context.read<CharacterProvider>();
+                        provider.updateCharacterModel(characterId, '');
+                        provider.updateCharacterDefaultModel(characterId, '');
+                      },
+                    ),
+                    _pickerSectionLabel('缺省模型（全局模型未设置时的兜底）'),
+                    for (final m in api.models)
+                      CupertinoListTile(
+                        leading: Icon(
+                          currentId.isEmpty && m.id == defaultId
+                              ? CupertinoIcons.check_mark_circled_solid
+                              : CupertinoIcons.circle,
+                          color: currentId.isEmpty && m.id == defaultId
+                              ? context.accentColor
+                              : context.textSecondaryColor,
+                        ),
+                        title: Text(m.displayName),
+                        subtitle: Text(
+                          m.modelName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          final provider = context.read<CharacterProvider>();
+                          provider.updateCharacterDefaultModel(
+                            characterId,
+                            m.id,
+                          );
+                          provider.updateCharacterModel(characterId, '');
+                        },
+                      ),
+                    _pickerSectionLabel('指定模型（始终使用该模型）'),
+                    for (final m in api.models)
+                      CupertinoListTile(
+                        leading: Icon(
+                          m.id == currentId
+                              ? CupertinoIcons.check_mark_circled_solid
+                              : CupertinoIcons.circle,
+                          color: m.id == currentId
+                              ? context.accentColor
+                              : context.textSecondaryColor,
+                        ),
+                        title: Text(m.displayName),
+                        subtitle: Text(
+                          m.modelName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          final provider = context.read<CharacterProvider>();
+                          provider.updateCharacterModel(characterId, m.id);
+                          provider.updateCharacterDefaultModel(characterId, '');
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 模型选择面板里的分组小标题
+  Widget _pickerSectionLabel(String text) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          color: context.textSecondaryColor,
+        ),
       ),
     );
   }
@@ -920,6 +1083,29 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         children: [
           CupertinoListTile(
             leading: Icon(
+              CupertinoIcons.person_3_fill,
+              color: context.textPrimaryColor,
+            ),
+            title: Text(
+              '组建群聊',
+              style: TextStyle(color: context.textPrimaryColor),
+            ),
+            subtitle: Text(
+              '把当前角色和其他角色拉进同一个群聊',
+              style: TextStyle(
+                fontSize: 12,
+                color: context.textSecondaryColor,
+              ),
+            ),
+            onTap: _openCreateGroup,
+          ),
+          Container(
+            height: 0.5,
+            margin: const EdgeInsets.only(left: 16),
+            color: context.separatorColor,
+          ),
+          CupertinoListTile(
+            leading: Icon(
               CupertinoIcons.clear_circled,
               color: context.textPrimaryColor,
             ),
@@ -1086,6 +1272,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       context,
       CupertinoPageRoute(
         builder: (_) => MemoryPointManageScreen(characterId: _characterId),
+      ),
+    );
+  }
+
+  /// 从当前角色会话进入创建群聊，预选该角色
+  void _openCreateGroup() {
+    final characterId = _characterId;
+    if (characterId.isEmpty) return;
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => CreateGroupScreen(initialMemberIds: [characterId]),
       ),
     );
   }

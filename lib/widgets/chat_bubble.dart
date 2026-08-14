@@ -39,10 +39,43 @@ String _renderEmoji(String text) {
   });
 }
 
+/// 将消息内容渲染为富文本：`[表情]` 转 emoji，`@名字` 高亮为蓝色。
+TextSpan _buildMessageSpan(
+  BuildContext context,
+  String content,
+  Color baseColor,
+) {
+  final text = _renderEmoji(content);
+  final spans = <TextSpan>[];
+  var start = 0;
+  for (final m in RegExp(r'(@[^\s@]+)').allMatches(text)) {
+    if (m.start > start) {
+      spans.add(TextSpan(text: text.substring(start, m.start)));
+    }
+    spans.add(TextSpan(
+      text: m.group(1),
+      style: const TextStyle(
+        color: CupertinoColors.systemBlue,
+        fontWeight: FontWeight.w500,
+      ),
+    ));
+    start = m.end;
+  }
+  if (start < text.length) {
+    spans.add(TextSpan(text: text.substring(start)));
+  }
+  return TextSpan(
+    children: spans,
+    style: TextStyle(fontSize: 16, height: 1.4, color: baseColor),
+  );
+}
+
 class ChatBubble extends StatefulWidget {
   final Message message;
   final String userAvatar;
   final String characterAvatar;
+  /// 群聊中角色消息的发送者显示名（非空时显示在气泡上方，私聊为空）
+  final String senderName;
   /// 回调参数为消息本身 + 气泡的 GlobalKey（用于定位菜单）
   final Function(Message message, GlobalKey bubbleKey)? onLongPress;
   /// 多选模式：点击气泡切换选中，且不再触发长按菜单
@@ -63,6 +96,7 @@ class ChatBubble extends StatefulWidget {
     required this.message,
     this.userAvatar = '',
     this.characterAvatar = '',
+    this.senderName = '',
     this.onLongPress,
     this.selectMode = false,
     this.selected = false,
@@ -90,6 +124,31 @@ class _ChatBubbleState extends State<ChatBubble> {
       return _buildForwardCard(context);
     }
 
+    // 系统事件消息（如群成员加入/移除）：居中灰色小气泡，无头像/引用/长按菜单
+    if (message.type == MessageType.system) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: context.textSecondaryColor.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              message.content,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: context.textSecondaryColor,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final avatar = isUser ? widget.userAvatar : widget.characterAvatar;
     final isImage = message.type == MessageType.image;
     final isFile = message.type == MessageType.file;
@@ -108,62 +167,80 @@ class _ChatBubbleState extends State<ChatBubble> {
           // 多选模式：选中勾选框（消息在左侧时勾选框在气泡右侧）
           if (widget.selectMode && !isUser) _buildSelectCheck(context),
           Flexible(
-            child: GestureDetector(
-              onTap: widget.selectMode ? widget.onTap : null,
-              onLongPress: widget.selectMode
-                  ? null
-                  : (widget.onLongPress != null
-                      ? () => widget.onLongPress!(message, _bubbleKey)
-                      : null),
-              child: Container(
-                key: _bubbleKey,
-                // 图片/文件消息不包裹气泡（透明背景、无内边距），仅多选时显示选中描边
-                padding: isImage || isFile
-                    ? EdgeInsets.all(widget.selected ? 2 : 0)
-                    : const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isImage || isFile
-                      ? CupertinoColors.transparent
-                      : (isUser
-                          ? context.bubbleSelfColor
-                          : context.bubbleOtherColor),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: widget.selected
-                        ? context.accentColor
-                        : (isImage || isFile
-                            ? CupertinoColors.transparent
-                            : context.separatorColor),
-                    width: widget.selected ? 1.5 : 0.5,
+            child: Column(
+              crossAxisAlignment:
+                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 群聊中角色消息显示发送者昵称（私聊无）
+                if (!isUser && widget.senderName.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 2, bottom: 3),
+                    child: Text(
+                      widget.senderName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                  ),
+                GestureDetector(
+                  onTap: widget.selectMode ? widget.onTap : null,
+                  onLongPress: widget.selectMode
+                      ? null
+                      : (widget.onLongPress != null
+                          ? () => widget.onLongPress!(message, _bubbleKey)
+                          : null),
+                  child: Container(
+                    key: _bubbleKey,
+                    // 图片/文件消息不包裹气泡（透明背景、无内边距），仅多选时显示选中描边
+                    padding: isImage || isFile
+                        ? EdgeInsets.all(widget.selected ? 2 : 0)
+                        : const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isImage || isFile
+                          ? CupertinoColors.transparent
+                          : (isUser
+                              ? context.bubbleSelfColor
+                              : context.bubbleOtherColor),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: widget.selected
+                            ? context.accentColor
+                            : (isImage || isFile
+                                ? CupertinoColors.transparent
+                                : context.separatorColor),
+                        width: widget.selected ? 1.5 : 0.5,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        // 引用块
+                        if (message.quoteContent.isNotEmpty)
+                          _buildQuoteBlock(context, widget.message),
+                        if (isImage)
+                          _buildImageContent(context)
+                        else if (isFile) ...[
+                          _buildFileContent(context),
+                          const SizedBox(height: 6),
+                        ] else ...[
+                          RichText(
+                            text: _buildMessageSpan(
+                              context,
+                              message.content,
+                              isUser
+                                  ? context.bubbleTextSelfColor
+                                  : context.bubbleTextOtherColor,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // 引用块
-                    if (message.quoteContent.isNotEmpty)
-                      _buildQuoteBlock(context, widget.message),
-                    if (isImage)
-                      _buildImageContent(context)
-                    else if (isFile) ...[
-                      _buildFileContent(context),
-                      const SizedBox(height: 6),
-                    ] else ...[
-                      Text(
-                        _renderEmoji(message.content),
-                        style: TextStyle(
-                          fontSize: 16,
-                          height: 1.4,
-                          color: isUser
-                              ? context.bubbleTextSelfColor
-                              : context.bubbleTextOtherColor,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+              ],
             ),
           ),
           // 多选模式：消息在右侧时勾选框在气泡左侧

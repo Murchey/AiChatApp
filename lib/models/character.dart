@@ -18,6 +18,13 @@ class Character {
   /// 在该时间段内聊天时，角色不会主动道别/说晚安，保持活跃
   final String activeStart;
   final String activeEnd;
+
+  /// 角色独立使用的模型 id（空表示跟随全局聊天模型），群聊按此逐角色选模型
+  final String modelId;
+
+  /// 缺省模型 id：角色未指定具体模型（[modelId] 为空）且全局聊天模型
+  /// 也未配置时的兜底模型，避免群聊中该角色因无模型而不应答
+  final String defaultModelId;
   final List<String> tags;
   final List<Moment> moments; // 朋友圈动态（详情页展示）
 
@@ -36,6 +43,8 @@ class Character {
     this.userRelationship = '',
     this.activeStart = '',
     this.activeEnd = '',
+    this.modelId = '',
+    this.defaultModelId = '',
     this.tags = const [],
     this.moments = const [],
   });
@@ -59,6 +68,8 @@ class Character {
       userRelationship: json['user_relationship'] as String? ?? '',
       activeStart: json['active_start'] as String? ?? '',
       activeEnd: json['active_end'] as String? ?? '',
+      modelId: json['model_id'] as String? ?? '',
+      defaultModelId: json['default_model_id'] as String? ?? '',
       tags: (json['tags'] as List<dynamic>?)?.cast<String>() ?? [],
       moments: (json['moments'] as List<dynamic>?)
               ?.map((e) => Moment.fromJson(e as Map<String, dynamic>))
@@ -83,6 +94,8 @@ class Character {
       'user_relationship': userRelationship,
       'active_start': activeStart,
       'active_end': activeEnd,
+      'model_id': modelId,
+      'default_model_id': defaultModelId,
       'tags': tags,
       'moments': moments.map((e) => e.toJson()).toList(),
     };
@@ -102,6 +115,8 @@ class Character {
     String? userRelationship,
     String? activeStart,
     String? activeEnd,
+    String? modelId,
+    String? defaultModelId,
     List<String>? tags,
     List<Moment>? moments,
   }) {
@@ -120,6 +135,8 @@ class Character {
       userRelationship: userRelationship ?? this.userRelationship,
       activeStart: activeStart ?? this.activeStart,
       activeEnd: activeEnd ?? this.activeEnd,
+      modelId: modelId ?? this.modelId,
+      defaultModelId: defaultModelId ?? this.defaultModelId,
       tags: tags ?? this.tags,
       moments: moments ?? this.moments,
     );

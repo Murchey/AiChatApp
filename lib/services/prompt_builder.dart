@@ -87,6 +87,16 @@ ${_formatTime(currentTime)} (格式: YYYY-MM-DD HH:mm:ss)
         : nowMin >= start || nowMin < end;
   }
 
+  /// 公开的活跃时段判定（供群聊等场景复用）：
+  /// 当前时间是否落在 [activeStart]~[activeEnd]（HH:mm，支持跨零点）内。
+  static bool inActivePeriod(
+    DateTime now,
+    String activeStart,
+    String activeEnd,
+  ) {
+    return _inActivePeriod(now, activeStart, activeEnd);
+  }
+
   /// 解析 "HH:mm" 为当日分钟数，非法/空串返回 null
   static int? _parseHm(String s) {
     final parts = s.trim().split(':');
