@@ -6,6 +6,7 @@ import 'package:gbk_codec/gbk_codec.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/character.dart';
 import '../models/character_pack_entry.dart';
+import '../models/memory_point.dart';
 import '../models/moment.dart';
 import '../models/moments_pack_entry.dart';
 
@@ -65,9 +66,12 @@ class CharacterPackService {
       ];
 
       try {
-        final character =
-            await _parseCharacter(entry.key, allFiles, profileFile);
-        result.add(CharacterPackEntry(folderName: folderName, character: character));
+        final parsed = await _parseCharacter(entry.key, allFiles, profileFile);
+        result.add(CharacterPackEntry(
+          folderName: folderName,
+          character: parsed.character,
+          memoryPoints: parsed.memoryPoints,
+        ));
       } catch (e) {
         result.add(CharacterPackEntry(
           folderName: folderName,
@@ -79,8 +83,9 @@ class CharacterPackService {
     return result;
   }
 
-  /// 解析单个角色目录
-  static Future<Character> _parseCharacter(
+  /// 解析单个角色目录，返回角色数据与其随包的持久化记忆点。
+  static Future<({Character character, List<MemoryPoint> memoryPoints})>
+      _parseCharacter(
     String dir,
     List<ArchiveFile> files,
     ArchiveFile profileFile,
@@ -148,7 +153,23 @@ class CharacterPackService {
 
     final moments = await _extractMoments(dir, files);
 
-    return Character(
+    // 持久化记忆点：Profile.json 的 memory_points 数组
+    // [{"content": "...", "created_at": "..."}]
+    final memoryPoints = <MemoryPoint>[];
+    final rawMemory = data['memory_points'];
+    if (rawMemory is List) {
+      for (final m in rawMemory) {
+        if (m is! Map<String, dynamic>) continue;
+        final content = (m['content'] as String? ?? '').trim();
+        if (content.isEmpty) continue;
+        memoryPoints.add(MemoryPoint(
+          content: content,
+          createdAt: DateTime.tryParse(m['created_at'] as String? ?? ''),
+        ));
+      }
+    }
+
+    final character = Character(
       id: 'import_${DateTime.now().microsecondsSinceEpoch}',
       name: str('name', dir.split('/').last),
       remark: str('remark'),
@@ -164,6 +185,7 @@ class CharacterPackService {
       tags: (data['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       moments: moments,
     );
+    return (character: character, memoryPoints: memoryPoints);
   }
 
   /// 解析角色目录下的朋友圈（`moments/moments.json` 或目录内直接放置的
@@ -335,10 +357,14 @@ class CharacterPackService {
     return result;
   }
 
-  /// 将选中的角色导出为 zip 角色包（保存到下载目录），返回保存路径
+  /// 将选中的角色导出为 zip 角色包（保存到下载目录），返回保存路径。
+  ///
+  /// [memoryByCharacter]：角色 id → 该角色的持久化记忆点。提供时会把记忆点
+  /// 一并写入角色包 `Profile.json` 的 `memory_points` 字段，随角色包导入 / 分享。
   static Future<String> exportPack(
     List<Character> characters, {
     String? saveDirectory,
+    Map<String, List<MemoryPoint>>? memoryByCharacter,
   }) async {
     final archive = Archive();
     for (final c in characters) {
@@ -354,6 +380,17 @@ class CharacterPackService {
         'user_relationship': c.userRelationship,
         'tags': c.tags,
       };
+      // 持久化记忆点：写入 memory_points（[{content, created_at}]）
+      final memory = memoryByCharacter?[c.id] ?? const <MemoryPoint>[];
+      if (memory.isNotEmpty) {
+        data['memory_points'] = [
+          for (final p in memory)
+            {
+              'content': p.content,
+              'created_at': p.createdAt.toIso8601String(),
+            },
+        ];
+      }
       archive.addFile(ArchiveFile.string(
         '$folder/Profile.json',
         const JsonEncoder.withIndent('    ').convert(data),

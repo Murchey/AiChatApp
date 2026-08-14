@@ -10,6 +10,7 @@ import '../providers/api_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
+import '../providers/memory_point_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../utils/app_toast.dart';
 import 'dev_log_service.dart';
@@ -77,6 +78,7 @@ class MomentAiService {
     required MomentNotificationProvider notificationProvider,
     required ChatProvider chatProvider,
     required ChatSettingsProvider chatSettings,
+    required MemoryPointProvider memoryPointProvider,
     required Moment moment,
     required List<Character> characters,
     int initialFailures = 0,
@@ -131,6 +133,12 @@ class MomentAiService {
               character.id,
               chatSettings.contextCount,
             );
+            // 角色的持久化记忆点：与聊天一样随系统提示词发送，让角色在
+            // 朋友圈互动时同样记住这些长期信息
+            final memoryPoints = memoryPointProvider
+                .pointsFor(character.id)
+                .map((p) => p.content)
+                .toList();
             final decision = await _askCharacter(
               model,
               character,
@@ -139,6 +147,7 @@ class MomentAiService {
               // temperature，让模型使用默认值（部分模型不支持 temperature 字段）
               useDefaultTemperature: totalFailures >= 4,
               chatHistory: chatHistory,
+              memoryPoints: memoryPoints,
               ownerName: owner?.displayName ?? '',
               ownerIsUser: momentOwnerId == CharacterProvider.selfCharacterId,
             );
@@ -209,6 +218,7 @@ class MomentAiService {
     required MomentNotificationProvider notificationProvider,
     required ChatProvider chatProvider,
     required ChatSettingsProvider chatSettings,
+    required MemoryPointProvider memoryPointProvider,
   }) async {
     final bp = await _loadBreakpoint();
     if (bp == null) return;
@@ -249,6 +259,7 @@ class MomentAiService {
       notificationProvider: notificationProvider,
       chatProvider: chatProvider,
       chatSettings: chatSettings,
+      memoryPointProvider: memoryPointProvider,
       moment: bp.moment,
       characters: remaining,
       initialFailures: bp.totalFailures,
@@ -315,12 +326,15 @@ class MomentAiService {
     Moment moment, {
     bool useDefaultTemperature = false,
     List<Map<String, String>> chatHistory = const [],
+    List<String> memoryPoints = const [],
     String ownerName = '',
     bool ownerIsUser = false,
   }) async {
-    final system = character.systemPrompt.trim().isEmpty
-        ? '你是「${character.displayName}」，正在浏览朋友圈。'
-        : character.systemPrompt;
+    final system = _systemWithMemory(
+      character.systemPrompt,
+      memoryPoints,
+      fallback: '你是「${character.displayName}」，正在浏览朋友圈。',
+    );
     final relationship = character.userRelationship.trim();
     final messages = <Map<String, Object>>[
       {'role': 'system', 'content': system},
@@ -454,6 +468,32 @@ class MomentAiService {
     return buf.toString();
   }
 
+  /// 将角色的持久化记忆点追加到系统提示词之后（无记忆点时返回基础提示词）。
+  /// 语义与聊天一致：这些是用户主动保存的重要约定与共同经历，角色需牢记。
+  static String _systemWithMemory(
+    String basePrompt,
+    List<String> memoryPoints, {
+    required String fallback,
+  }) {
+    final base = basePrompt.trim().isEmpty ? fallback : basePrompt.trim();
+    final section = _memoryPointsSection(memoryPoints);
+    if (section.isEmpty) return base;
+    return '$base\n\n$section';
+  }
+
+  /// 组装「长期记忆」段落（无记忆点时返回空串）。
+  static String _memoryPointsSection(List<String> memoryPoints) {
+    final memory = memoryPoints
+        .map((m) => m.trim())
+        .where((m) => m.isNotEmpty)
+        .toList();
+    if (memory.isEmpty) return '';
+    return '## 你的长期记忆\n'
+        '这些是用户主动保存的、关于你们之间重要约定与经历的长期记忆，'
+        '请在互动中牢记并自然运用：\n'
+        '${memory.map((m) => '- $m').join('\n')}';
+  }
+
   /// 容错解析模型返回的 JSON 决策对象（兼容代码块包裹 / 前后多余文本）。
   /// 解析失败抛出 [LLMException]，计入失败次数并重试。
   static MomentDecision _parseDecision(String raw) {
@@ -576,6 +616,7 @@ class MomentAiService {
     required ChatProvider chatProvider,
     required CharacterProvider characterProvider,
     required MomentNotificationProvider notificationProvider,
+    required MemoryPointProvider memoryPointProvider,
     required Character character,
     required Character owner,
     required Moment moment,
@@ -621,15 +662,23 @@ class MomentAiService {
         }
       }
 
-      final system = character.systemPrompt.trim().isEmpty
-          ? '你是「${character.displayName}」。'
-          : character.systemPrompt;
+      // 角色的持久化记忆点：随系统提示词发送，回复用户评论时同样记住这些长期信息
+      final memoryPoints = memoryPointProvider
+          .pointsFor(character.id)
+          .map((p) => p.content)
+          .toList();
+      final system = _systemWithMemory(
+        character.systemPrompt,
+        memoryPoints,
+        fallback: '你是「${character.displayName}」。',
+      );
       var userPrompt = _buildReplyPrompt(
         character: character,
         self: self,
         moment: latestMoment,
         relationship: relationship,
         chatHistory: chatHistory,
+        memoryPoints: memoryPoints,
         userNickname: userNickname,
         userComment: userComment,
         replyToName: replyToName,
@@ -664,6 +713,7 @@ class MomentAiService {
               moment: latestMoment,
               relationship: relationship,
               chatHistory: chatHistory,
+              memoryPoints: memoryPoints,
               userNickname: userNickname,
               userComment: userComment,
               replyToName: replyToName,
@@ -759,6 +809,7 @@ class MomentAiService {
     required List<Map<String, String>> chatHistory,
     required String userNickname,
     required String userComment,
+    List<String> memoryPoints = const [],
     String replyToName = '',
     String repliedComment = '',
   }) {
@@ -783,6 +834,7 @@ class MomentAiService {
     ].join('\n');
 
     final chatSection = _chatHistorySection(chatHistory, character.displayName);
+    final memorySection = _memoryPointsSection(memoryPoints);
 
     // 用户回复的上下文：是直接评论，还是回复了某人的评论（附原评论内容）
     final replyContext = replyToName.isEmpty
@@ -794,6 +846,7 @@ class MomentAiService {
         '【朋友圈动态（JSON）】\n$momentJson\n\n'
         '【用户角色卡片】\n${userCard.isEmpty ? '（无资料）' : userCard}\n\n'
         '【用户与你的关系】\n${relationship.isEmpty ? '普通朋友' : relationship}\n\n'
+        '${memorySection.isEmpty ? '' : '$memorySection\n'}'
         '${chatSection.isEmpty ? '' : '$chatSection\n'}'
         '【用户这次评论的上下文】\n$replyContext\n\n'
         '【用户的最新评论】\n$userComment\n\n'

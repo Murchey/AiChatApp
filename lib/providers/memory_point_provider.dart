@@ -65,6 +65,25 @@ class MemoryPointProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 用角色包的记忆点整体替换某角色的记忆点（内容去重、保留原创建时间）。
+  /// 空列表等价于清空该角色的全部记忆点。
+  Future<void> replacePoints(String characterId, List<MemoryPoint> points) async {
+    final seen = <String>{};
+    final clean = <MemoryPoint>[];
+    for (final p in points) {
+      final content = p.content.trim();
+      if (content.isEmpty || !seen.add(content)) continue;
+      clean.add(MemoryPoint(content: content, createdAt: p.createdAt));
+    }
+    if (clean.isEmpty) {
+      _pointsByCharacter.remove(characterId);
+    } else {
+      _pointsByCharacter[characterId] = clean;
+    }
+    await _persist(characterId);
+    notifyListeners();
+  }
+
   /// 更新一条记忆点内容（空内容视为删除）
   Future<void> updatePoint(
       String characterId, String pointId, String content) async {

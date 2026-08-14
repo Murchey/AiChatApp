@@ -10,6 +10,7 @@ import '../providers/character_provider.dart';
 import '../providers/auto_moment_provider.dart';
 import '../providers/api_provider.dart';
 import '../providers/moment_notification_provider.dart';
+import '../providers/memory_point_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/auto_moment_service.dart';
 import '../services/dev_log_service.dart';
@@ -53,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen>
     final notificationProvider = context.read<MomentNotificationProvider>();
     final chatProvider = context.read<ChatProvider>();
     final chatSettings = context.read<ChatSettingsProvider>();
+    final memoryPointProvider = context.read<MemoryPointProvider>();
     characterProvider.loadCharacters().then((_) {
       MomentAiService.resumePending(
         characterProvider: characterProvider,
@@ -60,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen>
         notificationProvider: notificationProvider,
         chatProvider: chatProvider,
         chatSettings: chatSettings,
+        memoryPointProvider: memoryPointProvider,
       );
       _checkAutoMoments();
     }).catchError((Object e) {
@@ -106,6 +109,7 @@ class _HomeScreenState extends State<HomeScreen>
       chatSettings: context.read<ChatSettingsProvider>(),
       notificationProvider: context.read<MomentNotificationProvider>(),
       autoMomentProvider: context.read<AutoMomentProvider>(),
+      memoryPointProvider: context.read<MemoryPointProvider>(),
     );
   }
 

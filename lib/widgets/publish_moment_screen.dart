@@ -12,6 +12,7 @@ import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/moment_notification_provider.dart';
+import '../providers/memory_point_provider.dart';
 import '../screens/moment_visibility_screen.dart';
 import '../services/dev_log_service.dart';
 import '../services/moment_ai_service.dart';
@@ -273,6 +274,7 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
       notificationProvider: notificationProvider,
       chatProvider: chatProvider,
       chatSettings: chatSettings,
+      memoryPointProvider: context.read<MemoryPointProvider>(),
       moment: moment,
       characters: characters,
     ));

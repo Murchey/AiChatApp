@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../providers/character_provider.dart';
+import '../providers/memory_point_provider.dart';
 import '../services/character_pack_service.dart';
 import '../utils/character_pack_picker.dart';
 import '../utils/conversation_relink.dart';
@@ -63,7 +64,15 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
     if (list.isEmpty || _busy) return;
     setState(() => _busy = true);
     try {
-      final path = await CharacterPackService.exportPack(list);
+      // 随角色包导出持久化记忆点（Profile.json 的 memory_points 字段）
+      final memoryProvider = context.read<MemoryPointProvider>();
+      final memoryByCharacter = {
+        for (final c in list) c.id: memoryProvider.pointsFor(c.id),
+      };
+      final path = await CharacterPackService.exportPack(
+        list,
+        memoryByCharacter: memoryByCharacter,
+      );
       if (!mounted) return;
       showCupertinoDialog(
         context: context,

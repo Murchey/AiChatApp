@@ -7,6 +7,7 @@ import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/moment_notification_provider.dart';
+import '../providers/memory_point_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/auto_moment_service.dart';
 import '../services/update_service.dart';
@@ -43,6 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final chatProvider = context.read<ChatProvider>();
     final chatSettings = context.read<ChatSettingsProvider>();
     final notificationProvider = context.read<MomentNotificationProvider>();
+    final memoryPointProvider = context.read<MemoryPointProvider>();
 
     if (apiProvider.getModelById(apiProvider.momentModelId) == null) {
       showAppToast('请先在「API 设置」中配置「朋友圈互动」模型');
@@ -61,6 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       chatSettings: chatSettings,
       notificationProvider: notificationProvider,
       autoMomentProvider: autoProvider,
+      memoryPointProvider: memoryPointProvider,
     );
     if (mounted) {
       showAppToast('测试完成，请到朋友圈查看');

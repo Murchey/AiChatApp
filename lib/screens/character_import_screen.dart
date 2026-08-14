@@ -4,8 +4,10 @@ import 'package:uuid/uuid.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/character_pack_entry.dart';
+import '../models/moment.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/memory_point_provider.dart';
 import '../utils/conversation_relink.dart';
 import '../widgets/character_avatar.dart';
 
@@ -39,6 +41,8 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
 
   Future<void> _import() async {
     final provider = context.read<CharacterProvider>();
+    // 记忆点写入器：循环中多次 await，提前取引用避免 async gap
+    final memoryProvider = context.read<MemoryPointProvider>();
     const uuid = Uuid();
     var count = 0;
     // 已存在角色的名称集合：同名角色需选择「覆盖当前角色数据」或改名
@@ -59,14 +63,26 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
         if (decision == null) continue;
 
         if (decision.overwrite) {
-          // 覆盖当前角色数据：保留原 id（聊天记录不覆盖），替换资料/提示词/朋友圈
+          // 覆盖当前角色数据：保留原 id（聊天记录不覆盖），替换资料/提示词；
+          // 朋友圈合并覆盖：包内与本地 id 一致的动态用包内版本覆盖，
+          // 本地已有的动态（含角色自己新发的）保留，包内新增的动态追加
           final existing = provider.findCharacterByName(name);
           if (existing == null) continue;
           final json = entry.character.toJson()
             ..['id'] = existing.id
             ..['name'] = name;
-          final character = Character.fromJson(json);
+          var character = Character.fromJson(json);
+          if (existing.moments.isNotEmpty || character.moments.isNotEmpty) {
+            character = character.copyWith(
+              moments: _mergeMomentsOnOverwrite(
+                existing.moments,
+                character.moments,
+              ),
+            );
+          }
           await provider.overwriteCharacter(character);
+          // 角色包覆盖导入：用包内记忆点替换该角色的持久化记忆
+          await memoryProvider.replacePoints(character.id, entry.memoryPoints);
           if (!mounted) return;
           // 同步会话中的角色头像快照，保证首页列表头像一致
           context
@@ -86,6 +102,10 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
         ..['name'] = name;
       final character = Character.fromJson(json);
       await provider.addCharacter(character);
+      // 写入随角色包带来的持久化记忆点（新角色无旧记忆，等价于追加）
+      if (entry.memoryPoints.isNotEmpty) {
+        await memoryProvider.replacePoints(character.id, entry.memoryPoints);
+      }
       // 角色删除后重新导入：把指向旧角色的孤儿会话重新关联到新角色
       if (!mounted) return;
       relinkOrphanedConversations(context: context, character: character);
@@ -109,6 +129,28 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
         ],
       ),
     );
+  }
+
+  /// 同名角色覆盖时的朋友圈合并：
+  /// - 本地已有动态全部保留（含角色自己新发的、包内没有的动态）；
+  /// - 包内与本地 id 一致的动态 → 用包内版本覆盖（更新）；
+  /// - 包内新增（本地没有的 id）的动态 → 追加。
+  static List<Moment> _mergeMomentsOnOverwrite(
+    List<Moment> local,
+    List<Moment> pack,
+  ) {
+    final packIds = pack.map((m) => m.id).toSet();
+    final merged = <Moment>[
+      for (final m in local)
+        if (!packIds.contains(m.id)) m,
+    ];
+    final used = <String>{};
+    for (final m in pack) {
+      // 包内 id 去重兜底（parsePack 已保证全唯一，此处防御重复）
+      if (m.id.isNotEmpty && !used.add(m.id)) continue;
+      merged.add(m);
+    }
+    return merged;
   }
 
   /// 弹窗处理已有同名角色：勾选「覆盖当前角色数据」则直接覆盖（隐藏重命名框），
@@ -396,7 +438,7 @@ class _DuplicateCharacterDialogState extends State<_DuplicateCharacterDialog> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '覆盖提示词与自带朋友圈，保留聊天记录',
+                          '覆盖资料与提示词，朋友圈仅覆盖包内动态',
                           style: TextStyle(
                             fontSize: 12,
                             color: context.textSecondaryColor,
@@ -412,7 +454,8 @@ class _DuplicateCharacterDialogState extends State<_DuplicateCharacterDialog> {
           const SizedBox(height: 4),
           if (_overwrite)
             Text(
-              '将用角色包覆盖「${widget.originalName}」的资料、提示词和朋友圈，聊天记录不受影响',
+              '将用角色包覆盖「${widget.originalName}」的资料与提示词；'
+              '朋友圈仅覆盖包内已有的动态，角色自己发的动态保留，聊天记录不受影响',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,

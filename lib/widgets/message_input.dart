@@ -173,16 +173,21 @@ class MessageInputState extends State<MessageInput> {
                 ),
                 // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（点击请求角色回复）
                 if (_hasText) ...[
-                  CupertinoButton.filled(
-                    onPressed: _handleSend,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Text(
-                      '发送',
-                      style: TextStyle(
-                        color: CupertinoColors.white,
-                        fontWeight: FontWeight.w600,
+                  // 方形发送按钮：64×40，圆角 10px
+                  SizedBox(
+                    width: 64,
+                    height: 40,
+                    child: CupertinoButton.filled(
+                      onPressed: _handleSend,
+                      padding: EdgeInsets.zero,
+                      borderRadius: BorderRadius.circular(10),
+                      child: const Text(
+                        '发送',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: CupertinoColors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),

@@ -6,6 +6,7 @@ import '../providers/auto_moment_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
+import '../providers/memory_point_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import 'dev_log_service.dart';
 import 'llm_service.dart';
@@ -37,6 +38,7 @@ class AutoMomentService {
     required ChatSettingsProvider chatSettings,
     required MomentNotificationProvider notificationProvider,
     required AutoMomentProvider autoMomentProvider,
+    required MemoryPointProvider memoryPointProvider,
   }) async {
     if (_running) return;
     _running = true;
@@ -107,10 +109,17 @@ class AutoMomentService {
               character.id,
               chatSettings.contextCount,
             );
+            // 角色的持久化记忆点：与聊天一样随系统提示词发送，让角色发
+            // 朋友圈时同样记住这些长期信息
+            final memoryPoints = memoryPointProvider
+                .pointsFor(character.id)
+                .map((p) => p.content)
+                .toList();
             final content = await _generateContent(
               model: model,
               character: latest,
               chatHistory: chatHistory,
+              memoryPoints: memoryPoints,
             );
             if (content != null && content.isNotEmpty) {
               // 补发时间戳：按子间隔从最早错过时刻均匀错开到 now，
@@ -162,6 +171,7 @@ class AutoMomentService {
           notificationProvider: notificationProvider,
           chatProvider: chatProvider,
           chatSettings: chatSettings,
+          memoryPointProvider: memoryPointProvider,
           moment: moment,
           characters: visible,
           momentOwnerId: owner.id,
@@ -195,14 +205,19 @@ class AutoMomentService {
 
   /// 生成一条符合角色人设的朋友圈文案（纯文字）。
   /// 有聊天记录时优先贴合最近语境；无聊天记录时让 AI 捏造日常小故事。
+  /// [memoryPoints] 为角色的持久化记忆点，随系统提示词发送，让角色发帖
+  /// 时同样记住这些长期信息。
   Future<String?> _generateContent({
     required ApiModel model,
     required Character character,
     required List<Map<String, String>> chatHistory,
+    List<String> memoryPoints = const [],
   }) async {
-    final system = character.systemPrompt.trim().isEmpty
-        ? '你是「${character.displayName}」，正在发布一条朋友圈。'
-        : character.systemPrompt;
+    final system = _systemWithMemory(
+      character.systemPrompt,
+      memoryPoints,
+      fallback: '你是「${character.displayName}」，正在发一条朋友圈。',
+    );
     final messages = <Map<String, Object>>[
       {'role': 'system', 'content': system},
       {'role': 'user', 'content': _buildPrompt(character, chatHistory)},
@@ -243,6 +258,32 @@ class AutoMomentService {
           '捏造一个符合你日常的小故事或心情作为朋友圈内容。');
     }
     return buf.toString();
+  }
+
+  /// 将角色的持久化记忆点追加到系统提示词之后（无记忆点时返回基础提示词）。
+  /// 语义与聊天一致：这些是用户主动保存的重要约定与共同经历，角色需牢记。
+  static String _systemWithMemory(
+    String basePrompt,
+    List<String> memoryPoints, {
+    required String fallback,
+  }) {
+    final base = basePrompt.trim().isEmpty ? fallback : basePrompt.trim();
+    final section = _memoryPointsSection(memoryPoints);
+    if (section.isEmpty) return base;
+    return '$base\n\n$section';
+  }
+
+  /// 组装「长期记忆」段落（无记忆点时返回空串）。
+  static String _memoryPointsSection(List<String> memoryPoints) {
+    final memory = memoryPoints
+        .map((m) => m.trim())
+        .where((m) => m.isNotEmpty)
+        .toList();
+    if (memory.isEmpty) return '';
+    return '## 你的长期记忆\n'
+        '这些是用户主动保存的、关于你们之间重要约定与经历的长期记忆，'
+        '请在互动中牢记并自然运用：\n'
+        '${memory.map((m) => '- $m').join('\n')}';
   }
 
   /// 往角色自己的朋友圈列表头部插入一条动态（朋友圈 feed 会自动聚合展示）。
