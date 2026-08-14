@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show Icons;
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
@@ -194,30 +195,35 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
               ),
               items: [
                 BottomNavigationBarItem(
-                  icon: _buildTabIcon(CupertinoIcons.chat_bubble, totalUnread),
+                  icon: _buildTabIcon(
+                    Icons.chat_bubble_outline_rounded,
+                    totalUnread,
+                  ),
                   activeIcon: _buildTabIcon(
-                    CupertinoIcons.chat_bubble_fill,
+                    Icons.chat_bubble_rounded,
                     totalUnread,
                   ),
                   label: 'AiChat',
                 ),
                 const BottomNavigationBarItem(
-                  icon: Icon(CupertinoIcons.person_2),
+                  icon: Icon(Icons.people_outline_rounded),
+                  activeIcon: Icon(Icons.people_rounded),
                   label: '通讯录',
                 ),
                 BottomNavigationBarItem(
                   icon: _buildMomentsTabIcon(
                     momentsUnread,
-                    CupertinoIcons.photo,
+                    Icons.photo_camera_rounded,
                   ),
                   activeIcon: _buildMomentsTabIcon(
                     momentsUnread,
-                    CupertinoIcons.photo,
+                    Icons.photo_camera_rounded,
                   ),
                   label: '朋友圈',
                 ),
                 const BottomNavigationBarItem(
-                  icon: Icon(CupertinoIcons.person_crop_circle),
+                  icon: Icon(Icons.person_outline_rounded),
+                  activeIcon: Icon(Icons.person_rounded),
                   label: '我',
                 ),
               ],

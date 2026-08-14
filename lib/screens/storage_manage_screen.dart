@@ -76,6 +76,8 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
         return '将删除创意工坊下载后残留的角色资源包 zip 与临时文件，不影响已导入的角色数据和朋友圈图片。确定继续吗？';
       case 'temp':
         return '将删除系统临时目录中的缓存文件，不影响已保存的数据。确定继续吗？';
+      case 'other':
+        return '将删除可安全清理的残留文件（如导出包、临时文件）；无法确认安全性的未分类目录会保留。确定继续吗？';
       default:
         return '确定删除该分类的内容吗？删除后不可恢复。';
     }
@@ -83,12 +85,17 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
 
   /// 点击删除项：二次确认 → 删除 → 重新扫描 → 提示释放体积
   Future<void> _delete(StorageItem item) async {
-    if (item.id == 'other' || item.id == 'settings') {
+    if (item.id == 'settings') {
       showAppToast('该分类仅展示占用，不支持删除');
       return;
     }
     if (!item.deletable) {
       showAppToast('没有可清理的内容');
+      return;
+    }
+    // 其他应用文件：先展示未分类目录明细供用户确认
+    if (item.id == 'other') {
+      await _deleteOther(item);
       return;
     }
     // 提前捕获 provider，避免异步等待后再用 context 读取
@@ -151,7 +158,76 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
         .where((i) => i.id == item.id)
         .fold<int>(0, (sum, i) => sum + i.sizeBytes);
     final freed = before - current;
-    showAppToast(freed > 0 ? '已释放 ${formatBytes(freed)}' : '没有可清理的内容');
+    if (freed > 0) {
+      showAppToast(
+        current > 0
+            ? '已释放 ${formatBytes(freed)}，其余内容无法安全删除已保留'
+            : '已释放 ${formatBytes(freed)}',
+      );
+    } else {
+      showAppToast(current > 0 ? '没有可安全删除的内容' : '没有可清理的内容');
+    }
+  }
+
+  /// 删除「其他应用文件」：由程序自动分析文件内容/类型确立安全边界，
+  /// 只删确认安全的残留（图片/压缩包/临时文件），
+  /// 含数据文件的目录自动保留，用户仅需一次确认。
+  Future<void> _deleteOther(StorageItem item) async {
+    final plan = await StorageManagerService.planOtherCleanup();
+    if (!mounted) return;
+    if (plan.deletableBytes <= 0) {
+      showAppToast(
+        plan.retainedBytes > 0
+            ? '没有可安全删除的内容（其余均为数据文件，已保留）'
+            : '没有可清理的内容',
+      );
+      return;
+    }
+    final before = item.sizeBytes;
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('删除「其他应用文件」'),
+        content: Text(
+          '将删除已识别为安全的残留内容：'
+          '${plan.deletableCount} 项（图片、压缩包、临时文件等），'
+          '共 ${formatBytes(plan.deletableBytes)}。'
+          '${plan.retainedDirs > 0 ? '另有 ${plan.retainedDirs} 个含数据文件的目录（共 ${formatBytes(plan.retainedBytes)}）将保留：${plan.retainedNames.take(3).join('、')}${plan.retainedNames.length > 3 ? ' 等' : ''}。' : ''}'
+          '确定继续吗？',
+          textAlign: TextAlign.left,
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await StorageManagerService.clearOtherFiles();
+    await _scan();
+    if (!mounted) return;
+    final current = _items
+        .where((i) => i.id == item.id)
+        .fold<int>(0, (sum, i) => sum + i.sizeBytes);
+    final released = before - current;
+    if (released > 0) {
+      showAppToast(
+        current > 0
+            ? '已释放 ${formatBytes(released)}，其余数据文件已保留'
+            : '已释放 ${formatBytes(released)}',
+      );
+    } else {
+      showAppToast(current > 0 ? '没有可安全删除的内容' : '没有可清理的内容');
+    }
   }
 
   @override
@@ -226,8 +302,12 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
         for (final item in items)
           CupertinoListTile(
             title: Text(item.title),
+            // CupertinoListTile 默认把 subtitle 限制为 2 行（折叠省略号），
+            // 显式放宽行数，让分类说明完整展示。
             subtitle: Text(
               item.subtitle,
+              maxLines: 6,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
                 color: context.textSecondaryColor,

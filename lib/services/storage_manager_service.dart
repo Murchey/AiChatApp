@@ -23,6 +23,35 @@ class StorageItem {
   });
 }
 
+/// 目录内容类型判定结果
+enum _DirKind { safe, unknown, empty }
+
+/// 其他应用文件的清理计划：程序自动分析文件类型后确立的安全删除边界。
+class OtherCleanupPlan {
+  /// 可安全删除的总字节（散文件 + 内容为图片/压缩包/临时的目录 + 支持目录）
+  final int deletableBytes;
+
+  /// 可删除的散文件/安全目录数量
+  final int deletableCount;
+
+  /// 将保留的目录数量（内含数据文件，无法确认安全）
+  final int retainedDirs;
+
+  /// 将保留的字节数
+  final int retainedBytes;
+
+  /// 将保留的目录名称（供用户了解无法删除的内容）
+  final List<String> retainedNames;
+
+  const OtherCleanupPlan({
+    required this.deletableBytes,
+    required this.deletableCount,
+    required this.retainedDirs,
+    required this.retainedBytes,
+    this.retainedNames = const [],
+  });
+}
+
 /// 管理占用空间：扫描应用自身占用（用户数据 + 软件缓存），
 /// 并提供各分类的清理能力。
 ///
@@ -65,6 +94,19 @@ class StorageManagerService {
   static const _characterDirs = ['user_moments'];
   static const _characterPrefixes = ['moment_import_'];
   static const _chatPrefixes = ['chat_import_'];
+
+  // 引擎/系统运行时目录（非用户数据、非缓存，排除出占用统计与删除）
+  // 例如 debug 模式下 Flutter 引擎落盘的 flutter_assets（kernel_blob 等）
+  static const _systemDirs = ['flutter_assets'];
+
+  /// 取路径最后一段目录/文件名（Directory.uri.pathSegments 在
+  /// 目录尾斜杠场景可能返回空串，故用字符串解析）
+  static String _basename(String path) {
+    var p = path;
+    if (p.endsWith('/')) p = p.substring(0, p.length - 1);
+    final i = p.lastIndexOf('/');
+    return i < 0 ? p : p.substring(i + 1);
+  }
 
   /// 扫描全部存储条目（含异步文件遍历，页面加载时执行一次）。
   static Future<List<StorageItem>> scan() async {
@@ -182,8 +224,10 @@ class StorageManagerService {
     );
   }
 
-  /// 其他应用文件（兜底）：文档目录中未归入上述分类的文件 +
-  /// 支持目录（角色包等数据文件）。确保总占用与系统口径接近。
+  /// 其他应用文件（兜底）：文档目录中未归入上述分类的散文件 +
+  /// 支持目录全部内容。已导入的角色数据包不会落在这些位置
+  /// （角色卡存 characters_v1、朋友圈图片存 moment_import_*），
+  /// 此处仅覆盖插件或历史残留的未分类文件。
   static Future<StorageItem> _otherItem() async {
     var bytes = await _unclassifiedDocBytes();
     try {
@@ -193,10 +237,10 @@ class StorageManagerService {
     return StorageItem(
       id: 'other',
       title: '其他应用文件',
-      subtitle: '未归类的角色包等应用数据文件',
+      subtitle: '未归类的残留文件（如导出包），仅删除可安全清理的部分',
       isUserData: true,
       sizeBytes: bytes,
-      deletable: false, // 无法安全归类，不提供删除
+      deletable: bytes > 0,
     );
   }
 
@@ -241,6 +285,154 @@ class StorageManagerService {
     return freed;
   }
 
+  /// 分析「其他应用文件」的清理计划：自动探寻文件内容/类型，
+  /// 确立安全删除边界（无需用户逐一决策）。
+  ///
+  /// 判定规则：
+  /// - 图片（jpg/png/webp 等）、压缩包（zip 等）、临时文件（tmp/part 等）
+  ///   → 安全可删（应用业务不会把这类文件当数据存放）；
+  /// - 含数据类文件（json/xml/db 等）的目录 → 无法确认安全，保留；
+  /// - 支持目录（无业务数据写入）→ 计入可删。
+  static Future<OtherCleanupPlan> planOtherCleanup() async {
+    var deletable = 0, deletableCount = 0, retainedDirs = 0, retainedBytes = 0;
+    final retainedNames = <String>[];
+    final docDir = await getApplicationDocumentsDirectory();
+    try {
+      final dir = Directory(docDir.path);
+      if (dir.existsSync()) {
+        for (final e in dir.listSync()) {
+          try {
+            if (e is File) {
+              if (!_isSafeFile(e.path)) continue; // 数据类散文件，保留
+              deletable += e.lengthSync();
+              deletableCount++;
+            } else if (e is Directory) {
+              final name = _basename(e.path);
+              if (_isClassified(name)) continue;
+              final kind = _dirKind(e);
+              final size = _dirSize(e);
+              if (kind == _DirKind.safe || kind == _DirKind.empty) {
+                deletable += size;
+                deletableCount++;
+              } else {
+                retainedDirs++;
+                retainedBytes += size;
+                retainedNames.add(name);
+                // 日志输出保留目录的内容明细，供了解「无法删除的数据文件」
+                _debugDumpRetainedDir(e);
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    // 支持目录：无业务数据写入，计入可删
+    try {
+      final support = await getApplicationSupportDirectory();
+      deletable += _dirSize(Directory(support.path));
+    } catch (_) {}
+    return OtherCleanupPlan(
+      deletableBytes: deletable,
+      deletableCount: deletableCount,
+      retainedDirs: retainedDirs,
+      retainedBytes: retainedBytes,
+      retainedNames: retainedNames,
+    );
+  }
+
+  /// 日志输出被保留目录的内容明细（递归文件名 + 大小），
+  /// 帮助了解无法安全删除的数据文件是什么。
+  static void _debugDumpRetainedDir(Directory dir) {
+    debugPrint('[StorageScan] 保留目录 ${dir.path}（含数据文件，不删除）:');
+    try {
+      for (final e in dir.listSync(recursive: true)) {
+        if (e is File) {
+          debugPrint('[StorageScan]   文件 ${_basename(e.path)} = ${e.lengthSync()}');
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// 删除「其他应用文件」中经内容分析确认安全的部分，返回释放的字节数：
+  /// 图片/压缩包/临时类型的散文件与目录 + 支持目录内容；
+  /// 含数据文件的目录保留，避免误删。
+  static Future<int> clearOtherFiles() async {
+    var freed = 0;
+    // 1. 文档目录（app_flutter）
+    final docDir = await getApplicationDocumentsDirectory();
+    try {
+      final dir = Directory(docDir.path);
+      if (dir.existsSync()) {
+        for (final e in dir.listSync()) {
+          try {
+            if (e is File) {
+              if (!_isSafeFile(e.path)) continue;
+              freed += e.lengthSync();
+              e.deleteSync();
+            } else if (e is Directory) {
+              final name = _basename(e.path);
+              if (_isClassified(name)) continue;
+              final kind = _dirKind(e);
+              if (kind != _DirKind.safe && kind != _DirKind.empty) continue;
+              freed += _dirSize(e);
+              e.deleteSync(recursive: true);
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    // 2. 支持目录（files）内容
+    try {
+      final support = await getApplicationSupportDirectory();
+      freed += _clearDirContents(Directory(support.path));
+    } catch (_) {}
+    return freed;
+  }
+
+  /// 目录名是否属于已分类目录（由对应分类负责删除）或引擎/系统目录（排除）
+  static bool _isClassified(String name) =>
+      _workshopDirs.contains(name) ||
+      _characterDirs.contains(name) ||
+      _characterPrefixes.any((p) => name.startsWith(p)) ||
+      _chatPrefixes.any((p) => name.startsWith(p)) ||
+      _systemDirs.contains(name);
+
+  /// 文件是否属于安全可删类型（图片/压缩包/临时文件）
+  static bool _isSafeFile(String path) {
+    final dot = path.lastIndexOf('.');
+    if (dot < 0 || dot == path.length - 1) return false; // 无扩展名，不确认
+    return _safeFileExts.contains(path.substring(dot + 1).toLowerCase());
+  }
+
+  /// 目录内容类型：全部为安全文件 → safe；存在数据文件 → unknown；
+  /// 空目录 → empty（无内容可删，但删除无风险）。
+  static _DirKind _dirKind(Directory dir) {
+    var safe = 0, unsafe = 0;
+    try {
+      for (final e in dir.listSync(recursive: true)) {
+        if (e is File) {
+          if (_isSafeFile(e.path)) {
+            safe++;
+          } else {
+            unsafe++;
+          }
+        }
+      }
+    } catch (_) {}
+    if (safe + unsafe == 0) return _DirKind.empty;
+    return unsafe == 0 ? _DirKind.safe : _DirKind.unknown;
+  }
+
+  // 安全可删的文件扩展名：应用不会把下列类型当作重要数据存放
+  static const _safeFileExts = {
+    // 图片
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'svg',
+    // 压缩包
+    'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz',
+    // 临时/下载中
+    'tmp', 'temp', 'part', 'crdownload', 'download', 'aria2',
+  };
+
   /// 删除文档目录下精确名或前缀匹配的目录，返回释放的字节数
   static Future<int> _deleteDocDirs({
     required List<String> names,
@@ -251,7 +443,7 @@ class StorageManagerService {
     try {
       for (final entity in Directory(docDir.path).listSync()) {
         if (entity is! Directory) continue;
-        final name = entity.uri.pathSegments.last;
+        final name = _basename(entity.path);
         final matched = names.contains(name) ||
             prefixes.any((p) => name.startsWith(p));
         if (!matched) continue;
@@ -310,7 +502,7 @@ class StorageManagerService {
       if (!dir.existsSync()) return 0;
       for (final entity in dir.listSync()) {
         if (entity is! Directory) continue;
-        final name = entity.uri.pathSegments.last;
+        final name = _basename(entity.path);
         if (names.contains(name) ||
             prefixes.any((p) => name.startsWith(p))) {
           total += _dirSize(entity);
@@ -334,12 +526,8 @@ class StorageManagerService {
             continue;
           }
           if (entity is! Directory) continue;
-          final name = entity.uri.pathSegments.last;
-          final classified = _workshopDirs.contains(name) ||
-              _characterDirs.contains(name) ||
-              _characterPrefixes.any((p) => name.startsWith(p)) ||
-              _chatPrefixes.any((p) => name.startsWith(p));
-          if (!classified) total += _dirSize(entity);
+          if (_isClassified(_basename(entity.path))) continue;
+          total += _dirSize(entity);
         } catch (_) {}
       }
     } catch (_) {}
@@ -406,22 +594,58 @@ class StorageManagerService {
     return total;
   }
 
-  /// 调试输出：打印所有 path_provider 目录的绝对路径与实际大小，
-  /// 用于与系统「缓存/数据」统计口径对齐（排查占用不准确问题）。
+  /// 调试输出：打印所有 path_provider 目录的绝对路径、总大小，
+  /// 以及每个目录下顶层条目（子目录/文件）的名称、大小与归属分类，
+  /// 用于定位未归类占用的具体内容、对齐系统「缓存/数据」口径。
   static void _debugDumpDirs(Map<String, int> prefs) {
-    void report(String tag, Directory? dir) {
-      final size = dir == null ? -1 : _dirSize(dir);
-      debugPrint('[StorageScan] $tag: ${dir?.path ?? 'n/a'} size=$size');
+    Future<void> dumpList(String tag, Directory? dir) async {
+      if (dir == null) {
+        debugPrint('[StorageScan] $tag: n/a');
+        return;
+      }
+      if (!dir.existsSync()) {
+        debugPrint('[StorageScan] $tag: ${dir.path} (not exists)');
+        return;
+      }
+      debugPrint('[StorageScan] $tag: ${dir.path} total=${_dirSize(dir)}');
+      try {
+        for (final e in dir.listSync()) {
+          final name = _basename(e.path);
+          int size;
+          try {
+            size = e is File ? e.lengthSync() : _dirSize(e as Directory);
+          } catch (_) {
+            size = -1;
+          }
+          final kind = e is Directory ? 'dir' : 'file';
+          String cat = '';
+          if (tag == 'documents') {
+            if (_workshopDirs.contains(name)) {
+              cat = ' → 下载缓存';
+            } else if (_characterDirs.contains(name) ||
+                _characterPrefixes.any((p) => name.startsWith(p))) {
+              cat = ' → 角色与朋友圈';
+            } else if (_chatPrefixes.any((p) => name.startsWith(p))) {
+              cat = ' → 聊天记录';
+            } else if (_systemDirs.contains(name)) {
+              cat = ' → 系统(引擎,不计入)';
+            } else {
+              cat = ' → 其他(未归类)';
+            }
+          }
+          debugPrint('[StorageScan]   $kind/$name = $size$cat');
+        }
+      } catch (err) {
+        debugPrint('[StorageScan]   <list failed: $err>');
+      }
     }
 
     Future<void> dump() async {
-      report('documents', await getApplicationDocumentsDirectory());
-      report('support', await getApplicationSupportDirectory());
-      report('cache(temp)', await getTemporaryDirectory());
-      final ext = await getExternalStorageDirectory();
-      report('externalStorage', ext);
-      final extCache = await _externalCacheDir();
-      report('externalCache', extCache);
+      await dumpList('documents', await getApplicationDocumentsDirectory());
+      await dumpList('support', await getApplicationSupportDirectory());
+      await dumpList('cache(temp)', await getTemporaryDirectory());
+      await dumpList('externalStorage', await getExternalStorageDirectory());
+      await dumpList('externalCache', await _externalCacheDir());
       debugPrint('[StorageScan] prefs(bytes): $prefs');
     }
 
