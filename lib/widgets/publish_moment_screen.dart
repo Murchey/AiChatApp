@@ -76,11 +76,9 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
 
   Future<void> _pickImages() async {
     if (_existingPaths.length + _picked.length >= _maxImages) return;
-    final files = await ImagePicker().pickMultiImage(
-      maxWidth: 1280,
-      maxHeight: 1280,
-      imageQuality: 80,
-    );
+    // 不传压缩参数：保留原文件（GIF 等动图不会被重编码成静态图，
+    // 动画不丢失）；尺寸交给缩略图层按需解码。
+    final files = await ImagePicker().pickMultiImage();
     if (files.isEmpty || !mounted) return;
     setState(() {
       _picked.addAll(files);
