@@ -215,7 +215,9 @@ class _ChatBubbleState extends State<ChatBubble> {
                       ),
                     ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                      crossAxisAlignment: isUser
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
                       children: [
                         // 引用块
                         if (message.quoteContent.isNotEmpty)
@@ -460,7 +462,8 @@ class _ChatBubbleState extends State<ChatBubble> {
         ? '${message.quoteSender}: '
         : '';
     return Container(
-      width: double.infinity,
+      // 引用块跟随内容宽度收缩，避免把气泡撑满整行
+      constraints: const BoxConstraints(maxWidth: 240),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
