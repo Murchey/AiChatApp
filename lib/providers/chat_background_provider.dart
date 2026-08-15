@@ -57,6 +57,9 @@ class ChatBackgroundProvider extends ChangeNotifier {
     final dir = await getApplicationDocumentsDirectory();
     final bgDir = Directory('${dir.path}/chat_backgrounds');
     if (!bgDir.existsSync()) bgDir.createSync(recursive: true);
+    // 替换背景时先删除旧图，避免产生孤儿文件
+    final old = _cache[chatId] ?? await _loadFromPrefs(chatId);
+    if (old.hasImage && old.fileExists) _deleteFileQuietly(old.imagePath);
     // 保留原扩展名（便于识别），时间戳避免同名覆盖
     final ext = sourcePath.contains('.')
         ? sourcePath.split('.').last
@@ -65,22 +68,33 @@ class ChatBackgroundProvider extends ChangeNotifier {
         '${bgDir.path}/${chatId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
     await File(sourcePath).copy(destPath);
 
-    final existing = _cache[chatId] ?? await _loadFromPrefs(chatId);
-    final info = existing.copyWith(imagePath: destPath);
+    final info = old.copyWith(imagePath: destPath);
     _cache[chatId] = info;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_imageKeyPrefix + chatId, destPath);
     notifyListeners();
   }
 
-  /// 移除某会话的背景图片（保留模糊度设置，清除后重新设置时仍生效）
+  /// 移除某会话的背景图片（保留模糊度设置，清除后重新设置时仍生效）。
+  /// 同时删除已持久化的物理文件，避免残留孤儿图片。
   Future<void> clearImage(String chatId) async {
     final existing = _cache[chatId] ?? await _loadFromPrefs(chatId);
+    if (existing.hasImage && existing.fileExists) {
+      _deleteFileQuietly(existing.imagePath);
+    }
     final info = existing.copyWith(imagePath: '');
     _cache[chatId] = info;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_imageKeyPrefix + chatId);
     notifyListeners();
+  }
+
+  /// 静默删除文件（失败不影响主流程）
+  void _deleteFileQuietly(String path) {
+    try {
+      final f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
   }
 
   /// 设置某会话背景的高斯模糊度

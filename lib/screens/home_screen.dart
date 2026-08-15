@@ -24,6 +24,7 @@ import '../widgets/update_dialogs.dart';
 import 'moments_screen.dart';
 import 'profile_screen.dart';
 import 'chat_search_screen.dart';
+import 'contacts_search_screen.dart';
 import 'create_group_screen.dart';
 import 'group_chat_screen.dart';
 
@@ -487,7 +488,14 @@ class _HomeScreenState extends State<HomeScreen>
         middle: const Text('通讯录'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: () {},
+          onPressed: () {
+            Navigator.push(
+              context,
+              CupertinoPageRoute(
+                builder: (_) => const ContactsSearchScreen(),
+              ),
+            );
+          },
           child: const Icon(CupertinoIcons.search),
         ),
       ),

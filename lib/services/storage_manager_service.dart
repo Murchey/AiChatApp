@@ -58,7 +58,7 @@ class OtherCleanupPlan {
 /// 覆盖所有 path_provider 目录 + SharedPreferences 全部键：
 /// - 文档目录（getApplicationDocumentsDirectory）：workshop（下载缓存）、
 ///   user_moments / moment_import_*（角色朋友圈图片）、chat_import_*
-///   （聊天导入文件）及其他未分类文件；
+///   （聊天导入文件）、chat_backgrounds（聊天背景图）及其他未分类文件；
 /// - 支持目录（getApplicationSupportDirectory）：角色包/其他数据文件；
 /// - 内部缓存（getTemporaryDirectory，即系统「缓存」口径之一）：临时文件；
 /// - 外部存储（getExternalStorageDirectory）：updates/ 下的 APK 更新包；
@@ -93,6 +93,8 @@ class StorageManagerService {
   static const _workshopDirs = ['workshop'];
   static const _characterDirs = ['user_moments'];
   static const _characterPrefixes = ['moment_import_'];
+  // 聊天相关目录：导入聊天提取的文件 + 每个会话独立设置的聊天背景图
+  static const _chatDirs = ['chat_backgrounds'];
   static const _chatPrefixes = ['chat_import_'];
 
   // 引擎/系统运行时目录（非用户数据、非缓存，排除出占用统计与删除）
@@ -125,9 +127,10 @@ class StorageManagerService {
   }
 
   /// 聊天记录：聊天会话/消息存储键 + 导入聊天时提取的图片与文件目录
+  /// （含每个会话独立的聊天背景图）
   static Future<StorageItem> _chatItem(Map<String, int> prefs) async {
     final bytes = prefs['chat']! +
-        await _docDirsSize(names: const [], prefixes: _chatPrefixes);
+        await _docDirsSize(names: _chatDirs, prefixes: _chatPrefixes);
     return StorageItem(
       id: 'chat',
       title: '聊天记录',
@@ -246,9 +249,9 @@ class StorageManagerService {
 
   // ─── 文件清理（返回释放的字节数）────────────────────────────
 
-  /// 删除导入聊天时提取的图片/文件目录（chat_import_*）
+  /// 删除导入聊天时提取的图片/文件目录（chat_import_*）与聊天背景图（chat_backgrounds）
   static Future<int> clearChatFiles() async {
-    return _deleteDocDirs(names: const [], prefixes: _chatPrefixes);
+    return _deleteDocDirs(names: _chatDirs, prefixes: _chatPrefixes);
   }
 
   /// 删除发布/导入的朋友圈图片目录（user_moments、moment_import_*）
@@ -394,6 +397,7 @@ class StorageManagerService {
       _workshopDirs.contains(name) ||
       _characterDirs.contains(name) ||
       _characterPrefixes.any((p) => name.startsWith(p)) ||
+      _chatDirs.contains(name) ||
       _chatPrefixes.any((p) => name.startsWith(p)) ||
       _systemDirs.contains(name);
 
@@ -625,7 +629,8 @@ class StorageManagerService {
             } else if (_characterDirs.contains(name) ||
                 _characterPrefixes.any((p) => name.startsWith(p))) {
               cat = ' → 角色与朋友圈';
-            } else if (_chatPrefixes.any((p) => name.startsWith(p))) {
+            } else if (_chatDirs.contains(name) ||
+                _chatPrefixes.any((p) => name.startsWith(p))) {
               cat = ' → 聊天记录';
             } else if (_systemDirs.contains(name)) {
               cat = ' → 系统(引擎,不计入)';
