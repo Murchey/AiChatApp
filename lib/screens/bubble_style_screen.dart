@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/settings_provider.dart';
+import '../widgets/chat_bubble.dart';
 
 /// 聊天气泡样式选择页：顶部实时预览，列表选择样式
 class BubbleStyleScreen extends StatelessWidget {
@@ -38,7 +39,9 @@ class BubbleStyleScreen extends StatelessWidget {
                   additionalInfo: Text(
                     style == BubbleStyle.sr
                         ? '暖棕 + 柔和阴影，还原崩铁短信'
-                        : '矩形圆角 + 细描边，支持自定义颜色',
+                        : style == BubbleStyle.ww
+                            ? '上边共线尾巴 + 大圆角弧线，还原鸣潮短信'
+                            : '矩形圆角 + 细描边，支持自定义颜色',
                     style: TextStyle(
                       fontSize: 12,
                       color: context.textSecondaryColor,
@@ -55,11 +58,11 @@ class BubbleStyleScreen extends StatelessWidget {
                 );
               }).toList(),
             ),
-            if (current == BubbleStyle.sr)
+            if (current == BubbleStyle.sr || current == BubbleStyle.ww)
               Padding(
                 padding: const EdgeInsets.fromLTRB(32, 8, 32, 0),
                 child: Text(
-                  '崩铁样式使用自带配色，自定义气泡颜色不可用；切回「默认」可恢复',
+                  '该样式使用自带配色，自定义气泡颜色不可用；切回「默认」可恢复',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 11,
@@ -123,19 +126,84 @@ class _PreviewArea extends StatelessWidget {
   Widget _bubble(BuildContext context, bool isUser, String text) {
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 240),
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: _decoration(context, isUser),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 15,
-            height: 1.45,
-            color: style == BubbleStyle.sr
-                ? context.bubbleTextColor(isUser)
-                : context.textPrimaryColor,
+      child: style == BubbleStyle.ww
+          ? _wwBubble(context, isUser, text)
+          : Container(
+              constraints: const BoxConstraints(maxWidth: 240),
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: _decoration(context, isUser),
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.45,
+                  color: style == BubbleStyle.sr
+                      ? context.bubbleTextColor(isUser)
+                      : context.textPrimaryColor,
+                ),
+              ),
+            ),
+    );
+  }
+
+  /// ww 鸣潮样式预览：用 CustomClipper 绘制带尾巴形状，与聊天页一致
+  Widget _wwBubble(BuildContext context, bool isUser, String text) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 240),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        // 圆角按尾巴朝向镜像（我方右下角/对方左下角为大圆角），与裁剪形状一致
+        borderRadius: isUser
+            ? const BorderRadius.only(
+                topLeft: Radius.circular(5),
+                topRight: Radius.circular(5),
+                bottomLeft: Radius.circular(15),
+                bottomRight: Radius.circular(5),
+              )
+            : const BorderRadius.only(
+                topLeft: Radius.circular(5),
+                topRight: Radius.circular(5),
+                bottomLeft: Radius.circular(5),
+                bottomRight: Radius.circular(15),
+              ),
+        boxShadow: [
+          BoxShadow(
+            color: context.isDark
+                ? WwBubbleColors.shadowColorDark
+                : WwBubbleColors.shadowColorLight,
+            offset: const Offset(0, 1),
+            blurRadius: 3,
+          ),
+        ],
+      ),
+      child: ClipPath(
+        clipper: WwBubbleClipper(isUser: isUser),
+        child: Container(
+          color: isUser
+              ? (context.isDark
+                  ? WwBubbleColors.selfColorDark
+                  : WwBubbleColors.selfColorLight)
+              : (context.isDark
+                  ? WwBubbleColors.otherColorDark
+                  : WwBubbleColors.otherColorLight),
+          padding: EdgeInsets.only(
+            left: isUser ? 12 : 12 + WwBubbleClipper.tailLen,
+            right: isUser ? 12 + WwBubbleClipper.tailLen : 12,
+            top: 10,
+            bottom: 10,
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.45,
+              color: isUser
+                  ? WwBubbleColors.selfTextColor
+                  : context.isDark
+                      ? WwBubbleColors.otherTextColorDark
+                      : WwBubbleColors.otherTextColorLight,
+            ),
           ),
         ),
       ),

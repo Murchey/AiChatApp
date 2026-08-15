@@ -169,11 +169,12 @@ class _ChatBubbleState extends State<ChatBubble> {
           if (widget.selectMode && !isUser) _buildSelectCheck(context),
           Flexible(
             child: Padding(
-              // sr 样式：气泡上边对齐头像垂直中线（头像 40px → 下移 20px）。
+              // sr/ww 样式：气泡顶边（含尾巴尖角）对齐头像垂直中线（头像 40px → 下移 20px）。
               // 群聊角色消息带昵称（约 19px），昵称贴顶后气泡紧跟其后顶边已在
               // 头像中线附近，无需再下移；私聊无昵称则下移 20px。
               padding: EdgeInsets.only(
-                top: context.bubbleStyle == BubbleStyle.sr &&
+                top: (context.bubbleStyle == BubbleStyle.sr ||
+                        context.bubbleStyle == BubbleStyle.ww) &&
                         widget.senderName.isEmpty
                     ? 20
                     : 0,
@@ -202,34 +203,11 @@ class _ChatBubbleState extends State<ChatBubble> {
                       : (widget.onLongPress != null
                           ? () => widget.onLongPress!(message, _bubbleKey)
                           : null),
-                  child: Container(
-                    key: _bubbleKey,
-                    // 图片/文件消息不包裹气泡（透明背景、无内边距），仅多选时显示选中描边
-                    padding: isImage || isFile
-                        ? EdgeInsets.all(widget.selected ? 2 : 0)
-                        : const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isImage || isFile
-                          ? CupertinoColors.transparent
-                          : context.bubbleBgColor(isUser),
-                      borderRadius: context.bubbleBorderRadiusFor(isUser),
-                      border: widget.selected
-                          ? Border.all(
-                              color: context.accentColor,
-                              width: 1.5,
-                            )
-                          : (isImage || isFile || context.bubbleStyle == BubbleStyle.sr)
-                              ? null
-                              : Border.all(
-                                  color: context.separatorColor,
-                                  width: 0.5,
-                                ),
-                      boxShadow: isImage || isFile
-                          ? const <BoxShadow>[]
-                          : context.bubbleShadow,
-                    ),
-                    child: Column(
+                  child: _buildBubbleBox(
+                    context,
+                    isImage,
+                    isFile,
+                    Column(
                       crossAxisAlignment: isUser
                           ? CrossAxisAlignment.end
                           : CrossAxisAlignment.start,
@@ -268,6 +246,85 @@ class _ChatBubbleState extends State<ChatBubble> {
       ],
     ),
   );
+  }
+
+  /// 构建气泡主体容器：ww 鸣潮样式用 CustomClipper 绘制带尾巴的形状，
+  /// 其余样式使用普通 BoxDecoration（矩形圆角 / sr 直角圆角）
+  Widget _buildBubbleBox(
+    BuildContext context,
+    bool isImage,
+    bool isFile,
+    Widget child,
+  ) {
+    final isUser = widget.message.isFromUser;
+    final isWw = !isImage && !isFile && context.bubbleStyle == BubbleStyle.ww;
+    if (isWw) {
+      return Container(
+        key: _bubbleKey,
+        decoration: BoxDecoration(
+          // 外层只负责柔和投影；圆角按尾巴朝向镜像（我方右下角/对方左下角为大圆角），与裁剪形状一致
+          borderRadius: isUser
+              ? const BorderRadius.only(
+                  topLeft: Radius.circular(5),
+                  topRight: Radius.circular(5),
+                  bottomLeft: Radius.circular(15),
+                  bottomRight: Radius.circular(5),
+                )
+              : const BorderRadius.only(
+                  topLeft: Radius.circular(5),
+                  topRight: Radius.circular(5),
+                  bottomLeft: Radius.circular(5),
+                  bottomRight: Radius.circular(15),
+                ),
+          boxShadow: context.bubbleShadow,
+        ),
+        child: ClipPath(
+          clipper: WwBubbleClipper(isUser: isUser),
+          child: Container(
+            color: context.bubbleBgColor(isUser),
+            // 尾巴侧多留出 tailLen 空间，内容不贴尾巴弧线
+            padding: EdgeInsets.only(
+              left: isUser ? 14 : 14 + WwBubbleClipper.tailLen,
+              right: isUser ? 14 + WwBubbleClipper.tailLen : 14,
+              top: 10,
+              bottom: 10,
+            ),
+            child: child,
+          ),
+        ),
+      );
+    }
+    return Container(
+      key: _bubbleKey,
+      // 图片/文件消息不包裹气泡（透明背景、无内边距），仅多选时显示选中描边
+      padding: isImage || isFile
+          ? EdgeInsets.all(widget.selected ? 2 : 0)
+          : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isImage || isFile
+            ? CupertinoColors.transparent
+            : context.bubbleBgColor(isUser),
+        borderRadius: context.bubbleBorderRadiusFor(isUser),
+        border: widget.selected
+            ? Border.all(
+                color: context.accentColor,
+                width: 1.5,
+              )
+            : (isImage ||
+                    isFile ||
+                    context.bubbleStyle == BubbleStyle.sr ||
+                    context.bubbleStyle == BubbleStyle.ww)
+                ? null
+                : Border.all(
+                    color: context.separatorColor,
+                    width: 0.5,
+                  ),
+        boxShadow: isImage || isFile
+            ? const <BoxShadow>[]
+            : context.bubbleShadow,
+      ),
+      child: child,
+    );
   }
 
   /// 多选模式下的选中勾选框
@@ -509,4 +566,63 @@ class _ChatBubbleState extends State<ChatBubble> {
       child: avatar,
     );
   }
+}
+
+/// ww 鸣潮气泡形状裁剪：
+/// 靠近说话人一侧的上边缘伸出锐角三角形尾巴（上边与气泡顶边共线），
+/// 尾巴回程边为圆心在气泡外侧（尖端一侧）的大圆角弧线，两侧镜像对称；
+/// 我方右下角 / 对方左下角为 15px 大圆角，另外两个小角 5px。
+class WwBubbleClipper extends CustomClipper<Path> {
+  const WwBubbleClipper({required this.isUser});
+
+  /// 说话人在本气泡的哪一侧（true = 右侧，尾巴朝右）
+  final bool isUser;
+
+  /// 尾巴伸出长度（尖端到气泡主体侧边的水平距离）
+  static const double tailLen = 14;
+  /// 尾巴回程弧线 / 右下角大圆角半径
+  static const double rBig = 15;
+  /// 右上角 / 左下角小圆角半径
+  static const double rSmall = 5;
+
+  @override
+  Path getClip(Size size) {
+    final w = size.width;
+    final h = size.height;
+    final path = Path();
+    if (isUser) {
+      // 我方气泡（右侧，说话人在右）：尾巴在右上角，尖端朝右
+      path.moveTo(w, 0); // 尖端
+      path.lineTo(rSmall, 0); // 尾巴上边与顶边共线
+      path.quadraticBezierTo(0, 0, 0, rSmall); // 左上角 r5
+      path.lineTo(0, h - rBig); // 左边线
+      path.quadraticBezierTo(0, h, rBig, h); // 左下角 r15
+      path.lineTo(w - tailLen - rSmall, h); // 底边
+      path.quadraticBezierTo(
+          w - tailLen, h, w - tailLen, h - rSmall); // 右下角 r5
+      path.lineTo(w - tailLen, h * 0.25); // 右边线向上至尾巴回程落点
+      // 回程弧线（圆心在气泡内侧，大圆角）
+      path.arcToPoint(Offset(w, 0), radius: const Radius.circular(rBig));
+      path.close();
+    } else {
+      // 对方气泡（左侧，说话人在左）：尾巴在左上角，尖端朝左
+      path.moveTo(0, 0); // 尖端
+      path.lineTo(w - rSmall, 0); // 尾巴上边与顶边共线
+      path.quadraticBezierTo(w, 0, w, rSmall); // 右上角 r5
+      path.lineTo(w, h - rBig); // 右边线
+      path.quadraticBezierTo(w, h, w - rBig, h); // 右下角 r15
+      path.lineTo(tailLen + rSmall, h); // 底边
+      path.quadraticBezierTo(tailLen, h, tailLen, h - rSmall); // 左下角 r5
+      path.lineTo(tailLen, h * 0.25); // 左边线向上至尾巴回程落点
+      // 回程弧线（圆心在气泡外侧尖端一侧，大圆角）；与右侧我方弧线镜像，需显式反向
+      path.arcToPoint(const Offset(0, 0),
+          radius: const Radius.circular(rBig), clockwise: false);
+      path.close();
+    }
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant WwBubbleClipper oldClipper) =>
+      oldClipper.isUser != isUser;
 }

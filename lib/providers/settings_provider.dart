@@ -9,12 +9,14 @@ enum AppThemeMode { system, light, dark }
 /// 全局角色头像框样式：方形 / 仿 QQ 圆形
 enum AvatarFrameStyle { square, circle }
 
-/// 聊天气泡样式：默认（代码绘制） / sr（崩铁短信样式），后续可扩展其他类型
+/// 聊天气泡样式：默认（代码绘制） / sr（崩铁短信样式）/ ww（鸣潮样式），后续可扩展其他类型
 enum BubbleStyle {
   /// 默认：矩形圆角 + 描边，背景色可自定义
   classic,
   /// sr 崩铁短信样式：大圆角 + 柔和阴影，自带配色（自己=暖棕，对方=浅灰）
   sr,
+  /// ww 鸣潮样式：上边共线尾巴 + 大圆角弧线，自带配色
+  ww,
 }
 
 extension BubbleStyleX on BubbleStyle {
@@ -24,6 +26,8 @@ extension BubbleStyleX on BubbleStyle {
         return '默认';
       case BubbleStyle.sr:
         return '崩铁样式';
+      case BubbleStyle.ww:
+        return '鸣潮样式';
     }
   }
 }

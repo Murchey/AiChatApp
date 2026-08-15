@@ -20,6 +20,28 @@ class SrBubbleColors {
   static const shadowColor = Color(0x1A000000); // alpha ≈ 0.1
 }
 
+/// ww 鸣潮气泡配色（浅色/深色模式分开配置）
+class WwBubbleColors {
+  /// 我方气泡：浅色模式
+  static const selfColorLight = Color(0xFF20252B);
+  /// 我方气泡：深色模式
+  static const selfColorDark = Color(0xFF21262C);
+  /// 对方气泡：浅色模式
+  static const otherColorLight = Color(0xFFE7E7E7);
+  /// 对方气泡：深色模式
+  static const otherColorDark = Color(0xFF2C2C2C);
+  /// 我方气泡文字：白色（浅深模式一致）
+  static const selfTextColor = Color(0xFFFFFFFF);
+  /// 对方气泡文字：浅色模式黑色
+  static const otherTextColorLight = Color(0xFF000000);
+  /// 对方气泡文字：深色模式白色
+  static const otherTextColorDark = Color(0xFFFFFFFF);
+  /// 柔和底部阴影：深色模式 alpha 0.05
+  static const shadowColorDark = Color(0x0D000000);
+  /// 柔和底部阴影：浅色模式再减半 alpha ≈ 0.025
+  static const shadowColorLight = Color(0x06000000);
+}
+
 /// 亮/暗两套色板
 class AppColors {
   // 亮色模式
@@ -204,7 +226,7 @@ extension AppThemeX on BuildContext {
     return BorderRadius.circular(r);
   }
 
-  /// 气泡背景色：sr 样式使用自带配色（含深色模式适配），经典样式使用自定义颜色
+  /// 气泡背景色：sr/ww 样式使用自带配色（含深色模式适配），经典样式使用自定义颜色
   Color bubbleBgColor(bool isUser) {
     if (bubbleStyle == BubbleStyle.sr) {
       if (isUser) return SrBubbleColors.selfColor;
@@ -212,10 +234,20 @@ extension AppThemeX on BuildContext {
           ? SrBubbleColors.otherColorDark
           : SrBubbleColors.otherColor;
     }
+    if (bubbleStyle == BubbleStyle.ww) {
+      if (isUser) {
+        return isDark
+            ? WwBubbleColors.selfColorDark
+            : WwBubbleColors.selfColorLight;
+      }
+      return isDark
+          ? WwBubbleColors.otherColorDark
+          : WwBubbleColors.otherColorLight;
+    }
     return isUser ? bubbleSelfColor : bubbleOtherColor;
   }
 
-  /// 气泡内文字色：sr 样式固定配色（含深色模式适配），经典样式使用自定义文字色
+  /// 气泡内文字色：sr/ww 样式固定配色（含深色模式适配），经典样式使用自定义文字色
   Color bubbleTextColor(bool isUser) {
     if (bubbleStyle == BubbleStyle.sr) {
       if (isUser) return SrBubbleColors.selfTextColor;
@@ -223,10 +255,16 @@ extension AppThemeX on BuildContext {
           ? SrBubbleColors.otherTextColorDark
           : SrBubbleColors.otherTextColor;
     }
+    if (bubbleStyle == BubbleStyle.ww) {
+      if (isUser) return WwBubbleColors.selfTextColor;
+      return isDark
+          ? WwBubbleColors.otherTextColorDark
+          : WwBubbleColors.otherTextColorLight;
+    }
     return isUser ? bubbleTextSelfColor : bubbleTextOtherColor;
   }
 
-  /// 气泡阴影：sr 样式带柔和投影，经典样式无阴影
+  /// 气泡阴影：sr 带柔和投影，ww 投影减半（更轻），经典样式无阴影
   List<BoxShadow>? get bubbleShadow {
     if (bubbleStyle == BubbleStyle.sr) {
       return const [
@@ -234,6 +272,18 @@ extension AppThemeX on BuildContext {
           color: SrBubbleColors.shadowColor,
           offset: Offset(0, 2),
           blurRadius: 6,
+        ),
+      ];
+    }
+    if (bubbleStyle == BubbleStyle.ww) {
+      return [
+        BoxShadow(
+          // 浅色模式阴影再减半，深色模式保持原样
+          color: isDark
+              ? WwBubbleColors.shadowColorDark
+              : WwBubbleColors.shadowColorLight,
+          offset: const Offset(0, 1),
+          blurRadius: 3,
         ),
       ];
     }
