@@ -9,7 +9,7 @@ enum AppThemeMode { system, light, dark }
 /// 全局角色头像框样式：方形 / 仿 QQ 圆形
 enum AvatarFrameStyle { square, circle }
 
-/// 聊天气泡样式：默认（代码绘制） / sr（崩铁短信样式）/ ww（鸣潮样式），后续可扩展其他类型
+/// 聊天气泡样式：默认（代码绘制） / sr（崩铁短信样式）/ ww（鸣潮样式）/ zmd（终末地样式），后续可扩展其他类型
 enum BubbleStyle {
   /// 默认：矩形圆角 + 描边，背景色可自定义
   classic,
@@ -17,6 +17,9 @@ enum BubbleStyle {
   sr,
   /// ww 鸣潮样式：上边共线尾巴 + 大圆角弧线，自带配色
   ww,
+  /// zmd 终末地样式：基于鸣潮的尾巴形状，三角均 15px、尾巴回程弧 10px，
+  /// 浅深配色一致（自己=白底黑字带黑描边，对方=深灰底白字）
+  zmd,
 }
 
 extension BubbleStyleX on BubbleStyle {
@@ -28,6 +31,8 @@ extension BubbleStyleX on BubbleStyle {
         return '崩铁样式';
       case BubbleStyle.ww:
         return '鸣潮样式';
+      case BubbleStyle.zmd:
+        return '终末地样式';
     }
   }
 }
@@ -178,6 +183,8 @@ class SettingsProvider extends ChangeNotifier {
     final storedBubbleStyle = prefs.getString('bubble_style');
     _bubbleStyle = switch (storedBubbleStyle) {
       'honkaiSms' || 'sr' => BubbleStyle.sr,
+      'ww' => BubbleStyle.ww,
+      'zmd' => BubbleStyle.zmd,
       _ => BubbleStyle.classic,
     };
     notifyListeners();

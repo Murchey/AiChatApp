@@ -38,10 +38,10 @@ class BubbleStyleScreen extends StatelessWidget {
                   title: Text(style.displayName),
                   additionalInfo: Text(
                     style == BubbleStyle.sr
-                        ? '暖棕 + 柔和阴影，还原崩铁短信'
+                        ? ''
                         : style == BubbleStyle.ww
-                            ? '上边共线尾巴 + 大圆角弧线，还原鸣潮短信'
-                            : '矩形圆角 + 细描边，支持自定义颜色',
+                            ? ''
+                            : '',
                     style: TextStyle(
                       fontSize: 12,
                       color: context.textSecondaryColor,
@@ -58,7 +58,9 @@ class BubbleStyleScreen extends StatelessWidget {
                 );
               }).toList(),
             ),
-            if (current == BubbleStyle.sr || current == BubbleStyle.ww)
+            if (current == BubbleStyle.sr ||
+                current == BubbleStyle.ww ||
+                current == BubbleStyle.zmd)
               Padding(
                 padding: const EdgeInsets.fromLTRB(32, 8, 32, 0),
                 child: Text(
@@ -126,24 +128,26 @@ class _PreviewArea extends StatelessWidget {
   Widget _bubble(BuildContext context, bool isUser, String text) {
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: style == BubbleStyle.ww
-          ? _wwBubble(context, isUser, text)
-          : Container(
-              constraints: const BoxConstraints(maxWidth: 240),
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: _decoration(context, isUser),
-              child: Text(
-                text,
-                style: TextStyle(
-                  fontSize: 15,
-                  height: 1.45,
-                  color: style == BubbleStyle.sr
-                      ? context.bubbleTextColor(isUser)
-                      : context.textPrimaryColor,
-                ),
+      child: switch (style) {
+        BubbleStyle.ww => _wwBubble(context, isUser, text),
+        BubbleStyle.zmd => _zmdBubble(context, isUser, text),
+        _ => Container(
+            constraints: const BoxConstraints(maxWidth: 240),
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: _decoration(context, isUser),
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.45,
+                color: style == BubbleStyle.sr
+                    ? context.bubbleTextColor(isUser)
+                    : context.textPrimaryColor,
               ),
             ),
+          ),
+      },
     );
   }
 
@@ -203,6 +207,73 @@ class _PreviewArea extends StatelessWidget {
                   : context.isDark
                       ? WwBubbleColors.otherTextColorDark
                       : WwBubbleColors.otherTextColorLight,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// zmd 终末地样式预览：基于鸣潮尾巴形状（三角均 15px、回程弧 10px），
+  /// 我方白底黑字带黑色描边，对方深灰底白字，与聊天页一致
+  Widget _zmdBubble(BuildContext context, bool isUser, String text) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 240),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        // 圆角按尾巴朝向镜像：我方 tail 朝右，对方 tail 朝左
+        borderRadius: isUser
+            ? const BorderRadius.only(
+                topLeft: Radius.circular(15),
+                topRight: Radius.zero,
+                bottomLeft: Radius.circular(15),
+                bottomRight: Radius.circular(15),
+              )
+            : const BorderRadius.only(
+                topLeft: Radius.zero,
+                topRight: Radius.circular(15),
+                bottomLeft: Radius.circular(15),
+                bottomRight: Radius.circular(15),
+              ),
+        boxShadow: [
+          BoxShadow(
+            color: context.isDark
+                ? ZmdBubbleColors.shadowColorDark
+                : ZmdBubbleColors.shadowColorLight,
+            offset: const Offset(0, 1),
+            blurRadius: 3,
+          ),
+        ],
+      ),
+      child: ClipPath(
+        clipper: ZmdBubbleClipper(isUser: isUser),
+        child: Container(
+          color: isUser
+              ? ZmdBubbleColors.selfColor
+              : ZmdBubbleColors.otherColor,
+          // 我方白色气泡带黑色轮廓描边（浅深一致）
+          foregroundDecoration: isUser
+              ? BoxDecoration(
+                  border: Border.all(
+                    color: ZmdBubbleColors.selfBorderColor,
+                    width: 1,
+                  ),
+                )
+              : null,
+          padding: EdgeInsets.only(
+            left: isUser ? 12 : 12 + ZmdBubbleClipper.tailLen,
+            right: isUser ? 12 + ZmdBubbleClipper.tailLen : 12,
+            top: 10,
+            bottom: 10,
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.45,
+              color: isUser
+                  ? ZmdBubbleColors.selfTextColor
+                  : ZmdBubbleColors.otherTextColor,
             ),
           ),
         ),

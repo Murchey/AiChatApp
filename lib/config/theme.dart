@@ -23,14 +23,14 @@ class SrBubbleColors {
 /// ww 鸣潮气泡配色（浅色/深色模式分开配置）
 class WwBubbleColors {
   /// 我方气泡：浅色模式
-  static const selfColorLight = Color(0xFF20252B);
+  static const selfColorLight = Color(0xFFE8EAED);
   /// 我方气泡：深色模式
-  static const selfColorDark = Color(0xFF21262C);
+  static const selfColorDark = Color.fromARGB(255, 95, 110, 129);
   /// 对方气泡：浅色模式
   static const otherColorLight = Color(0xFFE7E7E7);
   /// 对方气泡：深色模式
   static const otherColorDark = Color(0xFF2C2C2C);
-  /// 我方气泡文字：白色（浅深模式一致）
+  /// 我方气泡文字：黑色
   static const selfTextColor = Color(0xFFFFFFFF);
   /// 对方气泡文字：浅色模式黑色
   static const otherTextColorLight = Color(0xFF000000);
@@ -39,6 +39,24 @@ class WwBubbleColors {
   /// 柔和底部阴影：深色模式 alpha 0.05
   static const shadowColorDark = Color(0x0D000000);
   /// 柔和底部阴影：浅色模式再减半 alpha ≈ 0.025
+  static const shadowColorLight = Color(0x06000000);
+}
+
+/// zmd 终末地气泡配色（基于鸣潮尾巴形状，浅色/深色模式配色一致）
+class ZmdBubbleColors {
+  /// 我方气泡：白色（浅深一致）
+  static const selfColor = Color(0xFFFFFFFF);
+  /// 我方气泡文字：黑色（浅深一致）
+  static const selfTextColor = Color(0xFF000000);
+  /// 我方气泡黑色轮廓描边（浅深一致）
+  static const selfBorderColor = Color(0xFF000000);
+  /// 对方气泡：深灰（浅深一致）
+  static const otherColor = Color(0xFF464646);
+  /// 对方气泡文字：白色（浅深一致）
+  static const otherTextColor = Color(0xFFFFFFFF);
+  /// 柔和底部阴影（与鸣潮一致：深色 alpha 0.05）
+  static const shadowColorDark = Color(0x0D000000);
+  /// 柔和底部阴影（与鸣潮一致：浅色 alpha ≈ 0.025）
   static const shadowColorLight = Color(0x06000000);
 }
 
@@ -77,10 +95,10 @@ class AppColors {
   // 预设主题色（5 个）
   static const presetColors = <Color>[
     Color(0xFF07C160), // 微信绿
-    Color(0xFF25D366), // WhatsApp 绿
-    Color(0xFF007AFF), // 经典蓝
-    Color(0xFFFF9500), // 活力橙
-    Color(0xFFAF52DE), // 神秘紫
+    Color(0xFFFE8E1C), // mimo橙色
+    Color(0xFF007AFF), // QQ蓝
+    Color(0xFFD8BF00), // 终末地黄
+    Color(0xFF2A5995), // ds蓝
   ];
 
   // 朋友圈（深色卡片风格，浅色模式改用浅灰底）
@@ -226,7 +244,7 @@ extension AppThemeX on BuildContext {
     return BorderRadius.circular(r);
   }
 
-  /// 气泡背景色：sr/ww 样式使用自带配色（含深色模式适配），经典样式使用自定义颜色
+  /// 气泡背景色：sr/ww/zmd 样式使用自带配色，经典样式使用自定义颜色
   Color bubbleBgColor(bool isUser) {
     if (bubbleStyle == BubbleStyle.sr) {
       if (isUser) return SrBubbleColors.selfColor;
@@ -244,10 +262,14 @@ extension AppThemeX on BuildContext {
           ? WwBubbleColors.otherColorDark
           : WwBubbleColors.otherColorLight;
     }
+    if (bubbleStyle == BubbleStyle.zmd) {
+      // 终末地：浅色/深色模式配色一致
+      return isUser ? ZmdBubbleColors.selfColor : ZmdBubbleColors.otherColor;
+    }
     return isUser ? bubbleSelfColor : bubbleOtherColor;
   }
 
-  /// 气泡内文字色：sr/ww 样式固定配色（含深色模式适配），经典样式使用自定义文字色
+  /// 气泡内文字色：sr/ww/zmd 样式固定配色，经典样式使用自定义文字色
   Color bubbleTextColor(bool isUser) {
     if (bubbleStyle == BubbleStyle.sr) {
       if (isUser) return SrBubbleColors.selfTextColor;
@@ -261,10 +283,21 @@ extension AppThemeX on BuildContext {
           ? WwBubbleColors.otherTextColorDark
           : WwBubbleColors.otherTextColorLight;
     }
+    if (bubbleStyle == BubbleStyle.zmd) {
+      return isUser
+          ? ZmdBubbleColors.selfTextColor
+          : ZmdBubbleColors.otherTextColor;
+    }
     return isUser ? bubbleTextSelfColor : bubbleTextOtherColor;
   }
 
-  /// 气泡阴影：sr 带柔和投影，ww 投影减半（更轻），经典样式无阴影
+  /// 气泡轮廓描边色：仅 zmd 样式我方气泡使用黑色描边（浅深一致），其余无描边
+  Color? bubbleBorderColor(bool isUser) {
+    if (bubbleStyle != BubbleStyle.zmd || !isUser) return null;
+    return ZmdBubbleColors.selfBorderColor;
+  }
+
+  /// 气泡阴影：sr 带柔和投影，ww/zmd 投影减半（更轻），经典样式无阴影
   List<BoxShadow>? get bubbleShadow {
     if (bubbleStyle == BubbleStyle.sr) {
       return const [
@@ -282,6 +315,18 @@ extension AppThemeX on BuildContext {
           color: isDark
               ? WwBubbleColors.shadowColorDark
               : WwBubbleColors.shadowColorLight,
+          offset: const Offset(0, 1),
+          blurRadius: 3,
+        ),
+      ];
+    }
+    if (bubbleStyle == BubbleStyle.zmd) {
+      return [
+        BoxShadow(
+          // 与鸣潮一致：浅色模式阴影减半，深色模式保持原样
+          color: isDark
+              ? ZmdBubbleColors.shadowColorDark
+              : ZmdBubbleColors.shadowColorLight,
           offset: const Offset(0, 1),
           blurRadius: 3,
         ),

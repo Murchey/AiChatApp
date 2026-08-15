@@ -169,12 +169,13 @@ class _ChatBubbleState extends State<ChatBubble> {
           if (widget.selectMode && !isUser) _buildSelectCheck(context),
           Flexible(
             child: Padding(
-              // sr/ww 样式：气泡顶边（含尾巴尖角）对齐头像垂直中线（头像 40px → 下移 20px）。
+              // sr/ww/zmd 样式：气泡顶边（含尾巴尖角）对齐头像垂直中线（头像 40px → 下移 20px）。
               // 群聊角色消息带昵称（约 19px），昵称贴顶后气泡紧跟其后顶边已在
               // 头像中线附近，无需再下移；私聊无昵称则下移 20px。
               padding: EdgeInsets.only(
                 top: (context.bubbleStyle == BubbleStyle.sr ||
-                        context.bubbleStyle == BubbleStyle.ww) &&
+                        context.bubbleStyle == BubbleStyle.ww ||
+                        context.bubbleStyle == BubbleStyle.zmd) &&
                         widget.senderName.isEmpty
                     ? 20
                     : 0,
@@ -248,7 +249,7 @@ class _ChatBubbleState extends State<ChatBubble> {
   );
   }
 
-  /// 构建气泡主体容器：ww 鸣潮样式用 CustomClipper 绘制带尾巴的形状，
+  /// 构建气泡主体容器：ww 鸣潮 / zmd 终末地样式用 CustomClipper 绘制带尾巴形状，
   /// 其余样式使用普通 BoxDecoration（矩形圆角 / sr 直角圆角）
   Widget _buildBubbleBox(
     BuildContext context,
@@ -257,32 +258,63 @@ class _ChatBubbleState extends State<ChatBubble> {
     Widget child,
   ) {
     final isUser = widget.message.isFromUser;
-    final isWw = !isImage && !isFile && context.bubbleStyle == BubbleStyle.ww;
-    if (isWw) {
+    // 尾巴样式（ww/zmd）：上边共线尾巴 + 大圆角弧线
+    final isTailStyle =
+        !isImage &&
+        !isFile &&
+        (context.bubbleStyle == BubbleStyle.ww ||
+            context.bubbleStyle == BubbleStyle.zmd);
+    if (isTailStyle) {
+      final isWwStyle = context.bubbleStyle == BubbleStyle.ww;
       return Container(
         key: _bubbleKey,
         decoration: BoxDecoration(
-          // 外层只负责柔和投影；圆角按尾巴朝向镜像（我方右下角/对方左下角为大圆角），与裁剪形状一致
-          borderRadius: isUser
-              ? const BorderRadius.only(
-                  topLeft: Radius.circular(5),
-                  topRight: Radius.circular(5),
-                  bottomLeft: Radius.circular(15),
-                  bottomRight: Radius.circular(5),
-                )
-              : const BorderRadius.only(
-                  topLeft: Radius.circular(5),
-                  topRight: Radius.circular(5),
-                  bottomLeft: Radius.circular(5),
-                  bottomRight: Radius.circular(15),
-                ),
+          // 外层只负责柔和投影；圆角按尾巴朝向镜像，与裁剪形状一致
+          borderRadius: isWwStyle
+              ? (isUser
+                  ? const BorderRadius.only(
+                      topLeft: Radius.circular(5),
+                      topRight: Radius.circular(5),
+                      bottomLeft: Radius.circular(15),
+                      bottomRight: Radius.circular(5),
+                    )
+                  : const BorderRadius.only(
+                      topLeft: Radius.circular(5),
+                      topRight: Radius.circular(5),
+                      bottomLeft: Radius.circular(5),
+                      bottomRight: Radius.circular(15),
+                    ))
+              : (isUser
+                  ? const BorderRadius.only(
+                      topLeft: Radius.circular(15),
+                      topRight: Radius.zero,
+                      bottomLeft: Radius.circular(15),
+                      bottomRight: Radius.circular(15),
+                    )
+                  : const BorderRadius.only(
+                      topLeft: Radius.zero,
+                      topRight: Radius.circular(15),
+                      bottomLeft: Radius.circular(15),
+                      bottomRight: Radius.circular(15),
+                    )),
           boxShadow: context.bubbleShadow,
         ),
         child: ClipPath(
-          clipper: WwBubbleClipper(isUser: isUser),
+          clipper: isWwStyle
+              ? WwBubbleClipper(isUser: isUser)
+              : ZmdBubbleClipper(isUser: isUser),
           child: Container(
             color: context.bubbleBgColor(isUser),
-            // 尾巴侧多留出 tailLen 空间，内容不贴尾巴弧线
+            // zmd 我方白底气泡带黑色轮廓描边（跟随裁剪形状），其余无描边
+            foregroundDecoration: context.bubbleBorderColor(isUser) != null
+                ? BoxDecoration(
+                    border: Border.all(
+                      color: context.bubbleBorderColor(isUser)!,
+                      width: 1,
+                    ),
+                  )
+                : null,
+            // 尾巴侧多留出 tailLen 空间，内容不贴尾巴弧线（两样式 tailLen 均为 14）
             padding: EdgeInsets.only(
               left: isUser ? 14 : 14 + WwBubbleClipper.tailLen,
               right: isUser ? 14 + WwBubbleClipper.tailLen : 14,
@@ -568,6 +600,56 @@ class _ChatBubbleState extends State<ChatBubble> {
   }
 }
 
+/// 构建「上边共线尾巴 + 圆角」的气泡路径（ww/zmd 共用）。
+/// 尾巴尖端在气泡顶边（与头像中线对齐），回程弧线圆心在气泡外侧尖端一侧，
+/// 两侧镜像对称。参数：
+/// [topCornerRadius] 尾巴远端的上角圆角；
+/// [tailSideCornerRadius] 尾巴侧的下角圆角（底边与尾巴侧边之间）；
+/// [bottomCornerRadius] 远离尾巴的下角圆角。
+Path _buildTailBubblePath(
+  Size size, {
+  required bool isUser,
+  required double tailLen,
+  required double tailArcRadius,
+  required double topCornerRadius,
+  required double tailSideCornerRadius,
+  required double bottomCornerRadius,
+}) {
+  final w = size.width;
+  final h = size.height;
+  final path = Path();
+  if (isUser) {
+    // 我方气泡（右侧，说话人在右）：尾巴在右上角，尖端朝右
+    path.moveTo(w, 0); // 尖端
+    path.lineTo(topCornerRadius, 0); // 尾巴上边与顶边共线
+    path.quadraticBezierTo(0, 0, 0, topCornerRadius); // 左上角
+    path.lineTo(0, h - bottomCornerRadius); // 左边线
+    path.quadraticBezierTo(0, h, bottomCornerRadius, h); // 左下角
+    path.lineTo(w - tailLen - tailSideCornerRadius, h); // 底边
+    path.quadraticBezierTo(w - tailLen, h, w - tailLen,
+        h - tailSideCornerRadius); // 尾巴侧下角
+    path.lineTo(w - tailLen, h * 0.25); // 右边线向上至尾巴回程落点
+    // 回程弧线（圆心在气泡外侧尖端一侧，大圆角）
+    path.arcToPoint(Offset(w, 0), radius: Radius.circular(tailArcRadius));
+  } else {
+    // 对方气泡（左侧，说话人在左）：尾巴在左上角，尖端朝左
+    path.moveTo(0, 0); // 尖端
+    path.lineTo(w - topCornerRadius, 0); // 尾巴上边与顶边共线
+    path.quadraticBezierTo(w, 0, w, topCornerRadius); // 右上角
+    path.lineTo(w, h - bottomCornerRadius); // 右边线
+    path.quadraticBezierTo(w, h, w - bottomCornerRadius, h); // 右下角
+    path.lineTo(tailLen + tailSideCornerRadius, h); // 底边
+    path.quadraticBezierTo(
+        tailLen, h, tailLen, h - tailSideCornerRadius); // 尾巴侧下角
+    path.lineTo(tailLen, h * 0.25); // 左边线向上至尾巴回程落点
+    // 回程弧线（圆心在气泡外侧尖端一侧）；与右侧我方弧线镜像，需显式反向
+    path.arcToPoint(const Offset(0, 0),
+        radius: Radius.circular(tailArcRadius), clockwise: false);
+  }
+  path.close();
+  return path;
+}
+
 /// ww 鸣潮气泡形状裁剪：
 /// 靠近说话人一侧的上边缘伸出锐角三角形尾巴（上边与气泡顶边共线），
 /// 尾巴回程边为圆心在气泡外侧（尖端一侧）的大圆角弧线，两侧镜像对称；
@@ -580,49 +662,54 @@ class WwBubbleClipper extends CustomClipper<Path> {
 
   /// 尾巴伸出长度（尖端到气泡主体侧边的水平距离）
   static const double tailLen = 14;
-  /// 尾巴回程弧线 / 右下角大圆角半径
+  /// 尾巴回程弧线 / 远离尾巴下角大圆角半径
   static const double rBig = 15;
-  /// 右上角 / 左下角小圆角半径
+  /// 其余两个小角圆角半径
   static const double rSmall = 5;
 
   @override
-  Path getClip(Size size) {
-    final w = size.width;
-    final h = size.height;
-    final path = Path();
-    if (isUser) {
-      // 我方气泡（右侧，说话人在右）：尾巴在右上角，尖端朝右
-      path.moveTo(w, 0); // 尖端
-      path.lineTo(rSmall, 0); // 尾巴上边与顶边共线
-      path.quadraticBezierTo(0, 0, 0, rSmall); // 左上角 r5
-      path.lineTo(0, h - rBig); // 左边线
-      path.quadraticBezierTo(0, h, rBig, h); // 左下角 r15
-      path.lineTo(w - tailLen - rSmall, h); // 底边
-      path.quadraticBezierTo(
-          w - tailLen, h, w - tailLen, h - rSmall); // 右下角 r5
-      path.lineTo(w - tailLen, h * 0.25); // 右边线向上至尾巴回程落点
-      // 回程弧线（圆心在气泡内侧，大圆角）
-      path.arcToPoint(Offset(w, 0), radius: const Radius.circular(rBig));
-      path.close();
-    } else {
-      // 对方气泡（左侧，说话人在左）：尾巴在左上角，尖端朝左
-      path.moveTo(0, 0); // 尖端
-      path.lineTo(w - rSmall, 0); // 尾巴上边与顶边共线
-      path.quadraticBezierTo(w, 0, w, rSmall); // 右上角 r5
-      path.lineTo(w, h - rBig); // 右边线
-      path.quadraticBezierTo(w, h, w - rBig, h); // 右下角 r15
-      path.lineTo(tailLen + rSmall, h); // 底边
-      path.quadraticBezierTo(tailLen, h, tailLen, h - rSmall); // 左下角 r5
-      path.lineTo(tailLen, h * 0.25); // 左边线向上至尾巴回程落点
-      // 回程弧线（圆心在气泡外侧尖端一侧，大圆角）；与右侧我方弧线镜像，需显式反向
-      path.arcToPoint(const Offset(0, 0),
-          radius: const Radius.circular(rBig), clockwise: false);
-      path.close();
-    }
-    return path;
-  }
+  Path getClip(Size size) => _buildTailBubblePath(
+        size,
+        isUser: isUser,
+        tailLen: tailLen,
+        tailArcRadius: rBig,
+        topCornerRadius: rSmall,
+        tailSideCornerRadius: rSmall,
+        bottomCornerRadius: rBig,
+      );
 
   @override
   bool shouldReclip(covariant WwBubbleClipper oldClipper) =>
+      oldClipper.isUser != isUser;
+}
+
+/// zmd 终末地气泡形状裁剪：形状与鸣潮相同，仅圆角参数不同
+/// （尾巴回程弧 10px，其余三个角均 15px）。
+class ZmdBubbleClipper extends CustomClipper<Path> {
+  const ZmdBubbleClipper({required this.isUser});
+
+  /// 说话人在本气泡的哪一侧（true = 右侧，尾巴朝右）
+  final bool isUser;
+
+  /// 尾巴伸出长度（与鸣潮一致）
+  static const double tailLen = 14;
+  /// 尾巴回程弧线半径
+  static const double tailArcRadius = 10;
+  /// 其余三个角圆角半径
+  static const double cornerRadius = 15;
+
+  @override
+  Path getClip(Size size) => _buildTailBubblePath(
+        size,
+        isUser: isUser,
+        tailLen: tailLen,
+        tailArcRadius: tailArcRadius,
+        topCornerRadius: cornerRadius,
+        tailSideCornerRadius: cornerRadius,
+        bottomCornerRadius: cornerRadius,
+      );
+
+  @override
+  bool shouldReclip(covariant ZmdBubbleClipper oldClipper) =>
       oldClipper.isUser != isUser;
 }
