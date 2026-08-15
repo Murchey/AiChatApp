@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'dart:math';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
@@ -9,6 +11,7 @@ import '../models/conversation.dart';
 import '../models/message.dart';
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/chat_background_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
@@ -143,6 +146,8 @@ class _ChatScreenState extends State<ChatScreen>
     // 打开会话：清除未读并记录当前会话（此后角色新消息不再计入未读）
     _chatProvider = context.read<ChatProvider>();
     _chatProvider!.markConversationActive(widget.conversationId);
+    // 预加载本会话聊天背景（懒加载完成后自动重建渲染）
+    context.read<ChatBackgroundProvider>().getInfo(widget.conversationId);
     // 首次打开（会话无消息）且角色配置了 Greeting 时，角色主动发送问候语
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _sendGreetingIfNeeded();
@@ -1453,10 +1458,46 @@ class _ChatScreenState extends State<ChatScreen>
                 child: const Icon(CupertinoIcons.line_horizontal_3),
               ),
       ),
-      child: Column(
-        children: [
-          Expanded(
-            child: Consumer<ChatProvider>(
+      child: Consumer<ChatBackgroundProvider>(
+        builder: (context, bgProvider, _) {
+          final bgInfo = bgProvider.getInfoSync(widget.conversationId);
+          // 是否渲染背景图：有图且文件存在时，消息列表用半透明遮罩保护文字可读性
+          final hasBg = bgInfo != null && bgInfo.hasImage && bgInfo.fileExists;
+          return Stack(
+            children: [
+              // 背景层（已持久化图片 + 高斯模糊）。
+              // RepaintBoundary：滚动消息列表时复用已光栅化结果，避免每帧重跑高斯模糊
+              if (hasBg)
+                RepaintBoundary(
+                  child: Builder(
+                    builder: (ctx) {
+                      final bgSize = MediaQuery.of(ctx).size;
+                      final blur = bgInfo.blur > 0 ? bgInfo.blur : 0.1;
+                      // 按屏幕物理像素限制解码尺寸：模糊背景无需全分辨率，显著降低
+                      // 大图解码内存与每帧模糊计算量
+                      final decodeWidth =
+                          (bgSize.width * MediaQuery.devicePixelRatioOf(ctx))
+                              .ceil();
+                      return ImageFiltered(
+                        imageFilter:
+                            ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                        child: Image.file(
+                          File(bgInfo.imagePath),
+                          fit: BoxFit.cover,
+                          width: bgSize.width,
+                          height: bgSize.height,
+                          cacheWidth: decodeWidth,
+                          cacheHeight: decodeWidth,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              // 消息内容层
+              Column(
+                children: [
+                  Expanded(
+                    child: Consumer<ChatProvider>(
               builder: (context, chatProvider, _) {
                 final messages =
                     chatProvider.getMessages(widget.conversationId);
@@ -1489,7 +1530,9 @@ class _ChatScreenState extends State<ChatScreen>
 
                 if (messages.isEmpty) {
                   return ColoredBox(
-                    color: context.chatBgColor,
+                    color: hasBg
+                        ? context.chatBgColor.withValues(alpha: 0.86)
+                        : context.chatBgColor,
                     child: Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1516,7 +1559,9 @@ class _ChatScreenState extends State<ChatScreen>
                 // 列表使用 reverse: true，首帧即停在底部（最新消息），
                 // 不会出现"从顶部滑到底部"的视觉。
                 return Container(
-                  color: context.chatBgColor,
+                  color: hasBg
+                      ? context.chatBgColor.withValues(alpha: 0.86)
+                      : context.chatBgColor,
                   child: ListView.builder(
                     controller: _scrollController,
                     reverse: true,
@@ -1731,7 +1776,11 @@ class _ChatScreenState extends State<ChatScreen>
                 );
               },
             ),
-        ],
+          ],
+        ),
+            ],
+          );
+        },
       ),
     );
   }

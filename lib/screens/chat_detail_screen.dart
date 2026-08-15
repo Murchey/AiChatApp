@@ -8,6 +8,7 @@ import '../models/conversation.dart';
 import '../models/visibility_group.dart';
 import '../providers/auto_moment_provider.dart';
 import '../providers/api_provider.dart';
+import '../providers/chat_background_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/memory_point_provider.dart';
@@ -247,6 +248,143 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// 打开聊天背景设置抽屉（选图 / 移除 / 模糊度滑块）
+  Future<void> _showChatBackgroundDrawer() async {
+    final chatId = widget.conversationId;
+    final provider = context.read<ChatBackgroundProvider>();
+    // 可变的 info：拖动滑块期间用局部状态实时预览，松手后才写盘通知
+    var info = await provider.getInfo(chatId);
+    if (!mounted) return;
+
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Container(
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Text(
+                            '聊天背景',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text('完成'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(height: 0.5, color: context.separatorColor),
+                  // 选择背景
+                  CupertinoListTile(
+                    leading: Icon(
+                      CupertinoIcons.photo_fill,
+                      color: CupertinoColors.systemBlue,
+                    ),
+                    title: Text('选择背景'),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _pickAndSetBackground(context, chatId, provider);
+                      if (!mounted) return;
+                      setState(() {});
+                    },
+                  ),
+                  Container(height: 0.5, margin: EdgeInsets.only(left: 16), color: context.separatorColor),
+                  // 移除背景
+                  CupertinoListTile(
+                    leading: Icon(
+                      CupertinoIcons.trash,
+                      color: info.hasImage ? CupertinoColors.systemRed : CupertinoColors.systemGrey,
+                    ),
+                    title: Text(
+                      '移除背景',
+                      style: TextStyle(
+                        color: info.hasImage ? CupertinoColors.systemRed : null,
+                      ),
+                    ),
+                    onTap: info.hasImage
+                        ? () async {
+                            await provider.clearImage(chatId);
+                            setModalState(() {});
+                          }
+                        : null,
+                  ),
+                  Container(height: 0.5, margin: EdgeInsets.only(left: 16), color: context.separatorColor),
+                  // 高斯模糊度
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '高斯模糊度',
+                          style: TextStyle(fontSize: 14, color: context.textSecondaryColor),
+                        ),
+                        const SizedBox(height: 8),
+                        CupertinoSlider(
+                          value: info.blur,
+                          min: 0,
+                          max: 30,
+                          divisions: 30,
+                          activeColor: context.accentColor,
+                          // 拖动中仅更新局部状态，避免每帧磁盘 IO + 整页重建
+                          onChanged: (v) {
+                            setModalState(() {
+                              info = info.copyWith(blur: v);
+                            });
+                          },
+                          // 松手后一次性写盘 + 通知聊天页刷新背景
+                          onChangeEnd: (v) {
+                            provider.setBlur(chatId, v);
+                          },
+                        ),
+                        Text(
+                          '当前：${info.blur.round()}',
+                          style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 从相册选图并设置为聊天背景
+  Future<void> _pickAndSetBackground(BuildContext ctx, String chatId, ChatBackgroundProvider provider) async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(source: ImageSource.gallery);
+    if (file == null) return;
+    try {
+      await provider.setImage(chatId, file.path);
+    } catch (_) {
+      // ignore - user may cancel or permission denied
+    }
   }
 
   void _togglePrompt() {
@@ -1081,6 +1219,37 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       ),
       child: Column(
         children: [
+          // ── 聊天背景设置入口 ──
+          CupertinoListTile(
+            leading: const Icon(
+              CupertinoIcons.photo_fill_on_rectangle_fill,
+              color: CupertinoColors.systemPink,
+            ),
+            title: Text(
+              '聊天背景',
+              style: TextStyle(color: context.textPrimaryColor),
+            ),
+            subtitle: Text(
+              '为当前会话设置独立背景与高斯模糊效果',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: context.textSecondaryColor,
+              ),
+            ),
+            trailing: Icon(
+              CupertinoIcons.chevron_right,
+              size: 14,
+              color: context.textSecondaryColor,
+            ),
+            onTap: _showChatBackgroundDrawer,
+          ),
+          Container(
+            height: 0.5,
+            margin: const EdgeInsets.only(left: 16),
+            color: context.separatorColor,
+          ),
           CupertinoListTile(
             leading: Icon(
               CupertinoIcons.person_3_fill,

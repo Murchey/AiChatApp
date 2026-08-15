@@ -22,8 +22,8 @@ class SrBubbleColors {
 
 /// ww 鸣潮气泡配色（浅色/深色模式分开配置）
 class WwBubbleColors {
-  /// 我方气泡：浅色模式
-  static const selfColorLight = Color(0xFFE8EAED);
+  /// 我方气泡：浅色模式（深灰蓝）
+  static const selfColorLight = Color(0xFF20252E);
   /// 我方气泡：深色模式
   static const selfColorDark = Color.fromARGB(255, 95, 110, 129);
   /// 对方气泡：浅色模式
@@ -291,10 +291,11 @@ extension AppThemeX on BuildContext {
     return isUser ? bubbleTextSelfColor : bubbleTextOtherColor;
   }
 
-  /// 气泡轮廓描边色：仅 zmd 样式我方气泡使用黑色描边（浅深一致），其余无描边
+  /// 气泡轮廓描边色：仅 zmd 样式我方气泡在深色模式使用黑色描边
+  /// （浅色模式无描边，白底气泡与浅色聊天背景自然融合），其余样式无描边
   Color? bubbleBorderColor(bool isUser) {
     if (bubbleStyle != BubbleStyle.zmd || !isUser) return null;
-    return ZmdBubbleColors.selfBorderColor;
+    return isDark ? ZmdBubbleColors.selfBorderColor : null;
   }
 
   /// 气泡阴影：sr 带柔和投影，ww/zmd 投影减半（更轻），经典样式无阴影

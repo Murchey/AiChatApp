@@ -110,12 +110,13 @@ class CharacterPackService {
         name.endsWith('.gif') ||
         name.endsWith('.bmp');
 
-    // 头像：优先 Profile.json 中内嵌的 avatar，其次 ProfilePicture.jpg，
+    // 头像：优先 Profile.json 中内嵌的 avatar，其次 ProfilePicture.*（不限制扩展名），
     // 再其次角色目录内任意图片（仅直接子文件，避免误取 moments 图片）
     var avatar = str('avatar');
     if (avatar.isEmpty) {
       for (final f in files) {
-        if (f.name.split('/').last.toLowerCase() == 'profilepicture.jpg') {
+        final fileName = f.name.split('/').last.toLowerCase();
+        if (fileName.startsWith('profilepicture.') && isImage(fileName)) {
           avatar = base64Encode(f.content as List<int>);
           break;
         }
@@ -131,11 +132,12 @@ class CharacterPackService {
       }
     }
 
-    // 背景图：优先 Profile.json 中内嵌的 background，其次 ProfileBackground.jpg
+    // 背景图：优先 Profile.json 中内嵌的 background，其次 ProfileBackground.*（不限制扩展名）
     var background = str('background');
     if (background.isEmpty) {
       for (final f in files) {
-        if (f.name.split('/').last.toLowerCase() == 'profilebackground.jpg') {
+        final fileName = f.name.split('/').last.toLowerCase();
+        if (fileName.startsWith('profilebackground.') && isImage(fileName)) {
           background = base64Encode(f.content as List<int>);
           break;
         }

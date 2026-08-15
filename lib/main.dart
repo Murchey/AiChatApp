@@ -4,6 +4,7 @@ import 'app.dart';
 import 'providers/api_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/auto_moment_provider.dart';
+import 'providers/chat_background_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/chat_settings_provider.dart';
 import 'providers/character_provider.dart';
@@ -23,6 +24,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => CharacterProvider()),
         ChangeNotifierProvider(create: (_) => GroupChatProvider()),
+        ChangeNotifierProvider(create: (_) => ChatBackgroundProvider()),
         ChangeNotifierProvider(create: (_) => ApiProvider()),
         ChangeNotifierProvider(create: (_) => ChatSettingsProvider()),
         ChangeNotifierProvider(create: (_) => MomentNotificationProvider()),
