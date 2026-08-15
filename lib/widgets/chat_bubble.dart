@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import '../config/theme.dart';
 import '../models/message.dart';
@@ -617,6 +618,10 @@ Path _buildTailBubblePath(
 }) {
   final w = size.width;
   final h = size.height;
+  // 回程弧线落点 y = min(h*0.25, tailArcRadius)：
+  // 落点与弧半径相等时弧为标准 90° 圆弧，弦长 d = √(tailLen² + r²) < 2r 恒成立，
+  // 气泡换行变高时弧线始终可画且方向稳定（凸向尖端外侧），不会退化或内凹
+  final kneeY = math.min(h * 0.25, tailArcRadius);
   final path = Path();
   if (isUser) {
     // 我方气泡（右侧，说话人在右）：尾巴在右上角，尖端朝右
@@ -628,8 +633,8 @@ Path _buildTailBubblePath(
     path.lineTo(w - tailLen - tailSideCornerRadius, h); // 底边
     path.quadraticBezierTo(w - tailLen, h, w - tailLen,
         h - tailSideCornerRadius); // 尾巴侧下角
-    path.lineTo(w - tailLen, h * 0.25); // 右边线向上至尾巴回程落点
-    // 回程弧线（圆心在气泡外侧尖端一侧，大圆角）
+    // 尾巴回程：竖直直线 + 固定半径弧线（圆心在气泡外侧尖端一侧）
+    path.lineTo(w - tailLen, kneeY);
     path.arcToPoint(Offset(w, 0), radius: Radius.circular(tailArcRadius));
   } else {
     // 对方气泡（左侧，说话人在左）：尾巴在左上角，尖端朝左
@@ -641,8 +646,8 @@ Path _buildTailBubblePath(
     path.lineTo(tailLen + tailSideCornerRadius, h); // 底边
     path.quadraticBezierTo(
         tailLen, h, tailLen, h - tailSideCornerRadius); // 尾巴侧下角
-    path.lineTo(tailLen, h * 0.25); // 左边线向上至尾巴回程落点
-    // 回程弧线（圆心在气泡外侧尖端一侧）；与右侧我方弧线镜像，需显式反向
+    // 尾巴回程：竖直直线 + 固定半径弧线（圆心在气泡外侧尖端一侧，镜像对称）
+    path.lineTo(tailLen, kneeY);
     path.arcToPoint(const Offset(0, 0),
         radius: Radius.circular(tailArcRadius), clockwise: false);
   }
@@ -683,8 +688,8 @@ class WwBubbleClipper extends CustomClipper<Path> {
       oldClipper.isUser != isUser;
 }
 
-/// zmd 终末地气泡形状裁剪：形状与鸣潮相同，仅圆角参数不同
-/// （尾巴回程弧 10px，其余三个角均 15px）。
+/// zmd 终末地气泡形状裁剪：形状与鸣潮相同，仅圆角参数不同。
+/// 终末地所有角统一 10px 圆角（tail 回程弧线与其余三个角一致）。
 class ZmdBubbleClipper extends CustomClipper<Path> {
   const ZmdBubbleClipper({required this.isUser});
 
@@ -695,8 +700,8 @@ class ZmdBubbleClipper extends CustomClipper<Path> {
   static const double tailLen = 14;
   /// 尾巴回程弧线半径
   static const double tailArcRadius = 10;
-  /// 其余三个角圆角半径
-  static const double cornerRadius = 15;
+  /// 其余三个角圆角半径（与 tail 连接处一致）
+  static const double cornerRadius = 10;
 
   @override
   Path getClip(Size size) => _buildTailBubblePath(
