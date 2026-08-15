@@ -11,6 +11,7 @@ import 'providers/group_chat_provider.dart';
 import 'providers/memory_point_provider.dart';
 import 'providers/moment_notification_provider.dart';
 import 'providers/settings_provider.dart';
+import 'providers/token_usage_provider.dart';
 import 'providers/workshop_provider.dart';
 
 void main() {
@@ -28,6 +29,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => MemoryPointProvider()),
         ChangeNotifierProvider(create: (_) => AutoMomentProvider()),
         ChangeNotifierProvider(create: (_) => WorkshopProvider()),
+        ChangeNotifierProvider.value(value: TokenUsageProvider.instance),
       ],
       child: const AiChatApp(),
     ),

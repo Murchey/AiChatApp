@@ -10,6 +10,7 @@ import '../services/llm_service.dart';
 import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
 import 'api_provider.dart';
+import 'token_usage_provider.dart';
 
 class ChatProvider extends ChangeNotifier {
   static const _conversationsKey = 'chat_conversations_v1';
@@ -478,6 +479,8 @@ class ChatProvider extends ChangeNotifier {
         extraSystemContext: extraSystemContext,
       );
       final messages = result.messages;
+      // 累计真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens）
+      TokenUsageProvider.instance.addUsage(conversationId, result.usage);
       final random = Random();
       for (final content in messages) {
         addProactiveMessage(conversationId, content);

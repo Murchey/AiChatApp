@@ -14,6 +14,7 @@ import '../providers/chat_settings_provider.dart';
 import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/moment_notification_provider.dart';
+import '../providers/token_usage_provider.dart';
 import '../utils/app_toast.dart';
 import 'dev_log_service.dart';
 import 'llm_service.dart';
@@ -376,6 +377,8 @@ class MomentAiService {
       maxTokens: 300,
       jsonMode: true,
     );
+    // 累计该次朋友圈互动消耗（输入 = prompt_tokens，输出 = completion_tokens）
+    TokenUsageProvider.instance.addUsage(TokenUsageProvider.kMomentUsageId, result.usage);
     debugPrint('[MomentAi] ${character.displayName} 原始响应: ${result.content}');
     return _parseDecision(result.content);
   }
@@ -784,6 +787,8 @@ class MomentAiService {
         temperature: 0.9,
         maxTokens: 200,
       );
+      // 累计该次朋友圈评论回复消耗
+      TokenUsageProvider.instance.addUsage(TokenUsageProvider.kMomentUsageId, result.usage);
       final reply = _cleanReply(result.content);
       if (reply.isEmpty) return;
 

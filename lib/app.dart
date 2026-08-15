@@ -9,6 +9,7 @@ import 'providers/group_chat_provider.dart';
 import 'providers/memory_point_provider.dart';
 import 'providers/moment_notification_provider.dart';
 import 'providers/settings_provider.dart';
+import 'providers/token_usage_provider.dart';
 import 'providers/workshop_provider.dart';
 import 'services/notification_service.dart';
 import 'utils/app_toast.dart';
@@ -32,6 +33,8 @@ class _AiChatAppState extends State<AiChatApp> {
     context.read<MemoryPointProvider>().init();
     context.read<AutoMomentProvider>().init();
     context.read<WorkshopProvider>().init();
+    // 预加载累计 tokens 统计：数据就绪后再进入统计页，避免显示"清零"假象
+    context.read<TokenUsageProvider>().init();
     // 初始化系统通知（创建渠道并请求 Android 13+ 通知权限）
     NotificationService.instance.init();
   }

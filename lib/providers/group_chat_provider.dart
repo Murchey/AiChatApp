@@ -9,6 +9,7 @@ import '../services/llm_service.dart';
 import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
 import 'api_provider.dart';
+import 'token_usage_provider.dart';
 
 /// 群聊中参与回复的一个角色成员（触发回复时由界面预解析为纯数据，
 /// 供后台调度循环使用，不依赖 BuildContext）。
@@ -608,6 +609,8 @@ class GroupChatProvider extends ChangeNotifier {
           outputInstruction: outputInstruction,
         );
         if (generation != _replyGeneration) break;
+        // 累计该群真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens）
+        TokenUsageProvider.instance.addUsage(groupId, result.usage);
 
         for (var i = 0; i < result.messages.length; i++) {
           if (generation != _replyGeneration) break;

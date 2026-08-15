@@ -10,6 +10,7 @@ import '../providers/chat_settings_provider.dart';
 import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/moment_notification_provider.dart';
+import '../providers/token_usage_provider.dart';
 import 'dev_log_service.dart';
 import 'llm_service.dart';
 import 'moment_ai_service.dart';
@@ -234,6 +235,8 @@ class AutoMomentService {
       temperature: 0.9,
       maxTokens: 200,
     );
+    // 累计该次自动发帖消耗
+    TokenUsageProvider.instance.addUsage(TokenUsageProvider.kMomentUsageId, result.usage);
     final content = result.content.trim();
     return content.isEmpty ? null : content;
   }
