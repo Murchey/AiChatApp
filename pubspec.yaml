@@ -1,7 +1,7 @@
 name: ai_chat
 description: AiChat - 角色扮演类微信聊天APP
 publish_to: 'none'
-version: 1.3.2
+version: 1.3.3
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

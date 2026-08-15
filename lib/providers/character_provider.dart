@@ -46,26 +46,55 @@ class CharacterProvider extends ChangeNotifier {
   List<Character> get manageableCharacters =>
       _characters.where((c) => c.id != selfCharacterId).toList();
 
+  /// 通讯录分组结果的缓存：角色列表内容未变化时复用上次结果，
+  /// 避免每次访问重复执行全量拼音计算与排序（通讯录每次重建都会访问）。
+  /// 失效校验为逐元素 identical 比较（O(n) 引用比较，成本远低于重排）。
+  List<MapEntry<String, List<Character>>>? _groupedCache;
+  List<Character>? _groupedSource;
+
   /// 通讯录：按拼音首字母分组排序（类似手机通讯录）
   ///
   /// 排序依据为 [Character.displayName]（备注优先，无备注用昵称），
   /// 使"角色备注在通讯录生效"。
   List<MapEntry<String, List<Character>>> get sortedCharactersGrouped {
-    final sorted = List<Character>.from(_characters)
-      ..sort((a, b) {
-        final la = PinyinUtil.firstLetter(a.displayName);
-        final lb = PinyinUtil.firstLetter(b.displayName);
-        if (la != lb) return la.compareTo(lb);
-        return PinyinUtil.fullPinyin(a.displayName)
-            .compareTo(PinyinUtil.fullPinyin(b.displayName));
-      });
+    if (_groupedCache != null &&
+        _sameCharacterList(_groupedSource, _characters)) {
+      return _groupedCache!;
+    }
+    // Schwartzian transform：先为每个角色算好（首字母, 全拼）key 再排序，
+    // 避免比较器内重复调用拼音工具（原实现在 O(n log n) 次比较里反复查表）
+    final keys = _characters.map((c) {
+      final name = c.displayName;
+      return _CharacterSortKey(
+        c,
+        PinyinUtil.firstLetter(name),
+        PinyinUtil.fullPinyin(name),
+      );
+    }).toList();
+    keys.sort((a, b) {
+      final la = a.letter, lb = b.letter;
+      if (la != lb) return la.compareTo(lb);
+      return a.pinyin.compareTo(b.pinyin);
+    });
 
     final groups = <String, List<Character>>{};
-    for (final c in sorted) {
-      final letter = PinyinUtil.firstLetter(c.displayName);
-      groups.putIfAbsent(letter, () => []).add(c);
+    for (final k in keys) {
+      groups.putIfAbsent(k.letter, () => []).add(k.c);
     }
-    return groups.entries.toList();
+    final result = groups.entries.toList();
+    _groupedCache = result;
+    _groupedSource = List.of(_characters);
+    return result;
+  }
+
+  /// 源列表与当前列表是否「逐元素相同引用」：任一元素被 copyWith 替换、
+  /// 增删角色或整体重载都会使比较失败，从而触发分组缓存重建
+  bool _sameCharacterList(List<Character>? a, List<Character> b) {
+    if (a == null || a.length != b.length) return false;
+    for (var i = 0; i < b.length; i++) {
+      if (!identical(a[i], b[i])) return false;
+    }
+    return true;
   }
 
   Future<void> loadCharacters() async {
@@ -600,4 +629,13 @@ List<Character> _defaultCharacters() {
       tags: ['编程', '技术', '教育'],
     ),
   ];
+}
+
+/// 通讯录排序预计算 key：一次算好首字母与全拼，避免比较器重复查表
+class _CharacterSortKey {
+  final Character c;
+  final String letter;
+  final String pinyin;
+
+  _CharacterSortKey(this.c, this.letter, this.pinyin);
 }

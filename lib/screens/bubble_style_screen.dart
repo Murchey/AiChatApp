@@ -214,26 +214,26 @@ class _PreviewArea extends StatelessWidget {
     );
   }
 
-  /// zmd 终末地样式预览：基于鸣潮尾巴形状（三角均 15px、回程弧 10px），
-  /// 我方白底黑字带黑色描边，对方深灰底白字，与聊天页一致
+  /// zmd 终末地样式预览：与聊天页一致（所有角 10px 圆角 + tail 回程弧 10px），
+  /// 我方白底黑字仅深色模式带黑色描边（浅色模式无描边），对方深灰底白字
   Widget _zmdBubble(BuildContext context, bool isUser, String text) {
     return Container(
       constraints: const BoxConstraints(maxWidth: 240),
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        // 圆角按尾巴朝向镜像：我方 tail 朝右，对方 tail 朝左
+        // 圆角与裁剪形状一致（尾巴侧为尖角，其余三边 10px 圆角）
         borderRadius: isUser
             ? const BorderRadius.only(
-                topLeft: Radius.circular(15),
+                topLeft: Radius.circular(10),
                 topRight: Radius.zero,
-                bottomLeft: Radius.circular(15),
-                bottomRight: Radius.circular(15),
+                bottomLeft: Radius.circular(10),
+                bottomRight: Radius.circular(10),
               )
             : const BorderRadius.only(
                 topLeft: Radius.zero,
-                topRight: Radius.circular(15),
-                bottomLeft: Radius.circular(15),
-                bottomRight: Radius.circular(15),
+                topRight: Radius.circular(10),
+                bottomLeft: Radius.circular(10),
+                bottomRight: Radius.circular(10),
               ),
         boxShadow: [
           BoxShadow(
@@ -251,8 +251,8 @@ class _PreviewArea extends StatelessWidget {
           color: isUser
               ? ZmdBubbleColors.selfColor
               : ZmdBubbleColors.otherColor,
-          // 我方白色气泡带黑色轮廓描边（浅深一致）
-          foregroundDecoration: isUser
+          // 我方气泡仅深色模式带黑色轮廓描边（与聊天页 bubbleBorderColor 一致）
+          foregroundDecoration: isUser && context.isDark
               ? BoxDecoration(
                   border: Border.all(
                     color: ZmdBubbleColors.selfBorderColor,

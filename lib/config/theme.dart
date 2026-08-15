@@ -45,7 +45,7 @@ class WwBubbleColors {
 /// zmd 终末地气泡配色（基于鸣潮尾巴形状，浅色/深色模式配色一致）
 class ZmdBubbleColors {
   /// 我方气泡：白色（浅深一致）
-  static const selfColor = Color(0xFFFFFFFF);
+  static const selfColor = Color(0xFFEDEDED);
   /// 我方气泡文字：黑色（浅深一致）
   static const selfTextColor = Color(0xFF000000);
   /// 我方气泡黑色轮廓描边（浅深一致）
