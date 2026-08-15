@@ -8,8 +8,9 @@ import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/group_chat_provider.dart';
-import '../providers/auto_moment_provider.dart';
 import '../providers/api_provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/auto_moment_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/settings_provider.dart';
@@ -61,6 +62,8 @@ class _HomeScreenState extends State<HomeScreen>
     final chatProvider = context.read<ChatProvider>();
     final chatSettings = context.read<ChatSettingsProvider>();
     final memoryPointProvider = context.read<MemoryPointProvider>();
+    final groupChatProvider = context.read<GroupChatProvider>();
+    final user = context.read<AuthProvider>().user;
     characterProvider.loadCharacters().then((_) {
       MomentAiService.resumePending(
         characterProvider: characterProvider,
@@ -68,7 +71,9 @@ class _HomeScreenState extends State<HomeScreen>
         notificationProvider: notificationProvider,
         chatProvider: chatProvider,
         chatSettings: chatSettings,
+        groupChatProvider: groupChatProvider,
         memoryPointProvider: memoryPointProvider,
+        user: user,
       );
       _checkAutoMoments();
     }).catchError((Object e) {
@@ -114,9 +119,11 @@ class _HomeScreenState extends State<HomeScreen>
       apiProvider: context.read<ApiProvider>(),
       chatProvider: context.read<ChatProvider>(),
       chatSettings: context.read<ChatSettingsProvider>(),
+      groupChatProvider: context.read<GroupChatProvider>(),
       notificationProvider: context.read<MomentNotificationProvider>(),
       autoMomentProvider: context.read<AutoMomentProvider>(),
       memoryPointProvider: context.read<MemoryPointProvider>(),
+      user: context.read<AuthProvider>().user,
     );
   }
 
@@ -205,9 +212,10 @@ class _HomeScreenState extends State<HomeScreen>
         context.watch<MomentNotificationProvider>().hasUnread;
     // 只监听未读数总和：聊天消息内容/排序变化不重建整个首页（4 个 tab + 底部栏），
     // 仅未读数字变化时才重建角标；会话列表自身由 _buildChatList 内的 Consumer 独立刷新。
-    return Selector<ChatProvider, int>(
-      selector: (_, p) =>
-          p.conversations.fold<int>(0, (sum, c) => sum + c.unreadCount),
+    return Selector2<ChatProvider, GroupChatProvider, int>(
+      selector: (_, chat, group) =>
+          chat.conversations.fold<int>(0, (sum, c) => sum + c.unreadCount) +
+          group.totalUnreadCount,
       builder: (context, totalUnread, _) {
         return Column(
           children: [
@@ -357,8 +365,8 @@ class _HomeScreenState extends State<HomeScreen>
                               ? CupertinoIcons.person_3_fill
                               : CupertinoIcons.person_fill,
                         ),
-                        // 未读消息数字角标（仅私聊；群聊暂无未读跟踪）
-                        if (!entry.isGroup && entry.unreadCount > 0)
+                        // 未读消息数字角标（私聊与群聊统一展示）
+                        if (entry.unreadCount > 0)
                           Positioned(
                             right: -8,
                             top: -6,
@@ -435,7 +443,7 @@ class _HomeScreenState extends State<HomeScreen>
           lastMessage: g.lastMessage,
           lastMessageTime: g.lastMessageTime,
           pinned: g.pinned,
-          unreadCount: 0,
+          unreadCount: g.unreadCount,
         ),
     ];
     entries.sort((a, b) {

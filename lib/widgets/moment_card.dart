@@ -13,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
+import '../providers/group_chat_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../services/moment_ai_service.dart';
@@ -473,12 +474,14 @@ class _MomentCardState extends State<MomentCard> {
       apiProvider: context.read<ApiProvider>(),
       chatSettings: context.read<ChatSettingsProvider>(),
       chatProvider: context.read<ChatProvider>(),
+      groupChatProvider: context.read<GroupChatProvider>(),
       characterProvider: context.read<CharacterProvider>(),
       notificationProvider: context.read<MomentNotificationProvider>(),
       memoryPointProvider: context.read<MemoryPointProvider>(),
       character: replier,
       owner: character,
       moment: moment,
+      user: context.read<AuthProvider>().user,
       userNickname: _myName.isEmpty ? '我' : _myName,
       userComment: userComment,
       replyToName: replyToName ?? '',

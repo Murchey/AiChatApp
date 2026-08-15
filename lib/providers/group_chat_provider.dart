@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../models/group_chat.dart';
 import '../models/message.dart';
 import '../services/llm_service.dart';
+import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
 import 'api_provider.dart';
 
@@ -21,6 +22,12 @@ class GroupMemberReply {
   final ApiModel model;
   final List<String> memoryPoints;
 
+  /// 角色头像（base64），用于系统通知大图标
+  final String avatarBase64;
+
+  /// 角色记忆池文本（朋友圈 / 近期私聊 / 其他群内容 / 资料卡），拼入群聊系统提示词
+  final String memoryPool;
+
   const GroupMemberReply({
     required this.characterId,
     required this.name,
@@ -30,6 +37,8 @@ class GroupMemberReply {
     required this.activeEnd,
     required this.model,
     required this.memoryPoints,
+    this.avatarBase64 = '',
+    this.memoryPool = '',
   });
 }
 
@@ -59,6 +68,9 @@ class GroupChatProvider extends ChangeNotifier {
   int _replyGeneration = 0; // 回复轮次序号（自增即打断旧轮）
   String? _lastError;
 
+  /// 当前打开的群聊页面（其内新增角色消息不记未读、不弹系统通知）
+  String? _activeGroupId;
+
   bool _persistRunning = false;
   bool _persistDirty = false;
 
@@ -74,7 +86,28 @@ class GroupChatProvider extends ChangeNotifier {
 
   String? get lastError => _lastError;
 
+  /// 全部群聊未读消息数（首页底部 tab 角标用）
+  int get totalUnreadCount =>
+      _groups.fold<int>(0, (sum, g) => sum + g.unreadCount);
+
   bool isReplying(String groupId) => _replyingGroupId == groupId;
+
+  /// 群聊页面打开时调用：记录当前群并清除其未读
+  void markGroupActive(String groupId) {
+    _activeGroupId = groupId;
+    final index = _groups.indexWhere((g) => g.id == groupId);
+    if (index == -1 || _groups[index].unreadCount == 0) return;
+    _groups[index] = _groups[index].copyWith(unreadCount: 0);
+    notifyListeners();
+    _persist();
+  }
+
+  /// 群聊页面销毁/退到后台时调用：该群新增角色消息恢复计入未读
+  void markGroupInactive(String groupId) {
+    if (_activeGroupId == groupId) {
+      _activeGroupId = null;
+    }
+  }
 
   GroupChat? getGroupById(String id) {
     try {
@@ -296,10 +329,61 @@ class GroupChatProvider extends ChangeNotifier {
       avatar: g.avatar,
       description: g.description,
       contextCount: count,
+      silenceProbability: g.silenceProbability,
+      quoteProbability: g.quoteProbability,
       memberCharacterIds: g.memberCharacterIds,
       lastMessage: g.lastMessage,
       lastMessageTime: g.lastMessageTime,
       pinned: g.pinned,
+      unreadCount: g.unreadCount,
+      createdAt: g.createdAt,
+    );
+    notifyListeners();
+    await _persist();
+  }
+
+  /// 设置角色不说话概率（0~1）：每轮每个未被 @ 的角色以此概率保持沉默。
+  Future<void> setSilenceProbability(String groupId, double value) async {
+    final index = _groups.indexWhere((g) => g.id == groupId);
+    if (index == -1) return;
+    final g = _groups[index];
+    _groups[index] = GroupChat(
+      id: g.id,
+      name: g.name,
+      avatar: g.avatar,
+      description: g.description,
+      contextCount: g.contextCount,
+      silenceProbability: value,
+      quoteProbability: g.quoteProbability,
+      memberCharacterIds: g.memberCharacterIds,
+      lastMessage: g.lastMessage,
+      lastMessageTime: g.lastMessageTime,
+      pinned: g.pinned,
+      unreadCount: g.unreadCount,
+      createdAt: g.createdAt,
+    );
+    notifyListeners();
+    await _persist();
+  }
+
+  /// 设置角色引用回复概率（0~1）：发言时以此概率引用最近其他成员的消息。
+  Future<void> setQuoteProbability(String groupId, double value) async {
+    final index = _groups.indexWhere((g) => g.id == groupId);
+    if (index == -1) return;
+    final g = _groups[index];
+    _groups[index] = GroupChat(
+      id: g.id,
+      name: g.name,
+      avatar: g.avatar,
+      description: g.description,
+      contextCount: g.contextCount,
+      silenceProbability: g.silenceProbability,
+      quoteProbability: value,
+      memberCharacterIds: g.memberCharacterIds,
+      lastMessage: g.lastMessage,
+      lastMessageTime: g.lastMessageTime,
+      pinned: g.pinned,
+      unreadCount: g.unreadCount,
       createdAt: g.createdAt,
     );
     notifyListeners();
@@ -450,8 +534,8 @@ class GroupChatProvider extends ChangeNotifier {
   ///
   /// 每次调用自增 [generation]，正在进行的上一轮在下一个 await 后检测到
   /// 序号变化即退出（软中断：已发出的 HTTP 无法取消，靠序号丢弃过期结果）。
-  /// [members] 为参与回复的角色快照（随机顺序），逐个先判定是否插话，
-  /// 再决定是否用该角色自己的模型生成回复。
+  /// [members] 为参与回复的角色快照：被 @ 的角色排最前且必定发言，
+  /// 其余角色按「不说话概率」随机沉默，发言者用该角色自己的模型生成回复。
   Future<void> runGroupReply({
     required String groupId,
     required List<GroupMemberReply> members,
@@ -466,7 +550,9 @@ class GroupChatProvider extends ChangeNotifier {
     notifyListeners();
 
     final random = Random();
-    // 排序：被 @ 的角色排最前（必定回复），其余角色随机顺序 + 插话判定
+    // 不说话概率：每轮每个未被 @ 的角色以此概率随机保持沉默
+    final silenceRate = getGroupById(groupId)?.silenceProbability ?? 0.2;
+    // 排序：被 @ 的角色排最前（必定发言），其余角色随机顺序 + 概率沉默
     final mentionedSet = mentionedCharacterIds.toSet();
     final ordered = <GroupMemberReply>[
       for (final m in members)
@@ -485,21 +571,19 @@ class GroupChatProvider extends ChangeNotifier {
         final history = _buildGroupHistory(groupId, contextCount);
 
         final isMentioned = mentionedSet.contains(member.characterId);
-        if (!isMentioned) {
-          final shouldReply = await LLMService.shouldReply(
-            model: member.model,
-            systemPrompt: systemPrompt,
-            historyMessages: history,
-          );
-          if (generation != _replyGeneration) break;
-          if (!shouldReply) continue;
+        // 未 @ 的角色按「不说话概率」随机决定是否沉默（不再调用 LLM 判定插话，
+        // 避免无外部指令时成员集体不说话）；被 @ 的角色必定发言。
+        if (!isMentioned && random.nextDouble() < silenceRate) {
+          continue;
         }
 
-        // 角色可以选择回复上文其他成员的消息：随机选取一条最近的其他成员
-        // 文本消息作为引用目标（约 40% 概率），生成时提示围绕该消息回复，
+        // 角色可以选择回复上文其他成员的消息：只在最近 5 条内随机选取一条
+        // 其他成员文本消息作为引用目标（按群配置的引用概率触发，默认 20%），
+        // 避免话题已过仍引用旧消息；生成时提示围绕该消息回复，
         // 落库时带上引用块（quoteContent/quoteSender），与用户引用同格式展示。
-        final quote = random.nextDouble() < 0.4
-            ? _pickQuoteTarget(groupId, member.characterId, contextCount)
+        final quoteRate = getGroupById(groupId)?.quoteProbability ?? 0.2;
+        final quote = random.nextDouble() < quoteRate
+            ? _pickQuoteTarget(groupId, member.characterId)
             : null;
 
         var outputInstruction = PromptBuilder.buildOutputInstruction(
@@ -536,6 +620,7 @@ class GroupChatProvider extends ChangeNotifier {
             // 仅首条消息带引用块，避免连续多条都带引用显得累赘
             quoteContent: i == 0 ? (quote?.content ?? '') : '',
             quoteSender: i == 0 ? (quote?.name ?? '') : '',
+            avatarBase64: member.avatarBase64,
             // 回复轮内不逐条落盘，整轮结束后统一写一次
             persist: false,
           );
@@ -567,13 +652,11 @@ class GroupChatProvider extends ChangeNotifier {
   _QuoteTarget? _pickQuoteTarget(
     String groupId,
     String selfCharacterId,
-    int contextCount,
   ) {
     final messages = _messages[groupId] ?? const <Message>[];
     if (messages.isEmpty) return null;
-    final start = contextCount > 0 && messages.length > contextCount
-        ? messages.length - contextCount
-        : 0;
+    // 只从最近 5 条内选引用目标，确保引用贴近当前话题，避免翻旧账
+    final start = messages.length > 5 ? messages.length - 5 : 0;
     final candidates = <Message>[];
     for (var i = start; i < messages.length; i++) {
       final m = messages[i];
@@ -597,6 +680,7 @@ class GroupChatProvider extends ChangeNotifier {
     String content, {
     String quoteContent = '',
     String quoteSender = '',
+    String avatarBase64 = '',
     bool persist = true,
   }) {
     if (content.trim().isEmpty) return;
@@ -612,8 +696,29 @@ class GroupChatProvider extends ChangeNotifier {
       quoteSender: quoteSender,
     ));
     _updateLastMessage(groupId, content);
+    // 用户不在该群页面时记未读并发送系统通知
+    if (_activeGroupId != groupId) {
+      final unreadCount = _increaseGroupUnread(groupId);
+      NotificationService.instance.showCharacterNotification(
+        conversationId: groupId,
+        characterName: name,
+        content: content,
+        unreadCount: unreadCount,
+        avatarBase64: avatarBase64,
+      );
+    }
     notifyListeners();
     if (persist) _persist();
+  }
+
+  /// 新增角色消息时：若用户不在该群页面则未读 +1
+  int _increaseGroupUnread(String groupId) {
+    if (_activeGroupId == groupId) return 0;
+    final index = _groups.indexWhere((g) => g.id == groupId);
+    if (index == -1) return 0;
+    final count = _groups[index].unreadCount + 1;
+    _groups[index] = _groups[index].copyWith(unreadCount: count);
+    return count;
   }
 
   /// 群聊系统提示词：人设（角色系统提示词）+ 群名/简介 + 用户信息 +
@@ -651,6 +756,7 @@ class GroupChatProvider extends ChangeNotifier {
         ? '你是 ${m.name}，正在微信群「$groupName」里，和用户「$userNickname」'
             '以及其他角色一起聊天。'
         : persona;
+    final extra = m.memoryPool.trim();
     return '''
 $base
 
@@ -660,6 +766,7 @@ $base
 ${memory.isEmpty ? '' : '''
 ## 用户长期记忆
 ${memory.map((e) => '- $e').join('\n')}'''}
+${extra.isEmpty ? '' : '\n$extra\n'}
 ## 当前时间
 $time
 

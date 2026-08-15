@@ -27,6 +27,8 @@ class PromptBuilder {
   /// [activeStart]/[activeEnd] 角色的活跃时段（"HH:mm"）；当前时间落在时段内时，
   /// 追加"保持活跃、不主动道别/说晚安"的规则，避免角色提前结束聊天。
   /// [memoryPoints] 用户的持久化记忆点列表（可为空），作为"用户长期记忆"拼入。
+  /// [extraContext] 额外的记忆上下文（如角色记忆池），非空时拼在
+  /// "用户信息 / 长期记忆"之后、"当前环境时间"之前。
   static String buildSystemPrompt({
     String baseSystemPrompt = '',
     required String characterName,
@@ -37,12 +39,14 @@ class PromptBuilder {
     String activeStart = '',
     String activeEnd = '',
     List<String> memoryPoints = const [],
+    String extraContext = '',
   }) {
     final active = _inActivePeriod(currentTime, activeStart, activeEnd);
     final memory = memoryPoints
         .map((m) => m.trim())
         .where((m) => m.isNotEmpty)
         .toList();
+    final extra = extraContext.trim();
     final template = '''
 ${replyToUser ? '你是 $characterName，正在微信上回复用户最近发来的消息。' : '你是 $characterName，正在和用户进行微信聊天。'}
 
@@ -53,6 +57,7 @@ ${memory.isEmpty ? '' : '''
 ## 用户长期记忆
 这些是用户主动保存的、关于你们之间重要约定与经历的长期记忆，请在对话中牢记并自然运用：
 ${memory.map((m) => '- $m').join('\n')}'''}
+${extra.isEmpty ? '' : '\n$extra\n'}
 ## 当前环境时间
 ${_formatTime(currentTime)} (格式: YYYY-MM-DD HH:mm:ss)
 

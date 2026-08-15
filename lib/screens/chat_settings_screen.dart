@@ -425,6 +425,99 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
             ],
           ),
+          // 朋友圈记忆（角色记忆池的一部分）
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('朋友圈记忆'),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '记忆池携带朋友圈条数',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: context.accentColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            settings.momentMemoryCount == 0
+                                ? '不携带'
+                                : '${settings.momentMemoryCount} 条',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: context.accentColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoSlider(
+                        value: settings.momentMemoryCount
+                            .clamp(0, 10)
+                            .toDouble(),
+                        min: 0,
+                        max: 10,
+                        divisions: 10,
+                        activeColor: context.accentColor,
+                        onChanged: (value) =>
+                            settings.setMomentMemoryCount(value.round()),
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '0（不携带）',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                        Text(
+                          '10',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '角色在私聊 / 群聊 / 朋友圈互动时，记忆池将携带最近 N 条该角色发布的朋友圈贴文（含全部点赞与评论），让角色记得发过什么',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           // 压缩会话
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,

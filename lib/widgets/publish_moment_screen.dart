@@ -8,9 +8,11 @@ import '../config/theme.dart';
 import '../models/moment.dart';
 import '../models/visibility_group.dart';
 import '../providers/api_provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
+import '../providers/group_chat_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../screens/moment_visibility_screen.dart';
@@ -272,7 +274,9 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
       notificationProvider: notificationProvider,
       chatProvider: chatProvider,
       chatSettings: chatSettings,
+      groupChatProvider: context.read<GroupChatProvider>(),
       memoryPointProvider: context.read<MemoryPointProvider>(),
+      user: context.read<AuthProvider>().user,
       moment: moment,
       characters: characters,
     ));

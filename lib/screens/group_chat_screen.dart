@@ -8,12 +8,14 @@ import '../models/character.dart';
 import '../models/message.dart';
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
+import '../services/memory_pool_builder.dart';
 import '../utils/app_toast.dart';
 import '../utils/file_picker_helper.dart';
 import '../widgets/character_avatar.dart';
@@ -34,11 +36,14 @@ class GroupChatScreen extends StatefulWidget {
   State<GroupChatScreen> createState() => _GroupChatScreenState();
 }
 
-class _GroupChatScreenState extends State<GroupChatScreen> {
+class _GroupChatScreenState extends State<GroupChatScreen>
+    with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   static final DateFormat _timeFmt = DateFormat('HH:mm');
   static final DateFormat _dateFmt = DateFormat('M月d日 HH:mm');
   static final DateFormat _fullFmt = DateFormat('yyyy年M月d日 HH:mm');
+
+  GroupChatProvider? _groupProvider;
 
   int _lastRenderedCount = -1;
   static const int _sendThrottleMs = 500;
@@ -56,7 +61,37 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   List<String> _pendingMentions = const [];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // 打开群聊：记录当前群并清除其未读（此后该群新增角色消息不再计入未读）
+    _groupProvider = context.read<GroupChatProvider>();
+    _groupProvider!.markGroupActive(widget.groupId);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 退到后台/切到其他应用（未 pop 路由、dispose 不会触发）：
+    // 视为"离开群聊页面"，此后角色新消息计入未读并弹系统通知；
+    // 回到前台重新进入群聊时清除未读
+    if (_groupProvider == null) return;
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _groupProvider!.markGroupActive(widget.groupId);
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        _groupProvider!.markGroupInactive(widget.groupId);
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        break; // 短暂遮挡（来电/系统弹层等）不改变未读状态
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // 退出群聊：恢复未读计数（若回复轮仍在后台跑，新消息将记未读并点亮主页角标）
+    _groupProvider?.markGroupInactive(widget.groupId);
     _menuOverlay?.remove();
     _scrollController.dispose();
     super.dispose();
@@ -663,6 +698,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     final api = context.read<ApiProvider>();
     final charProvider = context.read<CharacterProvider>();
     final memoryProvider = context.read<MemoryPointProvider>();
+    final chatProvider = context.read<ChatProvider>();
     final userNickname =
         context.read<AuthProvider>().user?.nickname ?? '用户';
 
@@ -695,6 +731,19 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
             .pointsFor(c.id)
             .map((p) => p.content)
             .toList(),
+        avatarBase64: c.avatar,
+        // 角色记忆池：朋友圈 / 近期私聊 / 其他群内容 / 资料卡。
+        // 群聊场景排除当前群（当前群历史已作为对话上下文传入），
+        // 保留各角色近期的私聊内容与朋友圈动态，保持跨场景记忆连贯
+        memoryPool: MemoryPoolBuilder.build(
+          character: c,
+          chatProvider: chatProvider,
+          groupChatProvider: groupProvider,
+          chatSettings: chatSettings,
+          user: context.read<AuthProvider>().user,
+          includePrivateHistory: true,
+          excludeGroupId: widget.groupId,
+        ),
       ));
     }
 

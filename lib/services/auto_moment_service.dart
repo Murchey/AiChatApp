@@ -1,11 +1,13 @@
 import 'dart:math';
 import '../models/character.dart';
 import '../models/moment.dart';
+import '../models/user.dart';
 import '../providers/api_provider.dart';
 import '../providers/auto_moment_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
+import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import 'dev_log_service.dart';
@@ -36,9 +38,11 @@ class AutoMomentService {
     required ApiProvider apiProvider,
     required ChatProvider chatProvider,
     required ChatSettingsProvider chatSettings,
+    required GroupChatProvider groupChatProvider,
     required MomentNotificationProvider notificationProvider,
     required AutoMomentProvider autoMomentProvider,
     required MemoryPointProvider memoryPointProvider,
+    User? user,
   }) async {
     if (_running) return;
     _running = true;
@@ -171,7 +175,9 @@ class AutoMomentService {
           notificationProvider: notificationProvider,
           chatProvider: chatProvider,
           chatSettings: chatSettings,
+          groupChatProvider: groupChatProvider,
           memoryPointProvider: memoryPointProvider,
+          user: user,
           moment: moment,
           characters: visible,
           momentOwnerId: owner.id,

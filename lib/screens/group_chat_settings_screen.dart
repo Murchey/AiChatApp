@@ -225,12 +225,155 @@ class _GroupChatSettingsScreenState extends State<GroupChatSettingsScreen> {
             ],
           ),
           const SizedBox(height: 12),
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('回复概率'),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '不说话概率',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                        Text(
+                          '${(group.silenceProbability * 100).round()}%',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: context.accentColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoSlider(
+                        value: group.silenceProbability,
+                        min: 0,
+                        max: 1,
+                        divisions: 10,
+                        activeColor: context.accentColor,
+                        onChanged: (value) {
+                          groupProvider.setSilenceProbability(
+                            widget.groupId,
+                            (value * 10).round() / 10,
+                          );
+                        },
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '0%（总是发言）',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                        Text(
+                          '100%（都不说话）',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '引用回复概率',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                        Text(
+                          '${(group.quoteProbability * 100).round()}%',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: context.accentColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoSlider(
+                        value: group.quoteProbability,
+                        min: 0,
+                        max: 1,
+                        divisions: 10,
+                        activeColor: context.accentColor,
+                        onChanged: (value) {
+                          groupProvider.setQuoteProbability(
+                            widget.groupId,
+                            (value * 10).round() / 10,
+                          );
+                        },
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '0%（从不引用）',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                        Text(
+                          '100%（必引用）',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               '发送消息后，群内角色回复时会携带最近 N 条对话作为上下文；'
               '0 条 = 无限制（携带全部历史，适合较短对话，长对话建议设置条数）。\n'
-              '取消「跟随全局」后即可单独调整本群的上下文条数。',
+              '每轮回复中，未被 @ 的角色会按「不说话概率」随机选择是否发言'
+              '（默认 20%）；被 @ 的角色必定发言。\n'
+              '角色发言时按「引用回复概率」（默认 20%）引用最近其他成员的消息，'
+              '引用目标只在最近 5 条内选取，不会翻到话题已过的旧消息。',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.5,

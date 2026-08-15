@@ -5,16 +5,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
 import '../models/moment_notification.dart';
+import '../models/user.dart';
 import '../models/visibility_group.dart';
 import '../providers/api_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
+import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../utils/app_toast.dart';
 import 'dev_log_service.dart';
 import 'llm_service.dart';
+import 'memory_pool_builder.dart';
 
 /// 朋友圈 AI 互动引擎。
 ///
@@ -78,9 +81,11 @@ class MomentAiService {
     required MomentNotificationProvider notificationProvider,
     required ChatProvider chatProvider,
     required ChatSettingsProvider chatSettings,
+    required GroupChatProvider groupChatProvider,
     required MemoryPointProvider memoryPointProvider,
     required Moment moment,
     required List<Character> characters,
+    User? user,
     int initialFailures = 0,
     String momentOwnerId = CharacterProvider.selfCharacterId,
   }) async {
@@ -139,6 +144,16 @@ class MomentAiService {
                 .pointsFor(character.id)
                 .map((p) => p.content)
                 .toList();
+            // 角色记忆池：聚合朋友圈 / 近期私聊 / 群聊 / 资料卡，
+            // 让角色在朋友圈互动时也保持跨场景的记忆连贯
+            final memoryPool = MemoryPoolBuilder.build(
+              character: character,
+              chatProvider: chatProvider,
+              groupChatProvider: groupChatProvider,
+              chatSettings: chatSettings,
+              user: user,
+              includePrivateHistory: true,
+            );
             final decision = await _askCharacter(
               model,
               character,
@@ -148,6 +163,7 @@ class MomentAiService {
               useDefaultTemperature: totalFailures >= 4,
               chatHistory: chatHistory,
               memoryPoints: memoryPoints,
+              memoryPool: memoryPool,
               ownerName: owner?.displayName ?? '',
               ownerIsUser: momentOwnerId == CharacterProvider.selfCharacterId,
             );
@@ -218,7 +234,9 @@ class MomentAiService {
     required MomentNotificationProvider notificationProvider,
     required ChatProvider chatProvider,
     required ChatSettingsProvider chatSettings,
+    required GroupChatProvider groupChatProvider,
     required MemoryPointProvider memoryPointProvider,
+    User? user,
   }) async {
     final bp = await _loadBreakpoint();
     if (bp == null) return;
@@ -259,7 +277,9 @@ class MomentAiService {
       notificationProvider: notificationProvider,
       chatProvider: chatProvider,
       chatSettings: chatSettings,
+      groupChatProvider: groupChatProvider,
       memoryPointProvider: memoryPointProvider,
+      user: user,
       moment: bp.moment,
       characters: remaining,
       initialFailures: bp.totalFailures,
@@ -327,6 +347,7 @@ class MomentAiService {
     bool useDefaultTemperature = false,
     List<Map<String, String>> chatHistory = const [],
     List<String> memoryPoints = const [],
+    String memoryPool = '',
     String ownerName = '',
     bool ownerIsUser = false,
   }) async {
@@ -334,6 +355,7 @@ class MomentAiService {
       character.systemPrompt,
       memoryPoints,
       fallback: '你是「${character.displayName}」，正在浏览朋友圈。',
+      extraContext: memoryPool,
     );
     final relationship = character.userRelationship.trim();
     final messages = <Map<String, Object>>[
@@ -470,15 +492,20 @@ class MomentAiService {
 
   /// 将角色的持久化记忆点追加到系统提示词之后（无记忆点时返回基础提示词）。
   /// 语义与聊天一致：这些是用户主动保存的重要约定与共同经历，角色需牢记。
+  /// [extraContext] 额外的记忆上下文（如角色记忆池），非空时拼在记忆点之后。
   static String _systemWithMemory(
     String basePrompt,
     List<String> memoryPoints, {
     required String fallback,
+    String extraContext = '',
   }) {
     final base = basePrompt.trim().isEmpty ? fallback : basePrompt.trim();
     final section = _memoryPointsSection(memoryPoints);
-    if (section.isEmpty) return base;
-    return '$base\n\n$section';
+    final extra = extraContext.trim();
+    final parts = <String>[base];
+    if (section.isNotEmpty) parts.add(section);
+    if (extra.isNotEmpty) parts.add(extra);
+    return parts.join('\n\n');
   }
 
   /// 组装「长期记忆」段落（无记忆点时返回空串）。
@@ -614,6 +641,7 @@ class MomentAiService {
     required ApiProvider apiProvider,
     required ChatSettingsProvider chatSettings,
     required ChatProvider chatProvider,
+    required GroupChatProvider groupChatProvider,
     required CharacterProvider characterProvider,
     required MomentNotificationProvider notificationProvider,
     required MemoryPointProvider memoryPointProvider,
@@ -622,6 +650,7 @@ class MomentAiService {
     required Moment moment,
     required String userNickname,
     required String userComment,
+    User? user,
     String replyToName = '',
     String repliedComment = '',
   }) async {
@@ -667,10 +696,21 @@ class MomentAiService {
           .pointsFor(character.id)
           .map((p) => p.content)
           .toList();
+      // 角色记忆池：聚合朋友圈 / 近期私聊 / 群聊 / 资料卡，
+      // 回复用户评论时同样保持跨场景记忆连贯
+      final memoryPool = MemoryPoolBuilder.build(
+        character: character,
+        chatProvider: chatProvider,
+        groupChatProvider: groupChatProvider,
+        chatSettings: chatSettings,
+        user: user,
+        includePrivateHistory: true,
+      );
       final system = _systemWithMemory(
         character.systemPrompt,
         memoryPoints,
         fallback: '你是「${character.displayName}」。',
+        extraContext: memoryPool,
       );
       var userPrompt = _buildReplyPrompt(
         character: character,

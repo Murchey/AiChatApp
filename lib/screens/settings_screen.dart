@@ -2,16 +2,19 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/api_provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/auto_moment_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
+import '../providers/group_chat_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/auto_moment_service.dart';
 import '../services/update_service.dart';
 import '../utils/app_toast.dart';
+import 'memory_pool_manager_screen.dart';
 import 'storage_manage_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -45,6 +48,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final chatSettings = context.read<ChatSettingsProvider>();
     final notificationProvider = context.read<MomentNotificationProvider>();
     final memoryPointProvider = context.read<MemoryPointProvider>();
+    final authUser = context.read<AuthProvider>().user;
 
     if (apiProvider.getModelById(apiProvider.momentModelId) == null) {
       showAppToast('请先在「API 设置」中配置「朋友圈互动」模型');
@@ -61,9 +65,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       apiProvider: apiProvider,
       chatProvider: chatProvider,
       chatSettings: chatSettings,
+      groupChatProvider: context.read<GroupChatProvider>(),
       notificationProvider: notificationProvider,
       autoMomentProvider: autoProvider,
       memoryPointProvider: memoryPointProvider,
+      user: authUser,
     );
     if (mounted) {
       showAppToast('测试完成，请到朋友圈查看');
@@ -500,6 +506,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: context.textSecondaryColor,
                 ),
                 onTap: () => _showProxyPicker(context, settings),
+              ),
+            ],
+          ),
+          // 记忆池：管理角色跨场景（私聊/群聊/朋友圈）的近期记忆拼接
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('记忆池'),
+            children: [
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.clock,
+                  color: context.accentColor,
+                ),
+                title: const Text('记忆池管理'),
+                subtitle: Text(
+                  '查看/管理角色近期的私聊、朋友圈、群聊记忆拼接内容',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const MemoryPoolManagerScreen(),
+                  ),
+                ),
               ),
             ],
           ),

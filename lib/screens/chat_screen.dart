@@ -12,9 +12,11 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
+import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
+import '../services/memory_pool_builder.dart';
 import '../utils/file_picker_helper.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/character_avatar.dart';
@@ -1280,6 +1282,20 @@ class _ChatScreenState extends State<ChatScreen>
             .toList()
         : const <String>[];
 
+    // 角色记忆池：聚合朋友圈 / 近期群聊 / 资料卡等场景外记忆，拼入系统提示词，
+    // 让角色在私聊中保持跨场景的记忆连贯。私聊历史已作为对话上下文传入，
+    // 因此 includePrivateHistory 传 false，避免重复拼接
+    final memoryPool = character != null
+        ? MemoryPoolBuilder.build(
+            character: character,
+            chatProvider: chatProvider,
+            groupChatProvider: context.read<GroupChatProvider>(),
+            chatSettings: chatSettings,
+            user: context.read<AuthProvider>().user,
+            includePrivateHistory: false,
+          )
+        : '';
+
     // 会话压缩：压缩模型默认跟随聊天模型，可在「API 设置 → 会话压缩」中单独指定
     final api = context.read<ApiProvider>();
     final compressModel =
@@ -1303,6 +1319,7 @@ class _ChatScreenState extends State<ChatScreen>
       activeStart: character?.activeStart ?? '',
       activeEnd: character?.activeEnd ?? '',
       memoryPoints: memoryPoints,
+      extraSystemContext: memoryPool,
     );
     debugPrint('[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');
     if (!mounted) return;
