@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import '../config/theme.dart';
 import '../models/message.dart';
+import '../providers/settings_provider.dart';
 import 'character_avatar.dart';
 
 /// 微信表情代码 → emoji 映射：AI 按输出规则会携带表情包文字（如 [捂脸]），
@@ -167,7 +168,17 @@ class _ChatBubbleState extends State<ChatBubble> {
           // 多选模式：选中勾选框（消息在左侧时勾选框在气泡右侧）
           if (widget.selectMode && !isUser) _buildSelectCheck(context),
           Flexible(
-            child: Column(
+            child: Padding(
+              // sr 样式：气泡上边对齐头像垂直中线（头像 40px → 下移 20px）。
+              // 群聊角色消息带昵称（约 19px），昵称贴顶后气泡紧跟其后顶边已在
+              // 头像中线附近，无需再下移；私聊无昵称则下移 20px。
+              padding: EdgeInsets.only(
+                top: context.bubbleStyle == BubbleStyle.sr &&
+                        widget.senderName.isEmpty
+                    ? 20
+                    : 0,
+              ),
+              child: Column(
               crossAxisAlignment:
                   isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -201,18 +212,22 @@ class _ChatBubbleState extends State<ChatBubble> {
                     decoration: BoxDecoration(
                       color: isImage || isFile
                           ? CupertinoColors.transparent
-                          : (isUser
-                              ? context.bubbleSelfColor
-                              : context.bubbleOtherColor),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: widget.selected
-                            ? context.accentColor
-                            : (isImage || isFile
-                                ? CupertinoColors.transparent
-                                : context.separatorColor),
-                        width: widget.selected ? 1.5 : 0.5,
-                      ),
+                          : context.bubbleBgColor(isUser),
+                      borderRadius: context.bubbleBorderRadiusFor(isUser),
+                      border: widget.selected
+                          ? Border.all(
+                              color: context.accentColor,
+                              width: 1.5,
+                            )
+                          : (isImage || isFile || context.bubbleStyle == BubbleStyle.sr)
+                              ? null
+                              : Border.all(
+                                  color: context.separatorColor,
+                                  width: 0.5,
+                                ),
+                      boxShadow: isImage || isFile
+                          ? const <BoxShadow>[]
+                          : context.bubbleShadow,
                     ),
                     child: Column(
                       crossAxisAlignment: isUser
@@ -232,9 +247,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                             text: _buildMessageSpan(
                               context,
                               message.content,
-                              isUser
-                                  ? context.bubbleTextSelfColor
-                                  : context.bubbleTextOtherColor,
+                              context.bubbleTextColor(isUser),
                             ),
                           ),
                         ],
@@ -245,15 +258,16 @@ class _ChatBubbleState extends State<ChatBubble> {
               ],
             ),
           ),
-          // 多选模式：消息在右侧时勾选框在气泡左侧
-          if (widget.selectMode && isUser) _buildSelectCheck(context),
-          if (isUser) ...[
-            const SizedBox(width: 8),
-            _buildAvatar(context, avatar, onTap: widget.onUserAvatarTap),
-          ],
+        ),
+        // 多选模式：消息在右侧时勾选框在气泡左侧
+        if (widget.selectMode && isUser) _buildSelectCheck(context),
+        if (isUser) ...[
+          const SizedBox(width: 8),
+          _buildAvatar(context, avatar, onTap: widget.onUserAvatarTap),
         ],
-      ),
-    );
+      ],
+    ),
+  );
   }
 
   /// 多选模式下的选中勾选框

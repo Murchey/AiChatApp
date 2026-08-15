@@ -9,6 +9,25 @@ enum AppThemeMode { system, light, dark }
 /// 全局角色头像框样式：方形 / 仿 QQ 圆形
 enum AvatarFrameStyle { square, circle }
 
+/// 聊天气泡样式：默认（代码绘制） / sr（崩铁短信样式），后续可扩展其他类型
+enum BubbleStyle {
+  /// 默认：矩形圆角 + 描边，背景色可自定义
+  classic,
+  /// sr 崩铁短信样式：大圆角 + 柔和阴影，自带配色（自己=暖棕，对方=浅灰）
+  sr,
+}
+
+extension BubbleStyleX on BubbleStyle {
+  String get displayName {
+    switch (this) {
+      case BubbleStyle.classic:
+        return '默认';
+      case BubbleStyle.sr:
+        return '崩铁样式';
+    }
+  }
+}
+
 /// 聊天气泡颜色设置项：自己/对方 × 浅色/深色
 enum BubbleColorSlot { selfLight, otherLight, selfDark, otherDark }
 
@@ -88,6 +107,8 @@ class SettingsProvider extends ChangeNotifier {
   bool _developerMode = false;
   // 全局角色头像框样式（默认方形）
   AvatarFrameStyle _avatarFrameStyle = AvatarFrameStyle.square;
+  // 聊天气泡样式（默认经典）
+  BubbleStyle _bubbleStyle = BubbleStyle.classic;
 
   AppThemeMode get themeMode => _themeMode;
   Color get accentColor => _accentColor;
@@ -96,6 +117,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get unreadNotify => _unreadNotify;
   bool get developerMode => _developerMode;
   AvatarFrameStyle get avatarFrameStyle => _avatarFrameStyle;
+  BubbleStyle get bubbleStyle => _bubbleStyle;
 
   Color bubbleColor(BubbleColorSlot slot) =>
       _bubbleColors[slot] ?? slot.defaultColor;
@@ -148,6 +170,12 @@ class SettingsProvider extends ChangeNotifier {
       (s) => s.name == prefs.getString('avatar_frame_style'),
       orElse: () => AvatarFrameStyle.square,
     );
+    // 旧命名 honkaiSms 兼容映射到 sr
+    final storedBubbleStyle = prefs.getString('bubble_style');
+    _bubbleStyle = switch (storedBubbleStyle) {
+      'honkaiSms' || 'sr' => BubbleStyle.sr,
+      _ => BubbleStyle.classic,
+    };
     notifyListeners();
   }
 
@@ -218,6 +246,14 @@ class SettingsProvider extends ChangeNotifier {
     _avatarFrameStyle = style;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('avatar_frame_style', style.name);
+    notifyListeners();
+  }
+
+  /// 设置聊天气泡样式（经典 / 崩铁）
+  Future<void> setBubbleStyle(BubbleStyle style) async {
+    _bubbleStyle = style;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('bubble_style', style.name);
     notifyListeners();
   }
 

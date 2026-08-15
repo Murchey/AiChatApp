@@ -2,6 +2,24 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 
+/// sr 崩铁短信气泡配色（从截图提取）
+class SrBubbleColors {
+  /// 我方气泡：暖棕/驼色（明暗模式一致）
+  static const selfColor = Color(0xFFD2BC95);
+  /// 对方气泡：浅色模式浅灰白
+  static const otherColor = Color(0xFFE7E7E7);
+  /// 对方气泡：深色模式深灰
+  static const otherColorDark = Color.fromARGB(99, 48, 48, 48);
+  /// 我方气泡文字：白色（明暗模式一致）
+  static const selfTextColor = Color.fromARGB(255, 0, 0, 0);
+  /// 对方气泡文字：浅色模式深灰
+  static const otherTextColor = Color(0xFF4A4A4A);
+  /// 对方气泡文字：深色模式浅灰
+  static const otherTextColorDark = Color(0xFFE0E0E0);
+  /// 柔和底部阴影
+  static const shadowColor = Color(0x1A000000); // alpha ≈ 0.1
+}
+
 /// 亮/暗两套色板
 class AppColors {
   // 亮色模式
@@ -157,4 +175,68 @@ extension AppThemeX on BuildContext {
   /// 朋友圈点赞/评论浅底块背景
   Color get momentBlockColor =>
       isDark ? AppColors.momentBlockDark : AppColors.momentBlockLight;
+
+  /// 当前气泡样式
+  BubbleStyle get bubbleStyle => read<SettingsProvider>().bubbleStyle;
+
+  /// 气泡圆角半径（崩铁样式 12，经典样式 12）
+  double get bubbleBorderRadius => 12;
+
+  /// 气泡圆角：sr 样式下靠近头像一侧的上边角为直角
+  /// （我方气泡在右侧头像在右 → 右上角直角；对方气泡在左侧头像在左 → 左上角直角）
+  BorderRadius bubbleBorderRadiusFor(bool isUser) {
+    final r = bubbleBorderRadius;
+    if (bubbleStyle == BubbleStyle.sr) {
+      return isUser
+          ? BorderRadius.only(
+              topLeft: Radius.circular(r),
+              topRight: Radius.zero,
+              bottomLeft: Radius.circular(r),
+              bottomRight: Radius.circular(r),
+            )
+          : BorderRadius.only(
+              topLeft: Radius.zero,
+              topRight: Radius.circular(r),
+              bottomLeft: Radius.circular(r),
+              bottomRight: Radius.circular(r),
+            );
+    }
+    return BorderRadius.circular(r);
+  }
+
+  /// 气泡背景色：sr 样式使用自带配色（含深色模式适配），经典样式使用自定义颜色
+  Color bubbleBgColor(bool isUser) {
+    if (bubbleStyle == BubbleStyle.sr) {
+      if (isUser) return SrBubbleColors.selfColor;
+      return isDark
+          ? SrBubbleColors.otherColorDark
+          : SrBubbleColors.otherColor;
+    }
+    return isUser ? bubbleSelfColor : bubbleOtherColor;
+  }
+
+  /// 气泡内文字色：sr 样式固定配色（含深色模式适配），经典样式使用自定义文字色
+  Color bubbleTextColor(bool isUser) {
+    if (bubbleStyle == BubbleStyle.sr) {
+      if (isUser) return SrBubbleColors.selfTextColor;
+      return isDark
+          ? SrBubbleColors.otherTextColorDark
+          : SrBubbleColors.otherTextColor;
+    }
+    return isUser ? bubbleTextSelfColor : bubbleTextOtherColor;
+  }
+
+  /// 气泡阴影：sr 样式带柔和投影，经典样式无阴影
+  List<BoxShadow>? get bubbleShadow {
+    if (bubbleStyle == BubbleStyle.sr) {
+      return const [
+        BoxShadow(
+          color: SrBubbleColors.shadowColor,
+          offset: Offset(0, 2),
+          blurRadius: 6,
+        ),
+      ];
+    }
+    return null;
+  }
 }

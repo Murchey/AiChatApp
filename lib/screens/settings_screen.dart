@@ -14,6 +14,7 @@ import '../providers/settings_provider.dart';
 import '../services/auto_moment_service.dart';
 import '../services/update_service.dart';
 import '../utils/app_toast.dart';
+import 'bubble_style_screen.dart';
 import 'memory_pool_manager_screen.dart';
 import 'storage_manage_screen.dart';
 
@@ -364,14 +365,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               CupertinoListTile(
                 leading: Icon(
-                  CupertinoIcons.paintbrush,
+                  CupertinoIcons.chat_bubble_2_fill,
                   color: context.accentColor,
                 ),
-                title: const Text('自定义气泡颜色'),
-                subtitle: Text(
-                  '自己 / 对方 × 浅色 / 深色：气泡与字体颜色',
+                title: const Text('气泡样式'),
+                additionalInfo: Text(
+                  settings.bubbleStyle.displayName,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 14,
                     color: context.textSecondaryColor,
                   ),
                 ),
@@ -380,8 +381,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   size: 16,
                   color: context.textSecondaryColor,
                 ),
-                onTap: () => _showBubbleColorDrawer(context, settings),
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(builder: (_) => const BubbleStyleScreen()),
+                ),
               ),
+              // 自定义气泡颜色仅在经典样式下可用（崩铁样式使用自带配色）
+              if (settings.bubbleStyle == BubbleStyle.classic)
+                CupertinoListTile(
+                  leading: Icon(
+                    CupertinoIcons.paintbrush,
+                    color: context.accentColor,
+                  ),
+                  title: const Text('自定义气泡颜色'),
+                  subtitle: Text(
+                    '自己 / 对方 × 浅色 / 深色：气泡与字体颜色',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  trailing: Icon(
+                    CupertinoIcons.chevron_right,
+                    size: 16,
+                    color: context.textSecondaryColor,
+                  ),
+                  onTap: () => _showBubbleColorDrawer(context, settings),
+                ),
             ],
           ),
           // 消息通知：角色新消息（未读）发送系统通知
