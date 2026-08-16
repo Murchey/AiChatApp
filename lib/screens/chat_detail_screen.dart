@@ -1175,43 +1175,31 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     return '每 $label 发 ${config.count} 条，其他角色会像真人一样点赞评论';
   }
 
-  /// 可见范围显示文案（分组被删除/包含该角色自己时回退到全部角色可见）
+  /// 可见范围显示文案（分组被删除时回退到全部角色可见）
   String _visibilityLabel(BuildContext context, String visibility) {
     if (visibility == VisibilityScope.onlyMe) return '仅自己可见（无人互动）';
     if (visibility == VisibilityScope.all) return '全部角色可见';
     final groups = context.read<CharacterProvider>().visibilityGroups;
     for (final g in groups) {
       if (g.id == visibility) {
-        // 分组包含该角色自己（不能互动自己）：视为全部角色可见
-        if (g.memberIds.contains(_characterId)) return '全部角色可见';
+        // 该角色即便在分组内，互动阶段也已排除发布者本人，不会自己点赞评论
         return '分组「${g.name}」';
       }
     }
     return '全部角色可见';
   }
 
-  /// 打开可见范围选择页（固定选项 + 自定义分组），选中后保存到自动发朋友圈配置
+  /// 打开可见范围选择页（固定选项 + 自定义分组），选中后保存到自动发朋友圈配置。
+  /// 不限制分组是否包含该角色自己：互动阶段已排除发布者本人，不会自己点赞评论。
   Future<void> _openAutoMomentVisibility(
     BuildContext context,
     AutoMomentProvider autoProvider,
     String currentId,
   ) async {
-    // 当前分组若包含该角色自己，则从「全部角色可见」开始选择
-    var startId = currentId;
-    if (currentId != VisibilityScope.onlyMe &&
-        currentId != VisibilityScope.all) {
-      final groups = context.read<CharacterProvider>().visibilityGroups;
-      final g = groups.where((x) => x.id == currentId).firstOrNull;
-      if (g != null && g.memberIds.contains(_characterId)) startId = VisibilityScope.all;
-    }
     final selected = await Navigator.push<String>(
       context,
       CupertinoPageRoute(
-        builder: (_) => MomentVisibilityScreen(
-          selectedId: startId,
-          // 角色不能互动自己：过滤掉包含该角色自己的分组
-          excludeCharacterId: _characterId,
-        ),
+        builder: (_) => MomentVisibilityScreen(selectedId: currentId),
       ),
     );
     if (selected == null || !mounted) return;
