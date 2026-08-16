@@ -6,10 +6,10 @@ import '../providers/settings_provider.dart';
 class SrBubbleColors {
   /// 我方气泡：暖棕/驼色（明暗模式一致）
   static const selfColor = Color(0xFFD2BC95);
-  /// 对方气泡：浅色模式浅灰白
+  /// 对方气泡：浅色模式浅灰
   static const otherColor = Color(0xFFE7E7E7);
   /// 对方气泡：深色模式深灰
-  static const otherColorDark = Color.fromARGB(99, 48, 48, 48);
+  static const otherColorDark = Color(0xFF2C2C2C);
   /// 我方气泡文字：白色（明暗模式一致）
   static const selfTextColor = Color.fromARGB(255, 0, 0, 0);
   /// 对方气泡文字：浅色模式深灰
@@ -19,7 +19,6 @@ class SrBubbleColors {
   /// 柔和底部阴影
   static const shadowColor = Color(0x1A000000); // alpha ≈ 0.1
 }
-
 /// ww 鸣潮气泡配色（浅色/深色模式分开配置）
 class WwBubbleColors {
   /// 我方气泡：浅色模式（深灰蓝）
@@ -42,7 +41,7 @@ class WwBubbleColors {
   static const shadowColorLight = Color(0x06000000);
 }
 
-/// zmd 终末地气泡配色（基于鸣潮尾巴形状，浅色/深色模式配色一致）
+/// zmd 终末地气泡配色（基于鸣潮尾巴形状，浅色/深色模式对方气泡配色分开）
 class ZmdBubbleColors {
   /// 我方气泡：白色（浅深一致）
   static const selfColor = Color(0xFFEDEDED);
@@ -50,10 +49,14 @@ class ZmdBubbleColors {
   static const selfTextColor = Color(0xFF000000);
   /// 我方气泡黑色轮廓描边（浅深一致）
   static const selfBorderColor = Color(0xFF000000);
-  /// 对方气泡：深灰（浅深一致）
-  static const otherColor = Color(0xFF464646);
-  /// 对方气泡文字：白色（浅深一致）
-  static const otherTextColor = Color(0xFFFFFFFF);
+  /// 对方气泡：浅色模式浅灰（与 ww/sr/默认样式统一）
+  static const otherColorLight = Color(0xFFE7E7E7);
+  /// 对方气泡：深色模式深灰（与 ww/sr/默认样式统一）
+  static const otherColorDark = Color(0xFF2C2C2C);
+  /// 对方气泡文字：浅色模式黑色
+  static const otherTextColorLight = Color(0xFF000000);
+  /// 对方气泡文字：深色模式白色
+  static const otherTextColorDark = Color(0xFFFFFFFF);
   /// 柔和底部阴影（与鸣潮一致：深色 alpha 0.05）
   static const shadowColorDark = Color(0x0D000000);
   /// 柔和底部阴影（与鸣潮一致：浅色 alpha ≈ 0.025）
@@ -68,7 +71,7 @@ class AppColors {
   static const listBgLight = Color(0xFFFFFFFF); // 列表卡片背景
   static const chatBgLight = Color(0xFFFAFAFA); // 聊天纯色背景（白）
   static const bubbleSelfLight = Color(0xFF95EC6A); // 自己气泡
-  static const bubbleOtherLight = Color(0xFFFFFFFF); // 对方气泡
+  static const bubbleOtherLight = Color(0xFFE7E7E7); // 对方气泡
   static const textPrimaryLight = Color(0xFF1F1F1F);
   static const textSecondaryLight = Color(0xFF8A8A8E);
   static const fieldBgLight = Color(0xFFEDEDED); // 输入框背景
@@ -219,6 +222,9 @@ extension AppThemeX on BuildContext {
   /// 当前气泡样式
   BubbleStyle get bubbleStyle => read<SettingsProvider>().bubbleStyle;
 
+  /// 当前会话 UI 样式
+  UiStyle get uiStyle => read<SettingsProvider>().uiStyle;
+
   /// 气泡圆角半径（崩铁样式 12，经典样式 12）
   double get bubbleBorderRadius => 12;
 
@@ -263,8 +269,12 @@ extension AppThemeX on BuildContext {
           : WwBubbleColors.otherColorLight;
     }
     if (bubbleStyle == BubbleStyle.zmd) {
-      // 终末地：浅色/深色模式配色一致
-      return isUser ? ZmdBubbleColors.selfColor : ZmdBubbleColors.otherColor;
+      // 终末地：对方气泡按明暗模式分色，我方气泡浅深一致
+      return isUser
+          ? ZmdBubbleColors.selfColor
+          : isDark
+              ? ZmdBubbleColors.otherColorDark
+              : ZmdBubbleColors.otherColorLight;
     }
     return isUser ? bubbleSelfColor : bubbleOtherColor;
   }
@@ -286,7 +296,9 @@ extension AppThemeX on BuildContext {
     if (bubbleStyle == BubbleStyle.zmd) {
       return isUser
           ? ZmdBubbleColors.selfTextColor
-          : ZmdBubbleColors.otherTextColor;
+          : isDark
+              ? ZmdBubbleColors.otherTextColorDark
+              : ZmdBubbleColors.otherTextColorLight;
     }
     return isUser ? bubbleTextSelfColor : bubbleTextOtherColor;
   }

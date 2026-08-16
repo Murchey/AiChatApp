@@ -16,7 +16,9 @@ import '../services/update_service.dart';
 import '../utils/app_toast.dart';
 import 'bubble_style_screen.dart';
 import 'memory_pool_manager_screen.dart';
+import 'splash_icon_screen.dart';
 import 'storage_manage_screen.dart';
+import 'ui_style_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -384,6 +386,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () => Navigator.push(
                   context,
                   CupertinoPageRoute(builder: (_) => const BubbleStyleScreen()),
+                ),
+              ),
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.textformat,
+                  color: context.accentColor,
+                ),
+                title: const Text('UI 样式'),
+                subtitle: Text(
+                  '会话顶部标题栏与发送按钮',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                additionalInfo: Text(
+                  settings.uiStyle.displayName,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(builder: (_) => const UiStyleScreen()),
+                ),
+              ),
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.photo,
+                  color: context.accentColor,
+                ),
+                title: const Text('开屏图标'),
+                subtitle: Text(
+                  '自定义启动页显示的图片',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                additionalInfo: Text(
+                  settings.hasSplashIcon ? '自定义' : '默认',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(builder: (_) => const SplashIconScreen()),
                 ),
               ),
               // 自定义气泡颜色仅在经典样式下可用（崩铁样式使用自带配色）

@@ -289,9 +289,11 @@ class LLMService {
 
   /// 功能检测：测试当前模型是否支持图片（多模态）发送。
   ///
-  /// 以 OpenAI 兼容的视觉消息格式发送一个 1x1 透明 PNG：
-  /// - HTTP 200 → 视为支持图片，可开启相册/拍照
-  /// - 其他状态码 → 视为不支持（或 API 拒绝图片内容）
+  /// 以 OpenAI 兼容的视觉消息格式发送一张测试图片并明确引导回复：
+  /// - HTTP 200 且回复内容体现「能看到图片」→ 支持图片
+  /// - 回复内容明确表示「看不到/不支持」→ 不支持
+  /// - HTTP 非 200（API 拒绝图片内容等）→ 不支持
+  /// - 200 但回复无法判定（部分非视觉模型会忽略图片直接回复）→ 按 200 放行
   /// 网络/鉴权等异常向上抛出（LLMException / SocketException），由调用方提示。
   static Future<bool> testImageSupport(ApiModel model) async {
     if (model.modelName.isEmpty) {
@@ -328,7 +330,11 @@ class LLMService {
           {
             'role': 'user',
             'content': [
-              {'type': 'text', 'text': '请描述这张图片的内容（功能检测）'},
+              {
+                'type': 'text',
+                'text': '这是功能检测。请回答：你是否能看到我发送的这张图片？'
+                    '能看到请只回复一个字：能。不能看到请只回复两个字：不能。',
+              },
               {
                 'type': 'image_url',
                 'image_url': {'url': 'data:image/png;base64,$tinyPngBase64'},
@@ -343,12 +349,73 @@ class LLMService {
 
       final response =
           await request.close().timeout(const Duration(seconds: 60));
-      await response.transform(utf8.decoder).join();
+      final body =
+          await response.transform(utf8.decoder).join();
       debugPrint('[LLMService] 图片功能检测 HTTP ${response.statusCode}');
-      return response.statusCode == 200;
+      if (response.statusCode != 200) return false;
+
+      // HTTP 200：结合回复内容判定，避免「模型忽略图片直接回文本」的假阳性
+      final reply = _extractReplyText(body);
+      if (reply != null) return _judgeVisionByReply(reply) ?? true;
+      return true;
     } finally {
       client.close(force: true);
     }
+  }
+
+  /// 从 OpenAI 兼容响应中提取回复文本（choices[0].message.content）
+  static String? _extractReplyText(String body) {
+    try {
+      final decoded = jsonDecode(body) as Map<String, dynamic>;
+      final choices = decoded['choices'] as List<dynamic>? ?? const [];
+      if (choices.isEmpty) return null;
+      final message = (choices.first as Map<String, dynamic>)['message']
+          as Map<String, dynamic>?;
+      return message?['content'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 依据回复内容判定模型是否看到了图片。
+  /// 明确否定优先；无关键词（模型忽略图片直接回答文本等）返回 null 由调用方兜底。
+  static bool? _judgeVisionByReply(String reply) {
+    final t = reply.trim().toLowerCase();
+    // 明确否定（优先）：中文为主，兼顾常见英文否定
+    const negativePatterns = [
+      '不能',
+      '看不到',
+      '无法',
+      '没有看到',
+      '没看到',
+      '无法识别',
+      '不认识',
+      '没有图片',
+      'cannot see',
+      "can't see",
+      'can not see',
+      'cannot',
+      'no image',
+    ];
+    for (final p in negativePatterns) {
+      if (t.contains(p)) return false;
+    }
+    // 明确肯定
+    const positivePatterns = [
+      '能看到',
+      '可以看到',
+      '看得见',
+      '能',
+      '看到',
+      '可以',
+      'yes',
+      '能看见',
+      '是',
+    ];
+    for (final p in positivePatterns) {
+      if (t.contains(p)) return true;
+    }
+    return null;
   }
 
   /// 自动检测模型的上下文长度（token）。

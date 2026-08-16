@@ -67,6 +67,8 @@ class GroupChatProvider extends ChangeNotifier {
 
   String? _replyingGroupId; // 正在生成回复的群聊
   int _replyGeneration = 0; // 回复轮次序号（自增即打断旧轮）
+  int _replyDone = 0; // 本轮已跑通模型的成员数（进度分子 n）
+  int _replyTotal = 0; // 本轮参与回复的成员总数（进度分母 m）
   String? _lastError;
 
   /// 当前打开的群聊页面（其内新增角色消息不记未读、不弹系统通知）
@@ -92,6 +94,10 @@ class GroupChatProvider extends ChangeNotifier {
       _groups.fold<int>(0, (sum, g) => sum + g.unreadCount);
 
   bool isReplying(String groupId) => _replyingGroupId == groupId;
+
+  /// 当前回复轮的模型跑通进度（n/m）；未在回复时均为 0
+  int get replyDone => _replyDone;
+  int get replyTotal => _replyTotal;
 
   /// 群聊页面打开时调用：记录当前群并清除其未读
   void markGroupActive(String groupId) {
@@ -305,6 +311,8 @@ class GroupChatProvider extends ChangeNotifier {
     if (_replyingGroupId == groupId) {
       _replyGeneration++;
       _replyingGroupId = null;
+      _replyDone = 0;
+      _replyTotal = 0;
     }
     notifyListeners();
     _persist();
@@ -564,7 +572,19 @@ class GroupChatProvider extends ChangeNotifier {
         ..shuffle(random),
     ];
 
+    // 先按「不说话概率」过滤出本轮实际发言的成员，作为进度分母 m：
+    // 沉默的成员不调用模型，不计入进度；@ 的角色必定发言。
+    final speakers = <GroupMemberReply>[];
     for (final member in ordered) {
+      final isMentioned = mentionedSet.contains(member.characterId);
+      if (!isMentioned && random.nextDouble() < silenceRate) continue;
+      speakers.add(member);
+    }
+    _replyDone = 0;
+    _replyTotal = speakers.length;
+    notifyListeners();
+
+    for (final member in speakers) {
       if (generation != _replyGeneration) break; // 被打断
       try {
         final systemPrompt =
@@ -572,11 +592,7 @@ class GroupChatProvider extends ChangeNotifier {
         final history = _buildGroupHistory(groupId, contextCount);
 
         final isMentioned = mentionedSet.contains(member.characterId);
-        // 未 @ 的角色按「不说话概率」随机决定是否沉默（不再调用 LLM 判定插话，
-        // 避免无外部指令时成员集体不说话）；被 @ 的角色必定发言。
-        if (!isMentioned && random.nextDouble() < silenceRate) {
-          continue;
-        }
+        // 沉默成员已在外层过滤，speakers 均为本轮实际发言者
 
         // 角色可以选择回复上文其他成员的消息：只在最近 5 条内随机选取一条
         // 其他成员文本消息作为引用目标（按群配置的引用概率触发，默认 20%），
@@ -640,10 +656,18 @@ class GroupChatProvider extends ChangeNotifier {
         if (generation != _replyGeneration) break;
         _lastError = LLMService.describeException(e);
         notifyListeners();
+      } finally {
+        // 每个成员处理结束（成功或异常）即推进进度 n，供顶部标题显示（n/m）
+        if (generation == _replyGeneration) {
+          _replyDone++;
+          notifyListeners();
+        }
       }
     }
 
     _replyingGroupId = null;
+    _replyDone = 0;
+    _replyTotal = 0;
     notifyListeners();
     // 整个回复轮合并为一次落盘：避免长聊天下每条角色消息都触发
     // 全量 JSON 序列化（上千条消息时尤其明显），从而减少 UI 卡顿

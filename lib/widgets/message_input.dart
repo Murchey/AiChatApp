@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/theme.dart';
-import '../utils/app_toast.dart';
+import 'chat_send_button.dart';
 
 class MessageInput extends StatefulWidget {
   final Function(String) onSend;
@@ -14,9 +14,6 @@ class MessageInput extends StatefulWidget {
   final Future<bool> Function()? onFeatureDetect; // 功能检测：测试当前模型是否支持图片（返回是否通过）
   final VoidCallback? onRequestReply; // 请求角色回复（对号按钮触发）
   final bool replyEnabled; // 对号按钮是否可点：上一条消息是用户发送时才可点
-  /// 外部传入的图片能力状态：当前模型已检测为视觉模型时为 true（来自持久化缓存），
-  /// 检测过一次后无需重复检测，【相册】【拍照】直接放开
-  final bool imageReady;
   /// 外部可通过此 key 调用 setText / focus
   final GlobalKey<MessageInputState>? inputKey;
 
@@ -32,7 +29,6 @@ class MessageInput extends StatefulWidget {
     this.onFeatureDetect,
     this.onRequestReply,
     this.replyEnabled = true,
-    this.imageReady = false,
   });
 
   @override
@@ -49,9 +45,6 @@ class MessageInputState extends State<MessageInput> {
   final FocusNode _inputFocusNode = FocusNode();
   bool _hasText = false;
   bool _showGrid = false;
-  bool _detectedReady = false; // 本次页面内手动检测通过（相册/拍照可用）
-  // 图片功能是否可用：缓存命中（widget.imageReady）或本次检测通过（_detectedReady）
-  bool get _imageReady => widget.imageReady || _detectedReady;
 
   /// 外部可直接设置输入框内容
   void setText(String text) {
@@ -174,24 +167,8 @@ class MessageInputState extends State<MessageInput> {
                 ),
                 // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（点击请求角色回复）
                 if (_hasText) ...[
-                  // 方形发送按钮：64×40，圆角 10px
-                  SizedBox(
-                    width: 64,
-                    height: 40,
-                    child: CupertinoButton.filled(
-                      onPressed: _handleSend,
-                      padding: EdgeInsets.zero,
-                      borderRadius: BorderRadius.circular(10),
-                      child: const Text(
-                        '发送',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: CupertinoColors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
+                  // 发送按钮：经典主题色实底 / zmd 终末地深底金边（64×40，圆角 10px）
+                  ChatSendButton(onPressed: _handleSend),
                 ] else if (widget.onRequestReply != null) ...[
                   CupertinoButton(
                     padding: const EdgeInsets.all(4),
@@ -218,10 +195,11 @@ class MessageInputState extends State<MessageInput> {
 
   Widget _buildGridPanel(BuildContext context) {
     final items = [
+      // 【相册】【拍照】不主动禁用：是否支持图片由发送时的模型能力决定，
+      // 用户可随时通过【功能检测】测试当前模型对图片的支持情况
       _GridItem(
         icon: CupertinoIcons.photo,
         label: '相册',
-        enabled: _imageReady,
         onTap: () async {
           setState(() => _showGrid = false);
           final file = await _picker.pickImage(source: ImageSource.gallery);
@@ -233,7 +211,6 @@ class MessageInputState extends State<MessageInput> {
       _GridItem(
         icon: CupertinoIcons.camera,
         label: '拍照',
-        enabled: _imageReady,
         onTap: () async {
           setState(() => _showGrid = false);
           final file = await _picker.pickImage(source: ImageSource.camera);
@@ -291,12 +268,10 @@ class MessageInputState extends State<MessageInput> {
       _GridItem(
         icon: CupertinoIcons.wrench,
         label: '功能检测',
-        onTap: () async {
+        onTap: () {
           setState(() => _showGrid = false);
-          final ok = await widget.onFeatureDetect?.call() ?? false;
-          if (mounted) {
-            setState(() => _detectedReady = ok);
-          }
+          // 检测结果由调用方弹窗提示（不依赖返回值做按钮禁用）
+          widget.onFeatureDetect?.call();
         },
       ),
     ];
@@ -321,12 +296,8 @@ class MessageInputState extends State<MessageInput> {
   }
 
   Widget _buildGridTile(BuildContext context, _GridItem item) {
-    final enabled = item.enabled;
     return GestureDetector(
-      // 禁用的【相册】【拍照】：点击提示先做功能检测
-      onTap: enabled
-          ? item.onTap
-          : () => showAppToast('请先点击【功能检测】进行模型能力测试'),
+      onTap: item.onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -334,18 +305,14 @@ class MessageInputState extends State<MessageInput> {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: enabled
-                  ? context.fieldBgColor
-                  : context.fieldBgColor.withValues(alpha: 0.5),
+              color: context.fieldBgColor,
               borderRadius: BorderRadius.circular(14),
             ),
             alignment: Alignment.center,
             child: Icon(
               item.icon,
               size: 28,
-              color: enabled
-                  ? context.textPrimaryColor
-                  : context.textSecondaryColor.withValues(alpha: 0.5),
+              color: context.textPrimaryColor,
             ),
           ),
           const SizedBox(height: 6),
@@ -353,9 +320,7 @@ class MessageInputState extends State<MessageInput> {
             item.label,
             style: TextStyle(
               fontSize: 12,
-              color: enabled
-                  ? context.textSecondaryColor
-                  : context.textSecondaryColor.withValues(alpha: 0.5),
+              color: context.textSecondaryColor,
             ),
           ),
         ],
@@ -385,12 +350,10 @@ class _GridItem {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final bool enabled;
 
   const _GridItem({
     required this.icon,
     required this.label,
     required this.onTap,
-    this.enabled = true,
   });
 }

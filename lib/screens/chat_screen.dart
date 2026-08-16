@@ -17,11 +17,13 @@ import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
 import '../services/memory_pool_builder.dart';
 import '../utils/file_picker_helper.dart';
 import '../widgets/chat_bubble.dart';
+import '../widgets/chat_title_bar.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/message_input.dart';
 import 'chat_detail_screen.dart';
@@ -1174,7 +1176,7 @@ class _ChatScreenState extends State<ChatScreen>
   // ─── 功能检测（模型是否支持图片发送） ─────────────────────
 
   /// 【功能检测】测试当前选中的模型是否支持图片发送；
-  /// 支持则返回 true（面板据此开启【相册】【拍照】）。
+  /// 检测结果用于提示（相册/拍照始终可用，不因检测结果禁用）。
   Future<bool> _runFeatureDetect() async {
     final chatSettings = context.read<ChatSettingsProvider>();
     final model = context
@@ -1187,12 +1189,12 @@ class _ChatScreenState extends State<ChatScreen>
     try {
       final supported = await LLMService.testImageSupport(model);
       if (!mounted) return supported;
-      // 记住检测结果：视觉模型检测过一次后，聊天页直接放开图片发送
+      // 记住检测结果：供朋友圈图文提示等场景参考
       await context.read<ApiProvider>().setVisionSupported(model.id, supported);
       _showFeatureResult(
         supported
-            ? '「${model.displayName}」支持图片发送，【相册】【拍照】已开启。'
-            : '「${model.displayName}」不支持图片发送，【相册】【拍照】保持禁用。',
+            ? '「${model.displayName}」支持图片发送，发送的图片会被模型识别。'
+            : '「${model.displayName}」未识别为支持图片的模型，发送图片可能无法被识别。',
         supported,
       );
       return supported;
@@ -1435,9 +1437,26 @@ class _ChatScreenState extends State<ChatScreen>
             ? Text(_selectingMemory ? '选择记忆点' : '选择消息')
             : Selector<ChatProvider, bool>(
                 selector: (_, p) => p.isReplying(widget.conversationId),
-                builder: (context, replying, _) => Text(
-                  replying ? '对方正在输入……' : displayName,
-                ),
+                builder: (context, replying, _) {
+                  // 终末地 UI 样式：标题栏靠左排列，回复中黄点呼吸「输入中」
+                  if (context.uiStyle == UiStyle.zmd) {
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: ChatTitleBar(
+                        name: displayName,
+                        signature: character?.signature ?? '',
+                        activeStart: character?.activeStart ?? '',
+                        activeEnd: character?.activeEnd ?? '',
+                        inputStatus: replying ? '输入中' : null,
+                      ),
+                    );
+                  }
+                  return Text(
+                    replying ? '对方正在输入……' : displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  );
+                },
               ),
         trailing: _selectMode
             ? null
@@ -1646,14 +1665,6 @@ class _ChatScreenState extends State<ChatScreen>
           else
             Consumer<ChatProvider>(
               builder: (context, chatProvider, _) {
-                // 当前模型是否已检测为视觉模型（检测过一次即记住）。
-                // 模型/设置变更极低频，只在此局部订阅，不重建页面骨架
-                final visionReady = context
-                        .watch<ApiProvider>()
-                        .isVisionSupported(context
-                            .watch<ChatSettingsProvider>()
-                            .selectedModelId) ==
-                    true;
                 // 对号按钮可用性：上一条消息是用户发送时才可点（角色还没回复）
                 final lastMessage =
                     chatProvider.getMessages(widget.conversationId).lastOrNull;
@@ -1770,7 +1781,6 @@ class _ChatScreenState extends State<ChatScreen>
                             imagePath: imagePath, replyToUser: true);
                       },
                       replyEnabled: replyEnabled,
-                      imageReady: visionReady,
                     ),
                   ],
                 );

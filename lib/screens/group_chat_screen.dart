@@ -16,13 +16,15 @@ import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
 import '../services/memory_pool_builder.dart';
-import '../utils/app_toast.dart';
 import '../utils/file_picker_helper.dart';
-import '../widgets/character_avatar.dart';
 import '../widgets/chat_bubble.dart';
+import '../widgets/chat_send_button.dart';
+import '../widgets/chat_title_bar.dart';
+import '../widgets/character_avatar.dart';
 import 'group_chat_detail_screen.dart';
 import 'group_chat_settings_screen.dart';
 
@@ -617,10 +619,10 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
-  // ─── 功能检测（群聊相册/拍照可用性） ─────────────────────
+  // ─── 功能检测（模型是否支持图片发送） ─────────────────────
 
   /// 【功能检测】测试当前选中的全局聊天模型是否支持图片发送；
-  /// 支持则返回 true（面板据此开启【相册】【拍照】）。
+  /// 检测结果用于提示（相册/拍照始终可用，不因检测结果禁用）。
   Future<bool> _runFeatureDetect() async {
     final chatSettings = context.read<ChatSettingsProvider>();
     final model = context
@@ -636,8 +638,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       await context.read<ApiProvider>().setVisionSupported(model.id, supported);
       _showFeatureResult(
         supported
-            ? '「${model.displayName}」支持图片发送，【相册】【拍照】已开启。'
-            : '「${model.displayName}」不支持图片发送，【相册】【拍照】保持禁用。',
+            ? '「${model.displayName}」支持图片发送，发送的图片会被模型识别。'
+            : '「${model.displayName}」未识别为支持图片的模型，发送图片可能无法被识别。',
         supported,
       );
       return supported;
@@ -709,6 +711,22 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
     final members = <GroupMemberReply>[];
     final missingModelNames = <String>[];
+
+    // 群聊共同记忆池：汇总群内全部成员各自的「用户长期记忆」，
+    // 去重合并为一份共同记忆，群内所有成员共用同一份，
+    // 让群成员共享对用户/事件的集体记忆（不再各自持有私有记忆点）
+    final sharedMemoryPool = <String>[];
+    {
+      final seen = <String>{};
+      for (final id in group.memberCharacterIds) {
+        for (final p in memoryProvider.pointsFor(id)) {
+          final content = p.content.trim();
+          if (content.isEmpty || !seen.add(content)) continue;
+          sharedMemoryPool.add(content);
+        }
+      }
+    }
+
     for (final id in group.memberCharacterIds) {
       final c = charProvider.getCharacterById(id);
       if (c == null) continue;
@@ -732,10 +750,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         activeStart: c.activeStart,
         activeEnd: c.activeEnd,
         model: model,
-        memoryPoints: memoryProvider
-            .pointsFor(c.id)
-            .map((p) => p.content)
-            .toList(),
+        // 群聊记忆：所有成员共用群内汇总的共同记忆池
+        memoryPoints: sharedMemoryPool,
         avatarBase64: c.avatar,
         // 角色记忆池：朋友圈 / 近期私聊 / 其他群内容 / 资料卡。
         // 群聊场景排除当前群（当前群历史已作为对话上下文传入），
@@ -840,13 +856,32 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: Selector<GroupChatProvider, bool>(
-          selector: (_, p) => p.isReplying(widget.groupId),
-          builder: (context, replying, _) => Text(
-            replying ? '群成员正在输入……' : title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+        middle: Selector<GroupChatProvider, (bool, int, int)>(
+          selector: (_, p) => (
+            p.isReplying(widget.groupId),
+            p.replyDone,
+            p.replyTotal,
           ),
+          builder: (context, data, _) {
+            final (replying, done, total) = data;
+            // 终末地 UI 样式：群名称靠左 + 群简介副标题 + 回复中黄色呼吸输入状态点
+            if (context.uiStyle == UiStyle.zmd) {
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: ChatTitleBar(
+                  name: group?.name ?? '群聊',
+                  isGroup: true,
+                  groupIntro: group?.description ?? '',
+                  inputStatus: replying ? '输入中（$done/$total）' : null,
+                ),
+              );
+            }
+            return Text(
+              replying ? '群成员正在回复……（$done/$total）' : title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          },
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
@@ -1006,13 +1041,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   groupProvider.getMessages(widget.groupId).lastOrNull;
               final replyEnabled = lastMessage != null && lastMessage.isFromUser;
               final error = groupProvider.lastError;
-              // 当前全局聊天模型已检测为视觉模型（缓存），相册/拍照直接放开
-              final visionReady = context
-                      .watch<ApiProvider>()
-                      .isVisionSupported(context
-                          .watch<ChatSettingsProvider>()
-                          .selectedModelId) ==
-                  true;
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1118,7 +1146,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                     onExport: _exportGroupChat,
                     onImport: _importGroupChat,
                     onContextSettings: _openContextSettings,
-                    imageReady: visionReady,
                   ),
                 ],
               );
@@ -1150,7 +1177,6 @@ class _GroupMessageInput extends StatefulWidget {
   final VoidCallback? onImport;
   /// 打开群聊上下文设置（加号面板入口）
   final VoidCallback? onContextSettings;
-  final bool imageReady;
 
   const _GroupMessageInput({
     super.key,
@@ -1164,7 +1190,6 @@ class _GroupMessageInput extends StatefulWidget {
     this.onExport,
     this.onImport,
     this.onContextSettings,
-    this.imageReady = false,
   });
 
   @override
@@ -1181,9 +1206,7 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
   final FocusNode _inputFocusNode = FocusNode();
   bool _hasText = false;
   bool _showGrid = false;
-  bool _detectedReady = false; // 本次页面内手动检测通过（相册/拍照可用）
   bool _prevEndsAt = false; // @ 边沿检测：上一次文本是否以 @ 结尾
-  bool get _imageReady => widget.imageReady || _detectedReady;
 
   /// 外部（撤回消息）可回填输入框内容
   void setText(String text) {
@@ -1320,23 +1343,8 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
                 ),
                 // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（触发群聊回复）
                 if (_hasText) ...[
-                  SizedBox(
-                    width: 64,
-                    height: 40,
-                    child: CupertinoButton.filled(
-                      onPressed: _handleSend,
-                      padding: EdgeInsets.zero,
-                      borderRadius: BorderRadius.circular(10),
-                      child: const Text(
-                        '发送',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: CupertinoColors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
+                  // 发送按钮：经典主题色实底 / zmd 终末地深底金边（64×40，圆角 10px）
+                  ChatSendButton(onPressed: _handleSend),
                 ] else
                   CupertinoButton(
                     padding: const EdgeInsets.all(4),
@@ -1362,10 +1370,10 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
 
   Widget _buildGridPanel(BuildContext context) {
     final items = [
+      // 【相册】【拍照】不主动禁用：是否支持图片由发送时的模型能力决定
       _GroupGridItem(
         icon: CupertinoIcons.photo,
         label: '相册',
-        enabled: _imageReady,
         onTap: () async {
           setState(() => _showGrid = false);
           final file = await _picker.pickImage(source: ImageSource.gallery);
@@ -1377,7 +1385,6 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
       _GroupGridItem(
         icon: CupertinoIcons.camera,
         label: '拍照',
-        enabled: _imageReady,
         onTap: () async {
           setState(() => _showGrid = false);
           final file = await _picker.pickImage(source: ImageSource.camera);
@@ -1407,12 +1414,10 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
       _GroupGridItem(
         icon: CupertinoIcons.wrench,
         label: '功能检测',
-        onTap: () async {
+        onTap: () {
           setState(() => _showGrid = false);
-          final ok = await widget.onFeatureDetect?.call() ?? false;
-          if (mounted) {
-            setState(() => _detectedReady = ok);
-          }
+          // 检测结果由外层弹窗提示（不依赖返回值做按钮禁用）
+          widget.onFeatureDetect?.call();
         },
       ),
       _GroupGridItem(
@@ -1461,12 +1466,8 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
   }
 
   Widget _buildGridTile(BuildContext context, _GroupGridItem item) {
-    final enabled = item.enabled;
     return GestureDetector(
-      // 禁用的【相册】【拍照】：点击提示先做功能检测
-      onTap: enabled
-          ? item.onTap
-          : () => showAppToast('请先点击【功能检测】进行模型能力测试'),
+      onTap: item.onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1474,18 +1475,14 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: enabled
-                  ? context.fieldBgColor
-                  : context.fieldBgColor.withValues(alpha: 0.5),
+              color: context.fieldBgColor,
               borderRadius: BorderRadius.circular(14),
             ),
             alignment: Alignment.center,
             child: Icon(
               item.icon,
               size: 28,
-              color: enabled
-                  ? context.textPrimaryColor
-                  : context.textSecondaryColor.withValues(alpha: 0.5),
+              color: context.textPrimaryColor,
             ),
           ),
           const SizedBox(height: 6),
@@ -1493,9 +1490,7 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
             item.label,
             style: TextStyle(
               fontSize: 12,
-              color: enabled
-                  ? context.textSecondaryColor
-                  : context.textSecondaryColor.withValues(alpha: 0.5),
+              color: context.textSecondaryColor,
             ),
           ),
         ],
@@ -1525,12 +1520,10 @@ class _GroupGridItem {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final bool enabled;
 
   const _GroupGridItem({
     required this.icon,
     required this.label,
     required this.onTap,
-    this.enabled = true,
   });
 }

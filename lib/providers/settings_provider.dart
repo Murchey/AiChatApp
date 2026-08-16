@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/theme.dart';
 import '../services/update_service.dart';
@@ -33,6 +35,26 @@ extension BubbleStyleX on BubbleStyle {
         return '鸣潮样式';
       case BubbleStyle.zmd:
         return '终末地样式';
+    }
+  }
+}
+
+/// 会话 UI 样式（顶部标题栏 + 输入/发送栏）：默认 / zmd（终末地）
+enum UiStyle {
+  /// 默认：顶部居中标题 + 常规输入栏
+  classic,
+  /// zmd 终末地：标题靠左 + 个性签名副标题 + 在线状态点（绿/红），
+  /// 发送按钮深底金边白字，浅深色模式通用
+  zmd,
+}
+
+extension UiStyleX on UiStyle {
+  String get displayName {
+    switch (this) {
+      case UiStyle.classic:
+        return '默认';
+      case UiStyle.zmd:
+        return '终末地';
     }
   }
 }
@@ -118,6 +140,10 @@ class SettingsProvider extends ChangeNotifier {
   AvatarFrameStyle _avatarFrameStyle = AvatarFrameStyle.square;
   // 聊天气泡样式（默认经典）
   BubbleStyle _bubbleStyle = BubbleStyle.classic;
+  // 会话 UI 样式（默认）
+  UiStyle _uiStyle = UiStyle.classic;
+  // 自定义开屏图标本地持久化路径（未设置时为空字符串）
+  String _splashIconPath = '';
 
   AppThemeMode get themeMode => _themeMode;
   Color get accentColor => _accentColor;
@@ -127,6 +153,9 @@ class SettingsProvider extends ChangeNotifier {
   bool get developerMode => _developerMode;
   AvatarFrameStyle get avatarFrameStyle => _avatarFrameStyle;
   BubbleStyle get bubbleStyle => _bubbleStyle;
+  UiStyle get uiStyle => _uiStyle;
+  String get splashIconPath => _splashIconPath;
+  bool get hasSplashIcon => _splashIconPath.isNotEmpty;
 
   Color bubbleColor(BubbleColorSlot slot) =>
       _bubbleColors[slot] ?? slot.defaultColor;
@@ -187,6 +216,11 @@ class SettingsProvider extends ChangeNotifier {
       'zmd' => BubbleStyle.zmd,
       _ => BubbleStyle.classic,
     };
+    _uiStyle = UiStyle.values.firstWhere(
+      (s) => s.name == prefs.getString('ui_style'),
+      orElse: () => UiStyle.classic,
+    );
+    _splashIconPath = prefs.getString('splash_icon_path') ?? '';
     notifyListeners();
   }
 
@@ -266,6 +300,52 @@ class SettingsProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('bubble_style', style.name);
     notifyListeners();
+  }
+
+  /// 设置会话 UI 样式（默认 / 终末地）
+  Future<void> setUiStyle(UiStyle style) async {
+    _uiStyle = style;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('ui_style', style.name);
+    notifyListeners();
+  }
+
+  /// 设置开屏图标：把相册/文件选择器选中的图片复制到应用文档目录持久化。
+  /// 更换图标时先删除旧的本地图片，避免残留孤儿文件占用缓存。
+  Future<void> setSplashIcon(String sourcePath) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final iconDir = Directory('${dir.path}/splash_icons');
+    if (!iconDir.existsSync()) iconDir.createSync(recursive: true);
+    if (_splashIconPath.isNotEmpty) _deleteFileQuietly(_splashIconPath);
+    // 保留原扩展名（便于识别），时间戳避免同名覆盖
+    final ext = sourcePath.contains('.')
+        ? sourcePath.split('.').last
+        : 'img';
+    final destPath =
+        '${iconDir.path}/splash_${DateTime.now().millisecondsSinceEpoch}.$ext';
+    await File(sourcePath).copy(destPath);
+
+    _splashIconPath = destPath;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('splash_icon_path', destPath);
+    notifyListeners();
+  }
+
+  /// 恢复默认开屏图标：删除已导入的本地图片并清空设置
+  Future<void> resetSplashIcon() async {
+    if (_splashIconPath.isNotEmpty) _deleteFileQuietly(_splashIconPath);
+    _splashIconPath = '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('splash_icon_path');
+    notifyListeners();
+  }
+
+  /// 静默删除文件（失败不影响主流程）
+  void _deleteFileQuietly(String path) {
+    try {
+      final f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
   }
 
   /// 设置某一气泡内字体颜色项（浅/深 × 自己/对方）

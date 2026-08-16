@@ -215,7 +215,7 @@ class _PreviewArea extends StatelessWidget {
   }
 
   /// zmd 终末地样式预览：与聊天页一致（所有角 10px 圆角 + tail 回程弧 10px），
-  /// 我方白底黑字仅深色模式带黑色描边（浅色模式无描边），对方深灰底白字
+  /// 我方白底黑字仅深色模式带黑色描边（浅色模式无描边），对方气泡按明暗分色（浅灰/深灰）
   Widget _zmdBubble(BuildContext context, bool isUser, String text) {
     return Container(
       constraints: const BoxConstraints(maxWidth: 240),
@@ -250,7 +250,9 @@ class _PreviewArea extends StatelessWidget {
         child: Container(
           color: isUser
               ? ZmdBubbleColors.selfColor
-              : ZmdBubbleColors.otherColor,
+              : context.isDark
+                  ? ZmdBubbleColors.otherColorDark
+                  : ZmdBubbleColors.otherColorLight,
           // 我方气泡仅深色模式带黑色轮廓描边（与聊天页 bubbleBorderColor 一致）
           foregroundDecoration: isUser && context.isDark
               ? BoxDecoration(
@@ -273,7 +275,9 @@ class _PreviewArea extends StatelessWidget {
               height: 1.45,
               color: isUser
                   ? ZmdBubbleColors.selfTextColor
-                  : ZmdBubbleColors.otherTextColor,
+                  : context.isDark
+                      ? ZmdBubbleColors.otherTextColorDark
+                      : ZmdBubbleColors.otherTextColorLight,
             ),
           ),
         ),

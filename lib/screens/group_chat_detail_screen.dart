@@ -8,10 +8,12 @@ import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_background_provider.dart';
 import '../providers/group_chat_provider.dart';
+import '../utils/file_utils.dart';
 import '../widgets/character_avatar.dart';
 import 'group_chat_settings_screen.dart';
 import 'group_member_memory_screen.dart';
 import 'group_member_model_screen.dart';
+import 'image_crop_screen.dart';
 
 /// 群聊详情：修改群名、查看成员、添加成员、移除成员、删除群聊。
 class GroupChatDetailScreen extends StatefulWidget {
@@ -421,13 +423,20 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
     );
   }
 
-  /// 从相册选图并设置为群聊背景
+  /// 从相册选图并设置为群聊背景（先进入编辑页缩放裁剪）
   Future<void> _pickAndSetBackground(BuildContext ctx, String chatId, ChatBackgroundProvider provider) async {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
+    if (!ctx.mounted) return;
     try {
-      await provider.setImage(chatId, file.path);
+      final cropped = await Navigator.push<String>(
+        ctx,
+        CupertinoPageRoute(builder: (_) => ImageCropScreen(imagePath: file.path)),
+      );
+      if (cropped == null || !mounted) return;
+      await provider.setImage(chatId, cropped);
+      deleteFileQuietly(cropped);
     } catch (_) {
       // ignore - user may cancel or permission denied
     }

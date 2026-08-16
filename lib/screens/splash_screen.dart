@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
+import '../providers/settings_provider.dart';
+import '../widgets/splash_icon_view.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -76,46 +78,12 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final dark = context.isDark;
+    final settings = context.watch<SettingsProvider>();
     return CupertinoPageScaffold(
       backgroundColor:
-          dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: dark ? CupertinoColors.white : context.accentColor,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: CupertinoColors.black.withValues(alpha: 0.2),
-                    blurRadius: 20,
-                  ),
-                ],
-              ),
-              child: Icon(
-                CupertinoIcons.chat_bubble_2_fill,
-                size: 56,
-                color: dark ? context.accentColor : CupertinoColors.white,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'AiChat',
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color:
-                    dark ? CupertinoColors.white : const Color(0xFF000000),
-                letterSpacing: 2,
-              ),
-            ),
-          ],
-        ),
+          context.isDark ? const Color(0xFF000000) : const Color(0xFFFFFFFF),
+      child: SizedBox.expand(
+        child: SplashIconView(imagePath: settings.splashIconPath),
       ),
     );
   }

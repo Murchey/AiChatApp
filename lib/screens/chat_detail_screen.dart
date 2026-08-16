@@ -13,9 +13,11 @@ import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../services/prompt_builder.dart';
+import '../utils/file_utils.dart';
 import '../widgets/character_avatar.dart';
 import 'character_detail_screen.dart';
 import 'create_group_screen.dart';
+import 'image_crop_screen.dart';
 import 'memory_point_manage_screen.dart';
 import 'moment_visibility_screen.dart';
 
@@ -375,13 +377,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  /// 从相册选图并设置为聊天背景
+  /// 从相册选图并设置为聊天背景（先进入编辑页缩放裁剪）
   Future<void> _pickAndSetBackground(BuildContext ctx, String chatId, ChatBackgroundProvider provider) async {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
+    if (!ctx.mounted) return;
     try {
-      await provider.setImage(chatId, file.path);
+      final cropped = await Navigator.push<String>(
+        ctx,
+        CupertinoPageRoute(builder: (_) => ImageCropScreen(imagePath: file.path)),
+      );
+      if (cropped == null || !mounted) return;
+      await provider.setImage(chatId, cropped);
+      deleteFileQuietly(cropped);
     } catch (_) {
       // ignore - user may cancel or permission denied
     }
