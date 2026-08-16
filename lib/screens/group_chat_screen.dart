@@ -917,8 +917,10 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                           fit: BoxFit.cover,
                           width: bgSize.width,
                           height: bgSize.height,
+                          // 只限制宽度：同时指定 cacheHeight 会把图片强制
+                          // 缩放到指定矩形导致宽高比失真（拉伸），这里让高度
+                          // 按原比例自动缩放，由 BoxFit.cover 负责裁剪铺满
                           cacheWidth: decodeWidth,
-                          cacheHeight: decodeWidth,
                         ),
                       );
                     },
