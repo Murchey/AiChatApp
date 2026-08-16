@@ -289,12 +289,16 @@ class LLMService {
 
   /// 功能检测：测试当前模型是否支持图片（多模态）发送。
   ///
-  /// 以 OpenAI 兼容的视觉消息格式发送一张测试图片并明确引导回复：
-  /// - HTTP 200 且回复内容体现「能看到图片」→ 支持图片
-  /// - 回复内容明确表示「看不到/不支持」→ 不支持
+  /// 以 OpenAI 兼容的视觉消息格式发送一张**纯红色**测试图片，
+  /// 并引导模型回答"图片是什么颜色"：
+  /// - 回复中出现颜色词 → 模型确实看到了图片 → 支持图片
+  /// - 回复明确表示「看不到/不支持」→ 不支持
   /// - HTTP 非 200（API 拒绝图片内容等）→ 不支持
   /// - 200 但回复无法判定（部分非视觉模型会忽略图片直接回复）→ 按 200 放行
   /// 网络/鉴权等异常向上抛出（LLMException / SocketException），由调用方提示。
+  ///
+  /// 注意：不能用 1x1 透明/空白图做测试——它对视觉模型同样没有可识别
+  /// 内容，诚实的视觉模型会回答"看不到内容"，导致误判为不支持视觉。
   static Future<bool> testImageSupport(ApiModel model) async {
     if (model.modelName.isEmpty) {
       throw const LLMException('所选模型未填写模型名称，请到「API 设置」中检查');
@@ -310,9 +314,12 @@ class LLMService {
     final url =
         base.endsWith('/chat/completions') ? base : '$base/chat/completions';
 
-    // 1x1 透明 PNG（极小测试图片）
+    // 16x16 纯红色 PNG（有明确视觉内容的小测试图）。
+    // 不能用 1x1 透明图：透明/空白图对任何模型都没有可识别内容，
+    // 视觉模型会如实回答"看不到内容"，从而被误判为不支持视觉。
+    // 改用纯色图后，视觉模型能明确回答出"红色"，非视觉模型则无法回答。
     const tinyPngBase64 =
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+        'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAdSURBVDhPY/jPwPCfEsyALkAqHjVg1IBRAwaLAQAwxP4Q7zYsrwAAAABJRU5ErkJggg==';
 
     final client = HttpClient();
     try {
@@ -332,8 +339,9 @@ class LLMService {
             'content': [
               {
                 'type': 'text',
-                'text': '这是功能检测。请回答：你是否能看到我发送的这张图片？'
-                    '能看到请只回复一个字：能。不能看到请只回复两个字：不能。',
+                'text': '这是功能检测。我发送的这张图片是什么颜色？'
+                    '如果你能看到图片，请只回复颜色名称（例如：红色）。'
+                    '如果你看不到图片，请只回复：不能。',
               },
               {
                 'type': 'image_url',
@@ -345,6 +353,10 @@ class LLMService {
         'stream': false,
         'max_tokens': 16,
         'temperature': 0,
+        // 部分百炼模型（qwen3.7-plus 等）默认开启思考，回复可能只有
+        // reasoning_content 而 content 为空，无法据此判断是否看到图片，
+        // 检测时显式关闭思考，让模型直接回答颜色。
+        'enable_thinking': false,
       })));
 
       final response =
@@ -378,10 +390,23 @@ class LLMService {
   }
 
   /// 依据回复内容判定模型是否看到了图片。
-  /// 明确否定优先；无关键词（模型忽略图片直接回答文本等）返回 null 由调用方兜底。
+  ///
+  /// 判定策略（配合"问图片颜色"的检测提示词）：
+  /// 1. 回复中出现颜色词 → 模型确实看到了图片内容 → 支持视觉；
+  /// 2. 否则回复明确表示看不到/不支持 → 不支持；
+  /// 3. 其余情况（模型忽略图片直接答文本等）返回 null 由调用方兜底放行。
   static bool? _judgeVisionByReply(String reply) {
     final t = reply.trim().toLowerCase();
-    // 明确否定（优先）：中文为主，兼顾常见英文否定
+    // 颜色词是强肯定信号：检测图是纯红色，模型答出颜色即证明看到了图片
+    const colorPatterns = [
+      '红', '橙', '黄', '绿', '蓝', '紫', '青', '粉', '白', '黑', '灰', '棕', '褐',
+      'red', 'orange', 'yellow', 'green', 'blue', 'purple',
+      'pink', 'white', 'black', 'gray', 'grey', 'brown', 'cyan',
+    ];
+    for (final p in colorPatterns) {
+      if (t.contains(p)) return true;
+    }
+    // 明确否定（优先于"能/看到"等泛化肯定词）
     const negativePatterns = [
       '不能',
       '看不到',
