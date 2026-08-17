@@ -56,8 +56,10 @@ class MomentAiService {
   /// 下次启动从断点续跑剩余角色，避免互动被中断后丢失。
   static const String breakpointKey = 'moment_interaction_breakpoint_v1';
 
-  /// 全局互斥：同一时刻只允许一轮互动运行，避免并发写断点互相覆盖。
-  static bool _interactionRunning = false;
+  /// 互动任务队列：同一时刻只允许一轮互动运行，后续触发的互动排队
+  /// 等待前一轮结束后再执行。既避免并发写断点互相覆盖，也避免互动
+  /// 因互斥被直接跳过（修复多角色同时发布朋友圈时只有第一条被互动）。
+  static Future<void> _pendingRound = Future<void>.value();
 
   /// 正在生成"评论回复"的组合键集合（"回复者 id|动态 id"），
   /// 防止同一回复者针对同一动态并发触发多次回复；
@@ -89,14 +91,42 @@ class MomentAiService {
     User? user,
     int initialFailures = 0,
     String momentOwnerId = CharacterProvider.selfCharacterId,
+  }) {
+    // 排队执行：等待前一轮互动结束后再开始本轮，保证每一轮互动都不会
+    // 因互斥被直接跳过（修复多角色同时发布朋友圈时只有第一条被互动）
+    _pendingRound = _pendingRound.then((_) => _runRound(
+          characterProvider: characterProvider,
+          apiProvider: apiProvider,
+          notificationProvider: notificationProvider,
+          chatProvider: chatProvider,
+          chatSettings: chatSettings,
+          groupChatProvider: groupChatProvider,
+          memoryPointProvider: memoryPointProvider,
+          moment: moment,
+          characters: characters,
+          user: user,
+          initialFailures: initialFailures,
+          momentOwnerId: momentOwnerId,
+        ));
+    return _pendingRound;
+  }
+
+  /// 实际执行一轮朋友圈互动：由 [run] 排队串行调用，
+  /// 保证同一时刻只跑一轮（避免并发写断点互相覆盖）。
+  static Future<void> _runRound({
+    required CharacterProvider characterProvider,
+    required ApiProvider apiProvider,
+    required MomentNotificationProvider notificationProvider,
+    required ChatProvider chatProvider,
+    required ChatSettingsProvider chatSettings,
+    required GroupChatProvider groupChatProvider,
+    required MemoryPointProvider memoryPointProvider,
+    required Moment moment,
+    required List<Character> characters,
+    User? user,
+    int initialFailures = 0,
+    String momentOwnerId = CharacterProvider.selfCharacterId,
   }) async {
-    if (_interactionRunning) {
-      const msg = '朋友圈互动正在进行中，已跳过本次';
-      DevLogService.instance.log(msg);
-      showAppToast(msg);
-      return;
-    }
-    _interactionRunning = true;
     try {
       final model = apiProvider.getModelById(apiProvider.momentModelId);
       if (model == null) {
@@ -218,8 +248,11 @@ class MomentAiService {
       }
       // 全部角色互动完成（或达到失败上限）：清除断点
       await _clearBreakpoint();
-    } finally {
-      _interactionRunning = false;
+    } catch (e) {
+      // 兜底捕获：任何未预期异常（如本地存储失败）都不向外抛出，
+      // 保证排队链不断裂、调用方（含 unawaited）无未处理异步异常
+      DevLogService.instance.log(
+          '朋友圈互动异常（已忽略，不影响后续互动）：${LLMService.describeException(e)}');
     }
   }
 
