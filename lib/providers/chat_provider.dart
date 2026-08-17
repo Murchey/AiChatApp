@@ -319,12 +319,13 @@ class ChatProvider extends ChangeNotifier {
     List<String> memoryPoints = const [], // 用户持久化的长期记忆点，拼入系统提示词
     String extraSystemContext = '', // 额外的记忆上下文（如角色记忆池），拼入系统提示词
   }) async {
+    final now = DateTime.now();
     final prompt = PromptBuilder.buildSystemPrompt(
       baseSystemPrompt: characterSystemPrompt,
       characterName: characterName,
       userNickname: userNickname,
       userRelationship: userRelationship,
-      currentTime: DateTime.now(),
+      currentTime: now,
       replyToUser: replyToUser,
       activeStart: activeStart,
       activeEnd: activeEnd,
@@ -334,6 +335,7 @@ class ChatProvider extends ChangeNotifier {
     final outputInstruction = PromptBuilder.buildOutputInstruction(
       characterName: characterName,
       replyToUser: replyToUser,
+      currentTime: now,
     );
     // 记录本会话的系统提示词 + 输出指令 token，供发送消息时乐观更新进度条
     _systemTokens[conversationId] =

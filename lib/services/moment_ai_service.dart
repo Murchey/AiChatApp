@@ -19,6 +19,7 @@ import '../utils/app_toast.dart';
 import 'dev_log_service.dart';
 import 'llm_service.dart';
 import 'memory_pool_builder.dart';
+import 'prompt_builder.dart';
 
 /// 朋友圈 AI 互动引擎。
 ///
@@ -461,7 +462,9 @@ class MomentAiService {
         '要求：\n'
         '- like：是否要给这条朋友圈点赞（true 点赞 / false 不点赞）\n'
         '- comment：若想评论，写 5~30 字中文评论，内容符合角色性格、'
-        '你与朋友圈主人的关系以及说话习惯；不想评论则填空字符串 ""';
+        '你与朋友圈主人的关系以及说话习惯；不想评论则填空字符串 ""\n\n'
+        // 当前时间追加在上下文最后一行：System Prompt 保持静态可缓存
+        '当前时间：${PromptBuilder.formatTime(DateTime.now())}';
   }
 
   /// 图文动态：文本指令 + 图片（base64 data URL，OpenAI 视觉格式）
@@ -930,7 +933,9 @@ class MomentAiService {
         '【用户的最新评论】\n$userComment\n\n'
         '请直接输出你要回复的内容（5~50 字中文），符合你的角色性格与说话习惯，'
         '并针对「用户这次评论的上下文」中的原评论内容自然回应，'
-        '不要带任何前缀、引号、解释，也不要输出 JSON 或代码块。';
+        '不要带任何前缀、引号、解释，也不要输出 JSON 或代码块。\n\n'
+        // 当前时间追加在上下文最后一行：System Prompt 保持静态可缓存
+        '当前时间：${PromptBuilder.formatTime(DateTime.now())}';
   }
 
   /// 清洗模型返回的回复文本：去掉代码块包裹与首尾引号。

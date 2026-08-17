@@ -606,6 +606,7 @@ class GroupChatProvider extends ChangeNotifier {
         var outputInstruction = PromptBuilder.buildOutputInstruction(
           characterName: member.name,
           replyToUser: true,
+          currentTime: DateTime.now(),
         );
         // 群聊中只允许输出自己的新内容：防止模型复述/转述其他成员的发言
         outputInstruction =
@@ -765,9 +766,6 @@ class GroupChatProvider extends ChangeNotifier {
         .where((e) => e.isNotEmpty)
         .toList();
     final now = DateTime.now();
-    String two(int n) => n.toString().padLeft(2, '0');
-    final time = '${now.year}-${two(now.month)}-${two(now.day)} '
-        '${two(now.hour)}:${two(now.minute)}:${two(now.second)}';
     // 角色人设（角色系统提示词）：必须拼入，否则回复不贴人设
     final persona = m.systemPrompt.trim();
     // 活跃时段：命中时要求保持活跃、禁止沉默（与私聊一致）；
@@ -794,9 +792,6 @@ ${memory.isEmpty ? '' : '''
 ## 用户长期记忆
 ${memory.map((e) => '- $e').join('\n')}'''}
 ${extra.isEmpty ? '' : '\n$extra\n'}
-## 当前时间
-$time
-
 ## 群聊回复要求
 1. 消息必须极度口语化，像真实微信群聊，允许语气词、表情包文字（如[捂脸]）或不规范大小写。
 2. 针对群聊中的最新内容，把想说的话拆分为 1~3 条短消息，每条 5~15 个字，最多不超过 20 个字。
