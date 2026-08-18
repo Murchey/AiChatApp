@@ -51,9 +51,9 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
   // ABI 选择相关
   String _selectedAbi = 'arm64-v8a';
   final Map<String, String> _abiOptions = const {
-    'arm64-v8a': '主流手机适配',
-    'armeabi-v7a': '早期手机机型',
-    'x86_64': '电脑以及模拟器',
+    'arm64-v8a': '64位手机（主流）',
+    'armeabi-v7a': '32位手机（旧机型）',
+    'x86_64': '模拟器及ChromeBook',
   };
 
   UpdateInfo get _info => widget.info;
