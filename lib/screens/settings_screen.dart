@@ -18,6 +18,7 @@ import '../services/auto_moment_service.dart';
 import '../services/update_service.dart';
 import '../services/workshop_service.dart';
 import '../utils/app_toast.dart';
+import '../widgets/update_dialogs.dart';
 import 'bubble_style_screen.dart';
 import 'memory_pool_manager_screen.dart';
 import 'splash_icon_screen.dart';
@@ -116,6 +117,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     // 直接显示通知（忽略去重）
     _showUpdateNotification(body);
+  }
+
+  /// 触发 APP 更新弹窗（开发者模式专用）
+  /// 模拟一次 APP 更新检测，无论是否有更新都显示弹窗
+  Future<void> _triggerAppUpdateDialog() async {
+    showAppToast('正在检测更新...');
+    
+    final settings = context.read<SettingsProvider>();
+    UpdateInfo? info = await UpdateService.checkForUpdate(
+      proxyUrl: settings.updateProxyUrl,
+    );
+    
+    if (!mounted) return;
+    
+    // 如果没有检测到更新，创建一个模拟的更新信息用于测试
+    if (info == null) {
+      info = const UpdateInfo(
+        latestVersion: '99.0.0',
+        releaseNotes: '# 模拟更新内容\n\n'
+            '这是一条**开发者测试**用的模拟更新通知。\n\n'
+            '## 更新内容\n'
+            '- 新增功能 A\n'
+            '- 优化体验 B\n'
+            '- 修复问题 C\n\n'
+            '> 此为测试弹窗，实际更新请关注正式版本发布',
+        giteeDownloadUrl: 'https://gitee.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
+        githubDownloadUrl: 'https://github.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
+      );
+    }
+    
+    // 显示更新弹窗
+    showUpdateAvailableDialog(
+      context,
+      info,
+      proxyUrl: settings.updateProxyUrl,
+    );
   }
 
   void _showUpdateNotification(String body) {
@@ -669,6 +706,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   onTap: () => _quickTestWorkshopNotify(),
+                ),
+                Container(
+                  height: 0.5,
+                  margin: const EdgeInsets.only(left: 16),
+                  color: context.separatorColor,
+                ),
+                CupertinoListTile(
+                  leading: const Icon(
+                    CupertinoIcons.arrow_down_circle,
+                    color: CupertinoColors.systemGreen,
+                  ),
+                  title: const Text('触发 APP 更新弹窗'),
+                  subtitle: Text(
+                    '立即检测一次 APP 更新，如果有新版本则显示更新弹窗',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  onTap: () => _triggerAppUpdateDialog(),
                 ),
               ],
             ],

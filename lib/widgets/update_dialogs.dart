@@ -6,6 +6,21 @@ import '../services/update_service.dart';
 /// 更新下载源：Gitee 优先（国内直连），GitHub 备用（可走代理加速）
 enum UpdateSource { gitee, github }
 
+/// 辅助函数：替换 URL 中的 APK 文件名为指定 ABI 版本
+String _replaceAbiInUrl(String url, String version, String abi) {
+  final fileName = 'AiChat-V$version-$abi.apk';
+  // 匹配 AiChat- 开头，.apk 结尾的文件名
+  final regex = RegExp(r'AiChat-[^/]+\.apk');
+  if (regex.hasMatch(url)) {
+    return url.replaceAll(regex, fileName);
+  }
+  // 如果 URL 不包含标准文件名，尝试拼接
+  if (url.endsWith('/')) {
+    return '$url$fileName';
+  }
+  return '$url/$fileName';
+}
+
 /// 发现新版本提示弹窗：展示版本号、更新说明与"下载源"选项卡，
 /// 点击「立即更新」进入下载安装流程
 void showUpdateAvailableDialog(
@@ -32,6 +47,14 @@ class _UpdateAvailableDialog extends StatefulWidget {
 class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
   late UpdateSource _source;
   bool _useProxy = true; // 是否使用内置代理加速下载（仅 GitHub 源生效）
+  
+  // ABI 选择相关
+  String _selectedAbi = 'arm64-v8a';
+  final Map<String, String> _abiOptions = const {
+    'arm64-v8a': '主流手机适配',
+    'armeabi-v7a': '早期手机机型',
+    'x86_64': '电脑以及模拟器',
+  };
 
   UpdateInfo get _info => widget.info;
   bool get _giteeAvailable => _info.giteeDownloadUrl.isNotEmpty;
@@ -42,6 +65,31 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
     super.initState();
     // 默认优先 Gitee，Gitee 不可用时回退 GitHub
     _source = _giteeAvailable ? UpdateSource.gitee : UpdateSource.github;
+  }
+
+  void _showAbiPicker(BuildContext context) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('选择安装包类型'),
+        actions: _abiOptions.entries.map((entry) {
+          return CupertinoActionSheetAction(
+            onPressed: () {
+              setState(() {
+                _selectedAbi = entry.key;
+              });
+              Navigator.pop(ctx);
+            },
+            child: Text('${entry.key} (${entry.value})'),
+          );
+        }).toList(),
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('取消'),
+        ),
+      ),
+    );
   }
 
   @override
@@ -70,6 +118,48 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          
+          // ABI 选择区域
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemGrey6,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  '安装包类型：',
+                  style: TextStyle(fontSize: 13, color: CupertinoColors.systemGrey),
+                ),
+                GestureDetector(
+                  onTap: () => _showAbiPicker(context),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _selectedAbi,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: CupertinoColors.activeBlue,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        CupertinoIcons.chevron_down,
+                        size: 14,
+                        color: CupertinoColors.activeBlue,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
           const SizedBox(height: 12),
           Text(
             '下载源',
@@ -160,6 +250,7 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
                 source: _source,
                 proxyUrl: widget.proxyUrl,
                 useProxy: _useProxy,
+                selectedAbi: _selectedAbi,
               ),
             );
           },
@@ -177,12 +268,14 @@ class _DownloadDialog extends StatefulWidget {
   final UpdateSource source;
   final String proxyUrl;
   final bool useProxy;
+  final String selectedAbi;
 
   const _DownloadDialog({
     required this.info,
     required this.source,
     required this.proxyUrl,
     required this.useProxy,
+    required this.selectedAbi,
   });
 
   @override
@@ -196,9 +289,13 @@ class _DownloadDialogState extends State<_DownloadDialog> {
   String get _sourceLabel =>
       widget.source == UpdateSource.gitee ? 'Gitee' : 'GitHub';
 
-  String get _downloadUrl => widget.source == UpdateSource.gitee
-      ? widget.info.giteeDownloadUrl
-      : widget.info.githubDownloadUrl;
+  String get _downloadUrl {
+    final rawUrl = widget.source == UpdateSource.gitee
+        ? widget.info.giteeDownloadUrl
+        : widget.info.githubDownloadUrl;
+    // 替换为选定的 ABI
+    return _replaceAbiInUrl(rawUrl, widget.info.latestVersion, widget.selectedAbi);
+  }
 
   /// 仅 GitHub 源且勾选"使用内置代理"时才叠加代理前缀，
   /// 否则（Gitee 源 / 不勾选代理）直连源头下载

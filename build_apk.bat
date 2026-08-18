@@ -4,62 +4,63 @@ chcp 65001 >nul
 title AiChat - APK Build Script
 
 rem ============================================================
-rem  AiChat 本地打包脚本
-rem  用法：
-rem    build_apk.bat              -> 构建 debug APK
-rem    build_apk.bat release      -> 构建 release APK
-rem  产物：dist\AiChat-V<版本号>.apk（发布 Release 时按此命名上传）
+rem  AiChat Build Script
+rem  Usage:
+rem    build_apk.bat              -> Build release APK (split per ABI)
+rem    build_apk.bat debug        -> Build debug APK
+rem  Output: build\app\outputs\flutter-apk\
 rem ============================================================
 
-set MODE=debug
-if /i "%~1"=="release" set MODE=release
+set MODE=release
+if /i "%~1"=="debug" set MODE=debug
 
 where flutter >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] 未找到 Flutter，请先安装 Flutter 并加入 PATH 后重试。
+    echo [ERROR] Flutter not found. Please install Flutter and add to PATH.
     pause
     exit /b 1
 )
 
 echo.
-echo [1/3] flutter pub get ...
+echo [1/2] flutter pub get ...
 call flutter pub get
 if errorlevel 1 (
-    echo [ERROR] flutter pub get 失败。
+    echo [ERROR] flutter pub get failed.
     pause
     exit /b 1
 )
 
 echo.
-echo [2/3] flutter build apk --%MODE% ...
-call flutter build apk --%MODE%
+echo [2/2] Building APK ...
+if /i "%MODE%"=="release" (
+    echo     Mode: release (split per ABI)
+    call flutter build apk --release --split-per-abi
+) else (
+    echo     Mode: debug
+    call flutter build apk --debug
+)
 if errorlevel 1 (
-    echo [ERROR] flutter build apk --%MODE% 失败，请检查上方日志。
+    echo [ERROR] flutter build apk failed. Check logs above.
     pause
     exit /b 1
 )
 
-rem 从 pubspec.yaml 读取版本号（形如 version: 1.0.0+1）
+rem Read version from pubspec.yaml
 set VERSION=0.0.0
 for /f "tokens=2 delims=: " %%v in ('findstr /b "version:" pubspec.yaml') do set VERSION=%%v
 
-set OUT_DIR=dist
-if not exist %OUT_DIR% mkdir %OUT_DIR%
-
-set SRC=build\app\outputs\flutter-apk\app-%MODE%.apk
-set DST=%OUT_DIR%\AiChat-V%VERSION%.apk
-if not exist "%SRC%" (
-    echo [ERROR] 未找到构建产物：%SRC%
-    pause
-    exit /b 1
+echo.
+echo ============================================================
+echo Build successful! Version: %VERSION%
+echo.
+echo APK output directory:
+echo    build\app\outputs\flutter-apk\
+if /i "%MODE%"=="release" (
+    echo.
+    echo Generated APKs:
+    echo    app-arm64-v8a-release.apk
+    echo    app-armeabi-v7a-release.apk
+    echo    app-x86_64-release.apk
 )
-
-copy /y "%SRC%" "%DST%" >nul
-
-echo.
-echo [3/3] 完成。
-echo    APK : %DST%
-for %%f in ("%DST%") do echo    大小 : %%~zf bytes
-echo.
-echo 构建成功！安装包已输出到 %OUT_DIR% 目录。
+echo ============================================================
 pause
