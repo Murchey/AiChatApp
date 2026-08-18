@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../models/workshop_asset.dart';
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/auto_moment_provider.dart';
@@ -11,8 +13,10 @@ import '../providers/group_chat_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/workshop_provider.dart';
 import '../services/auto_moment_service.dart';
 import '../services/update_service.dart';
+import '../services/workshop_service.dart';
 import '../utils/app_toast.dart';
 import 'bubble_style_screen.dart';
 import 'memory_pool_manager_screen.dart';
@@ -77,6 +81,100 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) {
       showAppToast('测试完成，请到朋友圈查看');
     }
+  }
+
+  /// 快速测试角色仓库更新通知（开发者模式专用）
+  /// 忽略内容去重，直接显示一次通知弹窗
+  Future<void> _quickTestWorkshopNotify() async {
+    final workshopProvider = context.read<WorkshopProvider>();
+    
+    // 检查是否已配置通知仓库
+    if (!workshopProvider.notifyEnabled || workshopProvider.notifyRepoId == null) {
+      showAppToast('请先在「创意工坊设置」中开启通知并选择仓库');
+      return;
+    }
+
+    final notifyRepo = workshopProvider.notifyRepository;
+    if (notifyRepo == null) {
+      showAppToast('通知仓库未找到，请重新选择');
+      return;
+    }
+
+    // 尝试获取 release body
+    showAppToast('正在获取仓库更新内容...');
+    final body = await WorkshopService.fetchReleaseBody(
+      notifyRepo.url,
+      kUpdateNotifyTag,
+    );
+
+    if (!mounted) return;
+
+    if (body == null || body.isEmpty) {
+      showAppToast('未找到 V1.2.0 tag 或内容为空');
+      return;
+    }
+
+    // 直接显示通知（忽略去重）
+    _showUpdateNotification(body);
+  }
+
+  void _showUpdateNotification(String body) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              CupertinoIcons.news,
+              size: 22,
+              color: CupertinoColors.activeBlue,
+            ),
+            SizedBox(width: 8),
+            Text('角色仓库有更新'),
+          ],
+        ),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 200),
+                child: SingleChildScrollView(
+                  child: MarkdownBody(
+                    data: body,
+                    styleSheet: MarkdownStyleSheet(
+                      p: const TextStyle(fontSize: 13, height: 1.4),
+                      h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      h3: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      listBullet: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '开发者模式快速测试',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: CupertinoColors.systemGrey,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 弹出深浅色选择（下拉选项框）
@@ -548,6 +646,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   onTap: () => _quickTestAutoMoment(),
+                ),
+                Container(
+                  height: 0.5,
+                  margin: const EdgeInsets.only(left: 16),
+                  color: context.separatorColor,
+                ),
+                CupertinoListTile(
+                  leading: const Icon(
+                    CupertinoIcons.news,
+                    color: CupertinoColors.activeBlue,
+                  ),
+                  title: const Text('快速触发角色仓库提醒'),
+                  subtitle: Text(
+                    '立即模拟一次仓库更新通知（忽略内容去重），用于测试通知弹窗效果',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  onTap: () => _quickTestWorkshopNotify(),
                 ),
               ],
             ],

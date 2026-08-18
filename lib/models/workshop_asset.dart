@@ -4,6 +4,9 @@ const String kCharacterPackTag = 'V1.1.0';
 /// 游戏分类角色包 Release tag（zip 内含 moments.json 的朋友圈数据包）
 const String kGamePackTag = 'V1.0.0';
 
+/// 更新通知 Release tag（用于接收仓库更新通知）
+const String kUpdateNotifyTag = 'V1.2.0';
+
 /// 创意工坊支持的全部 Release tag
 const List<String> kWorkshopPackTags = [kCharacterPackTag, kGamePackTag];
 

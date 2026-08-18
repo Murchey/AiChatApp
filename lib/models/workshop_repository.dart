@@ -37,6 +37,9 @@ class WorkshopRepository {
   /// 是否可用「游戏分类」（V1.0.0）
   bool get hasGame => availableTags.contains(kGamePackTag);
 
+  /// 是否有「更新通知」tag（V1.2.0）
+  bool get hasUpdateNotify => availableTags.contains(kUpdateNotifyTag);
+
   static const _unset = Object();
 
   WorkshopRepository copyWith({

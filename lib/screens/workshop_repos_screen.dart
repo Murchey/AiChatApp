@@ -51,6 +51,7 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
     final parts = <String>[
       if (repo.hasCharacter) '角色分类(V1.1.0)',
       if (repo.hasGame) '游戏分类(V1.0.0)',
+      if (repo.hasUpdateNotify) '更新通知(V1.2.0)',
     ];
     return parts.isEmpty ? '无' : parts.join('、');
   }
@@ -136,6 +137,75 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
     );
   }
 
+  /// 选择通知仓库
+  Future<void> _pickNotifyRepo(WorkshopProvider provider) async {
+    final repos = provider.repositories;
+    if (repos.isEmpty) {
+      await _showTip('请先添加仓库');
+      return;
+    }
+
+    final selected = await showCupertinoDialog<WorkshopRepository>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('选择通知仓库'),
+        content: SizedBox(
+          height: 200,
+          child: ListView.builder(
+            itemCount: repos.length,
+            itemBuilder: (ctx, index) {
+              final repo = repos[index];
+              final isSelected = repo.id == provider.notifyRepoId;
+              return GestureDetector(
+                onTap: () => Navigator.pop(ctx, repo),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: CupertinoColors.separator,
+                        width: 0.5,
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          repo.name,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                      ),
+                      if (isSelected)
+                        Icon(
+                          CupertinoIcons.checkmark_circle_fill,
+                          size: 20,
+                          color: context.accentColor,
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected != null) {
+      await provider.setNotifyRepoId(selected.id);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<WorkshopProvider>();
@@ -143,7 +213,7 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: const Text('配置可用仓库'),
+        middle: const Text('创意工坊设置'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _busy ? null : _showAddDialog,
@@ -154,34 +224,180 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
           ),
         ),
       ),
-      child: repos.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
-                child: Text(
-                  '暂无可用仓库，点击右上角 + 添加角色卡仓库',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1.5,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-              ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              itemCount: repos.length,
-              separatorBuilder: (context, index) => Container(
-                height: 0.5,
-                margin: const EdgeInsets.only(left: 16),
-                color: context.separatorColor,
-              ),
-              itemBuilder: (context, index) {
-                final repo = repos[index];
-                return _buildRepoRow(context, repo);
-              },
+      child: SafeArea(
+        child: Column(
+          children: [
+            // 仓库列表区域（可滚动）
+            Expanded(
+              flex: 3,
+              child: _buildRepoSection(repos),
             ),
+            // 分隔线
+            Container(
+              height: 8,
+              color: CupertinoColors.systemGroupedBackground,
+            ),
+            // 通知设置区域
+            Expanded(
+              flex: 2,
+              child: _buildNotifySection(provider),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRepoSection(List<WorkshopRepository> repos) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Text(
+            '可用仓库',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: context.textSecondaryColor,
+            ),
+          ),
+        ),
+        Expanded(
+          child: repos.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    child: Text(
+                      '暂无可用仓库，点击右上角 + 添加角色卡仓库',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.5,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  itemCount: repos.length,
+                  separatorBuilder: (context, index) => Container(
+                    height: 0.5,
+                    margin: const EdgeInsets.only(left: 16),
+                    color: context.separatorColor,
+                  ),
+                  itemBuilder: (context, index) {
+                    final repo = repos[index];
+                    return _buildRepoRow(context, repo);
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotifySection(WorkshopProvider provider) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(
+            '角色仓库更新通知',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: context.textSecondaryColor,
+            ),
+          ),
+        ),
+        // 开关
+        _buildNotifySwitch(provider),
+        // 选择仓库
+        if (provider.notifyEnabled) _buildNotifyRepoPicker(provider),
+        // 说明
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Text(
+            '开启后，APP 启动时会自动检查所选仓库的 V1.2.0 tag 更新。\n当 release 描述内容发生变化时，会发送通知提醒。',
+            style: TextStyle(
+              fontSize: 12,
+              color: context.textSecondaryColor,
+              height: 1.5,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotifySwitch(WorkshopProvider provider) {
+    return Container(
+      color: context.listBgColor,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Icon(
+            CupertinoIcons.bell_fill,
+            size: 20,
+            color: context.accentColor,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '启用更新通知',
+              style: TextStyle(
+                fontSize: 15,
+                color: context.textPrimaryColor,
+              ),
+            ),
+          ),
+          CupertinoSwitch(
+            value: provider.notifyEnabled,
+            onChanged: (value) => provider.setNotifyEnabled(value),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotifyRepoPicker(WorkshopProvider provider) {
+    final notifyRepo = provider.notifyRepository;
+    return GestureDetector(
+      onTap: () => _pickNotifyRepo(provider),
+      child: Container(
+        color: context.listBgColor,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            const SizedBox(width: 32), // 对齐图标
+            Text(
+              '通知仓库',
+              style: TextStyle(
+                fontSize: 15,
+                color: context.textPrimaryColor,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              notifyRepo?.name ?? '请选择',
+              style: TextStyle(
+                fontSize: 14,
+                color: notifyRepo != null
+                    ? context.textSecondaryColor
+                    : CupertinoColors.systemGrey,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              CupertinoIcons.chevron_right,
+              size: 14,
+              color: context.textSecondaryColor,
+            ),
+          ],
+        ),
+      ),
     );
   }
 

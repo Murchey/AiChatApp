@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import 'config/theme.dart';
 import 'config/routes.dart';
@@ -37,6 +38,82 @@ class _AiChatAppState extends State<AiChatApp> {
     context.read<TokenUsageProvider>().init();
     // 初始化系统通知（创建渠道并请求 Android 13+ 通知权限）
     NotificationService.instance.init();
+    // 检查仓库更新通知
+    _checkWorkshopUpdates();
+  }
+
+  Future<void> _checkWorkshopUpdates() async {
+    // 等待 WorkshopProvider 初始化完成
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+
+    final workshopProvider = context.read<WorkshopProvider>();
+    final updateBody = await workshopProvider.checkForUpdates();
+    if (updateBody != null && mounted) {
+      // 显示更新通知
+      _showUpdateNotification(updateBody);
+    }
+  }
+
+  void _showUpdateNotification(String body) {
+    final navContext = appNavigatorKey.currentContext;
+    if (navContext == null) return;
+    showCupertinoDialog(
+      context: navContext,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              CupertinoIcons.news,
+              size: 22,
+              color: CupertinoColors.activeBlue,
+            ),
+            SizedBox(width: 8),
+            Text('角色仓库有更新'),
+          ],
+        ),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 200),
+                child: SingleChildScrollView(
+                  child: MarkdownBody(
+                    data: body,
+                    styleSheet: MarkdownStyleSheet(
+                      p: const TextStyle(fontSize: 13, height: 1.4),
+                      h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      h3: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      listBullet: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '可在「创意工坊设置」中管理通知',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: CupertinoColors.systemGrey,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

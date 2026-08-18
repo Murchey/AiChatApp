@@ -36,7 +36,7 @@ class WorkshopService {
     );
   }
 
-  /// 检查仓库可用的 Release tag：返回仓库中存在的支持 tag（V1.1.0 / V1.0.0）。
+  /// 检查仓库可用的 Release tag：返回仓库中存在的支持 tag（V1.1.0 / V1.0.0 / V1.2.0）。
   /// 仓库路径不合法时抛出 [FormatException]，请求失败抛出网络异常。
   ///
   /// 检测通过官方 API 直连（代理仅用于下载，不用于检测）。
@@ -50,7 +50,9 @@ class WorkshopService {
       repo: parsed.repo,
       isGitee: parsed.isGitee,
     );
-    return kWorkshopPackTags.where(releases.containsKey).toList();
+    // 检查所有支持的 tag，包括更新通知用的 V1.2.0
+    final allTags = [...kWorkshopPackTags, kUpdateNotifyTag];
+    return allTags.where(releases.containsKey).toList();
   }
 
   /// 列出仓库某 tag 下的 zip 资产（仅支持角色/游戏两个分类 tag）。
@@ -206,6 +208,33 @@ class WorkshopService {
     } catch (_) {
       return 0;
     }
+  }
+
+  /// 获取指定 tag 的 release 描述内容（body）
+  /// 用于更新通知，返回 null 表示 tag 不存在或请求失败
+  static Future<String?> fetchReleaseBody(String path, String tag) async {
+    final parsed = parseRepoPath(path);
+    if (parsed == null) return null;
+
+    final apiUrl = parsed.isGitee
+        ? 'https://gitee.com/api/v5/repos/${parsed.owner}/${parsed.repo}/releases'
+        : 'https://api.github.com/repos/${parsed.owner}/${parsed.repo}/releases';
+
+    final resp = await http
+        .get(Uri.parse(apiUrl), headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 15));
+
+    if (resp.statusCode != 200) return null;
+
+    final list = jsonDecode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
+    for (final item in list) {
+      final map = item as Map<String, dynamic>;
+      final tagName = (map['tag_name'] as String?)?.trim() ?? '';
+      if (tagName == tag) {
+        return (map['body'] as String?)?.trim() ?? '';
+      }
+    }
+    return null;
   }
 
   /// 防止空名 / '.' / '..' 等非法文件名

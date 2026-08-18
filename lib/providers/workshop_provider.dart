@@ -9,13 +9,28 @@ import '../services/workshop_service.dart';
 /// 创意工坊：管理可用的角色卡仓库（本地持久化），并拉取各仓库的资产 zip。
 class WorkshopProvider extends ChangeNotifier {
   static const _storageKey = 'workshop_repositories_v1';
+  static const _notifyEnabledKey = 'workshop_notify_enabled_v1';
+  static const _notifyRepoIdKey = 'workshop_notify_repo_id_v1';
+  static const _lastNotifyBodyKey = 'workshop_last_notify_body_v1';
 
   List<WorkshopRepository> _repositories = [];
   // 仓库 id -> tag -> 资产列表（内存缓存，避免重复请求）
   final Map<String, Map<String, List<WorkshopAsset>>> _assetsCache = {};
 
+  /// 更新通知是否启用
+  bool _notifyEnabled = false;
+
+  /// 用于接收通知的仓库 id
+  String? _notifyRepoId;
+
+  /// 上一次获取的通知内容（用于去重）
+  String? _lastNotifyBody;
+
   List<WorkshopRepository> get repositories =>
       List.unmodifiable(_repositories);
+
+  bool get notifyEnabled => _notifyEnabled;
+  String? get notifyRepoId => _notifyRepoId;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
@@ -29,7 +44,52 @@ class WorkshopProvider extends ChangeNotifier {
         _repositories = [];
       }
     }
+    _notifyEnabled = prefs.getBool(_notifyEnabledKey) ?? false;
+    _notifyRepoId = prefs.getString(_notifyRepoIdKey);
+    _lastNotifyBody = prefs.getString(_lastNotifyBodyKey);
+
+    // 检查是否需要自动设置通知仓库（APP 更新后）
+    await _autoSetupNotifyRepoIfNeeded(prefs);
+
     notifyListeners();
+  }
+
+  /// APP 更新后自动设置第一个有 V1.2.0 tag 的仓库为通知来源
+  Future<void> _autoSetupNotifyRepoIfNeeded(SharedPreferences prefs) async {
+    // 如果已有通知仓库，不需要自动设置
+    if (_notifyRepoId != null && _notifyEnabled) return;
+
+    // 如果没有仓库，不需要设置
+    if (_repositories.isEmpty) return;
+
+    try {
+      // 查找第一个有 V1.2.0 tag 的仓库
+      WorkshopRepository? notifyRepo;
+      for (final repo in _repositories) {
+        if (repo.hasUpdateNotify) {
+          notifyRepo = repo;
+          break;
+        }
+      }
+
+      // 如果没有找到有 V1.2.0 tag 的仓库，跳过
+      if (notifyRepo == null) {
+        debugPrint('[WorkshopProvider] 未找到有 V1.2.0 tag 的仓库，跳过自动设置');
+        return;
+      }
+
+      // 自动设置该仓库为通知来源
+      _notifyEnabled = true;
+      _notifyRepoId = notifyRepo.id;
+
+      // 持久化
+      await prefs.setBool(_notifyEnabledKey, true);
+      await prefs.setString(_notifyRepoIdKey, notifyRepo.id);
+
+      debugPrint('[WorkshopProvider] 自动设置通知仓库: ${notifyRepo.name}');
+    } catch (e) {
+      debugPrint('[WorkshopProvider] 自动设置通知仓库失败: $e');
+    }
   }
 
   Future<void> _persist() async {
@@ -40,7 +100,7 @@ class WorkshopProvider extends ChangeNotifier {
     );
   }
 
-  /// 添加仓库：解析路径后自动检查可用性（是否有 V1.1.0 / V1.0.0 tag），再保存。
+  /// 添加仓库：解析路径后自动检查可用性（是否有 V1.1.0 / V1.0.0 / V1.2.0 tag），再保存。
   /// 检查失败或没有可用 tag 时抛出异常。
   Future<WorkshopRepository> addRepository({
     required String path,
@@ -58,7 +118,7 @@ class WorkshopProvider extends ChangeNotifier {
       url: path.trim(),
       proxyUrl: parsed.isGitee ? '' : proxyUrl,
       availableTags: tags,
-      error: tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 资产 tag' : null,
+      error: tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 / V1.2.0 资产 tag' : null,
     );
     _repositories.insert(0, repo);
     notifyListeners();
@@ -76,7 +136,7 @@ class WorkshopProvider extends ChangeNotifier {
       final tags = await WorkshopService.checkTags(repo.url);
       _repositories[index] = repo.copyWith(
         availableTags: tags,
-        error: tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 资产 tag' : null,
+        error: tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 / V1.2.0 资产 tag' : null,
       );
       // 清空该仓库的资产缓存，重新拉取
       _assetsCache.remove(repo.id);
@@ -106,7 +166,7 @@ class WorkshopProvider extends ChangeNotifier {
       url: path.trim(),
       proxyUrl: parsed.isGitee ? '' : proxyUrl,
       availableTags: tags,
-      error: tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 资产 tag' : null,
+      error: tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 / V1.2.0 资产 tag' : null,
     );
     final index = _repositories.indexWhere((r) => r.id == repo.id);
     if (index != -1) _repositories[index] = updated;
@@ -149,6 +209,71 @@ class WorkshopProvider extends ChangeNotifier {
   String? proxyById(String id) {
     for (final r in _repositories) {
       if (r.id == id) return proxyFor(r);
+    }
+    return null;
+  }
+
+  /// 设置更新通知开关
+  Future<void> setNotifyEnabled(bool enabled) async {
+    _notifyEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_notifyEnabledKey, enabled);
+  }
+
+  /// 设置用于接收通知的仓库 id
+  Future<void> setNotifyRepoId(String? repoId) async {
+    _notifyRepoId = repoId;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (repoId == null) {
+      await prefs.remove(_notifyRepoIdKey);
+    } else {
+      await prefs.setString(_notifyRepoIdKey, repoId);
+    }
+  }
+
+  /// 检查仓库更新（APP 启动时调用）
+  /// 返回通知内容（如果有更新），无更新返回 null
+  Future<String?> checkForUpdates() async {
+    if (!_notifyEnabled || _notifyRepoId == null) return null;
+
+    // 查找通知仓库
+    WorkshopRepository? notifyRepo;
+    for (final r in _repositories) {
+      if (r.id == _notifyRepoId) {
+        notifyRepo = r;
+        break;
+      }
+    }
+    if (notifyRepo == null) return null;
+
+    try {
+      // 获取 V1.2.0 tag 的 release 描述
+      final body = await WorkshopService.fetchReleaseBody(
+        notifyRepo.url,
+        kUpdateNotifyTag,
+      );
+      if (body == null) return null;
+
+      // 与上次内容比较
+      if (body == _lastNotifyBody) return null;
+
+      // 内容有变化，保存并返回
+      _lastNotifyBody = body;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastNotifyBodyKey, body);
+      return body;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 获取通知仓库信息（用于 UI 显示）
+  WorkshopRepository? get notifyRepository {
+    if (_notifyRepoId == null) return null;
+    for (final r in _repositories) {
+      if (r.id == _notifyRepoId) return r;
     }
     return null;
   }

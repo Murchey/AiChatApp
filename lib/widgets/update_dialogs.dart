@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import '../config/theme.dart';
 import '../services/update_service.dart';
 
@@ -50,15 +51,22 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
       title: Text('发现新版本 V${_info.latestVersion}'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 200),
             child: SingleChildScrollView(
-              child: Text(
-                _info.releaseNotes.isEmpty
+              child: MarkdownBody(
+                data: _info.releaseNotes.isEmpty
                     ? '有新版本可用，立即更新体验吧'
                     : _info.releaseNotes,
-                style: const TextStyle(fontSize: 13, height: 1.4),
+                styleSheet: MarkdownStyleSheet(
+                  p: const TextStyle(fontSize: 13, height: 1.4),
+                  h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  h3: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  listBullet: const TextStyle(fontSize: 13),
+                ),
               ),
             ),
           ),
