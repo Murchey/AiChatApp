@@ -318,15 +318,19 @@ class CharacterPackService {
 
     // 定位每个包含 moments.json 的角色目录（moments.json 直接位于角色文件夹内）
     final charDirs = <String>{};
+    // 子目录黑名单：moments/、files/ 等不应被识别为角色文件夹
+    const subDirBlacklist = {'moments', 'files'};
     for (final f in allFiles) {
       final segs = f.name.split('/');
       if (segs.last.toLowerCase() != 'moments.json') continue;
-      // moments.json 必须直接位于角色文件夹内：
+      // moments.json 必须直接位于角色文件夹内（角色文件夹的上一级不能是黑名单子目录）：
       //   - 布局一：总包名/角色名/moments.json（3 段）
       //   - 布局二：角色名/moments.json（2 段）
-      // 嵌套子目录（如角色包内的「角色名/moments/moments.json」，≥4 段）
-      // 不属于朋友圈数据包结构，跳过，避免把 moments 子文件夹误识别为一个角色
-      if (segs.length < 2 || segs.length > 3) continue;
+      //   - 角色包内嵌套：总包名/角色名/moments/moments.json（4 段）
+      //     → 父目录为 moments/（黑名单），跳过，避免把 moments 子文件夹误识别为角色
+      if (segs.length < 2) continue;
+      final parentDir = segs[segs.length - 2].toLowerCase();
+      if (subDirBlacklist.contains(parentDir)) continue;
       // .../角色名/moments.json
       charDirs.add(segs.sublist(0, segs.length - 1).join('/'));
     }

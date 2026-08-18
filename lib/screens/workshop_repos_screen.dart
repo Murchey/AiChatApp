@@ -235,7 +235,7 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
             // 分隔线
             Container(
               height: 8,
-              color: CupertinoColors.systemGroupedBackground,
+              color: context.scaffoldColor,
             ),
             // 通知设置区域
             Expanded(

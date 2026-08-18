@@ -727,10 +727,15 @@ class GroupChatProvider extends ChangeNotifier {
     // 用户不在该群页面时记未读并发送系统通知
     if (_activeGroupId != groupId) {
       final unreadCount = _increaseGroupUnread(groupId);
+      // 使用群名称作为通知标题，而不是角色名称
+      final group = _groups.firstWhere(
+        (g) => g.id == groupId,
+        orElse: () => GroupChat(id: groupId, name: '群聊'),
+      );
       NotificationService.instance.showCharacterNotification(
         conversationId: groupId,
-        characterName: name,
-        content: content,
+        characterName: group.name,
+        content: '$name: $content',
         unreadCount: unreadCount,
         avatarBase64: avatarBase64,
       );

@@ -172,13 +172,9 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
           failCount++;
           continue;
         }
-        if (item.asset.isCharacter) {
-          final success = await _importCharacterPack(path, item);
-          if (success) importCount++;
-        } else {
-          final success = await _importGamePack(path, item);
-          if (success) importCount++;
-        }
+        // 不依赖 tag，自动检测 zip 内容类型
+        final success = await _importZip(path, item);
+        if (success) importCount++;
         // 导入完成：清理该 zip 的下载缓存（含 .part 临时文件）
         WorkshopService.removeDownloadCache(path);
       }
@@ -200,46 +196,48 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     }
   }
 
-  /// 角色分类 zip：解析后进入角色勾选二级页（与管理当前角色导入一致）
-  Future<bool> _importCharacterPack(String path, _ZipItem item) async {
+  /// 自动检测 zip 内容类型并导入：
+  /// 1. 先尝试 parsePack（找 Profile.json → 角色包）
+  /// 2. 再尝试 parseMomentsPack（找 moments.json → 朋友圈数据包）
+  /// 3. 都失败则提示错误
+  Future<bool> _importZip(String path, _ZipItem item) async {
     try {
+      // 优先尝试角色包解析
       final entries = await CharacterPackService.parsePack(path);
       if (!mounted) return false;
-      if (entries.isEmpty) {
-        _showTip('「${item.asset.displayName}」中没有找到角色包（需包含 Profile.json 的角色文件夹）');
-        return false;
-      }
-      await Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (_) => CharacterImportScreen(
-            entries: entries,
-            zipName: item.asset.displayName,
+      if (entries.isNotEmpty) {
+        // 找到角色数据，走角色导入流程
+        await Navigator.push(
+          context,
+          CupertinoPageRoute(
+            builder: (_) => CharacterImportScreen(
+              entries: entries,
+              zipName: item.asset.displayName,
+            ),
           ),
-        ),
-      );
-      return true;
-    } catch (e) {
-      if (mounted) _showTip('「${item.asset.displayName}」导入失败：$e');
-      return false;
-    }
-  }
-
-  /// 游戏分类 zip：解析朋友圈数据包并确认导入（更新已有角色 / 新建角色）
-  Future<bool> _importGamePack(String path, _ZipItem item) async {
-    try {
-      final entries = await CharacterPackService.parseMomentsPack(path);
-      if (!mounted) return false;
-      if (entries.isEmpty) {
-        _showTip('「${item.asset.displayName}」中没有找到朋友圈数据（需包含 moments.json 的角色文件夹）');
-        return false;
+        );
+        return true;
       }
-      await _confirmImportMoments(entries);
-      return true;
-    } catch (e) {
-      if (mounted) _showTip('「${item.asset.displayName}」导入失败：$e');
-      return false;
+    } catch (_) {
+      // parsePack 失败，继续尝试朋友圈数据包
     }
+
+    try {
+      // 尝试朋友圈数据包解析
+      final momentsEntries = await CharacterPackService.parseMomentsPack(path);
+      if (!mounted) return false;
+      if (momentsEntries.isNotEmpty) {
+        await _confirmImportMoments(momentsEntries);
+        return true;
+      }
+    } catch (_) {
+      // parseMomentsPack 也失败
+    }
+
+    if (mounted) {
+      _showTip('「${item.asset.displayName}」导入失败：zip 中未找到角色数据或朋友圈数据');
+    }
+    return false;
   }
 
   /// 确认导入朋友圈：匹配已有角色则更新其朋友圈，未匹配则新建角色

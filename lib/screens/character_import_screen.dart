@@ -22,6 +22,28 @@ class CharacterImportScreen extends StatefulWidget {
     required this.zipName,
   });
 
+  /// 同名角色覆盖时的朋友圈合并：
+  /// - 本地已有动态全部保留（含角色自己新发的、包内没有的动态）；
+  /// - 包内与本地 id 一致的动态 → 用包内版本覆盖（更新）；
+  /// - 包内新增（本地没有的 id）的动态 → 追加。
+  static List<Moment> mergeMomentsOnOverwrite(
+    List<Moment> local,
+    List<Moment> pack,
+  ) {
+    final packIds = pack.map((m) => m.id).toSet();
+    final merged = <Moment>[
+      for (final m in local)
+        if (!packIds.contains(m.id)) m,
+    ];
+    final used = <String>{};
+    for (final m in pack) {
+      // 包内 id 去重兜底（parsePack 已保证全唯一，此处防御重复）
+      if (m.id.isNotEmpty && !used.add(m.id)) continue;
+      merged.add(m);
+    }
+    return merged;
+  }
+
   @override
   State<CharacterImportScreen> createState() => _CharacterImportScreenState();
 }
@@ -74,7 +96,7 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
           var character = Character.fromJson(json);
           if (existing.moments.isNotEmpty || character.moments.isNotEmpty) {
             character = character.copyWith(
-              moments: _mergeMomentsOnOverwrite(
+              moments: CharacterImportScreen.mergeMomentsOnOverwrite(
                 existing.moments,
                 character.moments,
               ),
@@ -129,28 +151,6 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
         ],
       ),
     );
-  }
-
-  /// 同名角色覆盖时的朋友圈合并：
-  /// - 本地已有动态全部保留（含角色自己新发的、包内没有的动态）；
-  /// - 包内与本地 id 一致的动态 → 用包内版本覆盖（更新）；
-  /// - 包内新增（本地没有的 id）的动态 → 追加。
-  static List<Moment> _mergeMomentsOnOverwrite(
-    List<Moment> local,
-    List<Moment> pack,
-  ) {
-    final packIds = pack.map((m) => m.id).toSet();
-    final merged = <Moment>[
-      for (final m in local)
-        if (!packIds.contains(m.id)) m,
-    ];
-    final used = <String>{};
-    for (final m in pack) {
-      // 包内 id 去重兜底（parsePack 已保证全唯一，此处防御重复）
-      if (m.id.isNotEmpty && !used.add(m.id)) continue;
-      merged.add(m);
-    }
-    return merged;
   }
 
   /// 弹窗处理已有同名角色：勾选「覆盖当前角色数据」则直接覆盖（隐藏重命名框），

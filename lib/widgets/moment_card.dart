@@ -760,6 +760,7 @@ class _MomentCardState extends State<MomentCard> {
               child: Image.file(
                 File(p),
                 fit: BoxFit.cover,
+                alignment: Alignment.center,  // 确保从中心裁剪
                 gaplessPlayback: true,
                 cacheWidth: cellPx,
                 cacheHeight: cellPx,

@@ -56,6 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final chatSettings = context.read<ChatSettingsProvider>();
     final notificationProvider = context.read<MomentNotificationProvider>();
     final memoryPointProvider = context.read<MemoryPointProvider>();
+    final groupChatProvider = context.read<GroupChatProvider>();
     final authUser = context.read<AuthProvider>().user;
 
     if (apiProvider.getModelById(apiProvider.momentModelId) == null) {
@@ -73,7 +74,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       apiProvider: apiProvider,
       chatProvider: chatProvider,
       chatSettings: chatSettings,
-      groupChatProvider: context.read<GroupChatProvider>(),
+      groupChatProvider: groupChatProvider,
       notificationProvider: notificationProvider,
       autoMomentProvider: autoProvider,
       memoryPointProvider: memoryPointProvider,
@@ -132,20 +133,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     
     // 如果没有检测到更新，创建一个模拟的更新信息用于测试
-    if (info == null) {
-      info = const UpdateInfo(
-        latestVersion: '99.0.0',
-        releaseNotes: '# 模拟更新内容\n\n'
-            '这是一条**开发者测试**用的模拟更新通知。\n\n'
-            '## 更新内容\n'
-            '- 新增功能 A\n'
-            '- 优化体验 B\n'
-            '- 修复问题 C\n\n'
-            '> 此为测试弹窗，实际更新请关注正式版本发布',
-        giteeDownloadUrl: 'https://gitee.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
-        githubDownloadUrl: 'https://github.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
-      );
-    }
+    info ??= const UpdateInfo(
+      latestVersion: '99.0.0',
+      releaseNotes: '# 模拟更新内容\n\n'
+          '这是一条**开发者测试**用的模拟更新通知。\n\n'
+          '## 更新内容\n'
+          '- 新增功能 A\n'
+          '- 优化体验 B\n'
+          '- 修复问题 C\n\n'
+          '> 此为测试弹窗，实际更新请关注正式版本发布',
+      giteeDownloadUrl: 'https://gitee.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
+      githubDownloadUrl: 'https://github.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
+    );
     
     // 显示更新弹窗
     showUpdateAvailableDialog(

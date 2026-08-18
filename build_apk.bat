@@ -49,18 +49,46 @@ rem Read version from pubspec.yaml
 set VERSION=0.0.0
 for /f "tokens=2 delims=: " %%v in ('findstr /b "version:" pubspec.yaml') do set VERSION=%%v
 
+rem Rename APK files with version and copy backward-compatible version
+set APK_DIR=build\app\outputs\flutter-apk
+if /i "%MODE%"=="release" (
+    echo.
+    echo Renaming APKs with version V%VERSION%...
+    
+    rem Rename each ABI-specific APK
+    if exist "%APK_DIR%\app-arm64-v8a-release.apk" (
+        move /y "%APK_DIR%\app-arm64-v8a-release.apk" "%APK_DIR%\AiChat-V%VERSION%-arm64-v8a.apk" >nul
+        echo    Created: AiChat-V%VERSION%-arm64-v8a.apk
+        
+        rem Copy arm64-v8a as backward-compatible version (no ABI suffix)
+        copy /y "%APK_DIR%\AiChat-V%VERSION%-arm64-v8a.apk" "%APK_DIR%\AiChat-V%VERSION%.apk" >nul
+        echo    Created: AiChat-V%VERSION%.apk (backward compatible)
+    )
+    
+    if exist "%APK_DIR%\app-armeabi-v7a-release.apk" (
+        move /y "%APK_DIR%\app-armeabi-v7a-release.apk" "%APK_DIR%\AiChat-V%VERSION%-armeabi-v7a.apk" >nul
+        echo    Created: AiChat-V%VERSION%-armeabi-v7a.apk
+    )
+    
+    if exist "%APK_DIR%\app-x86_64-release.apk" (
+        move /y "%APK_DIR%\app-x86_64-release.apk" "%APK_DIR%\AiChat-V%VERSION%-x86_64.apk" >nul
+        echo    Created: AiChat-V%VERSION%-x86_64.apk
+    )
+)
+
 echo.
 echo ============================================================
 echo Build successful! Version: %VERSION%
 echo.
 echo APK output directory:
-echo    build\app\outputs\flutter-apk\
+echo    %APK_DIR%\
 if /i "%MODE%"=="release" (
     echo.
     echo Generated APKs:
-    echo    app-arm64-v8a-release.apk
-    echo    app-armeabi-v7a-release.apk
-    echo    app-x86_64-release.apk
+    echo    AiChat-V%VERSION%.apk (backward compatible, arm64-v8a)
+    echo    AiChat-V%VERSION%-arm64-v8a.apk
+    echo    AiChat-V%VERSION%-armeabi-v7a.apk
+    echo    AiChat-V%VERSION%-x86_64.apk
 )
 echo ============================================================
 pause

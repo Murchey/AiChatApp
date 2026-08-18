@@ -75,7 +75,7 @@ class AppColors {
   static const textPrimaryLight = Color(0xFF1F1F1F);
   static const textSecondaryLight = Color(0xFF8A8A8E);
   static const fieldBgLight = Color(0xFFEDEDED); // 输入框背景
-  static const pinnedChatLight = Color(0xFFEDEDED); // 置顶会话条目背景（浅色）
+  static const pinnedChatLight = Color(0xFFFFFFFF); // 置顶会话条目背景（浅色）
 
   // 暗色模式（页面背景统一 #111111）
   static const scaffoldDark = Color(0xFF111111);

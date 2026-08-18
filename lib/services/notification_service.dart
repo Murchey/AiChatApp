@@ -49,16 +49,25 @@ class NotificationService {
 
   /// 已分配的通知 id（同一会话稳定同一 id，不同会话之间避免碰撞）
   final Set<int> _usedIds = {};
+  
+  /// 会话 ID 到通知 ID 的缓存，确保同一个会话始终使用相同的通知 ID
+  final Map<String, int> _conversationIdToNotificationId = {};
 
   /// 为会话生成稳定且互不冲突的通知 id：
   /// 以会话 id 哈希为基准，不同角色（不同会话）id 不同，系统通知栏中各自独立成条；
   /// 若哈希碰撞则线性探测偏移，确保同一进程内各会话 id 唯一。
   int _notificationIdFor(String conversationId) {
+    // 先检查缓存，确保同一个 conversationId 返回相同的 notification ID
+    if (_conversationIdToNotificationId.containsKey(conversationId)) {
+      return _conversationIdToNotificationId[conversationId]!;
+    }
+    
     var id = conversationId.hashCode & 0x7fffffff;
     while (_usedIds.contains(id)) {
       id = (id + 1) & 0x7fffffff;
     }
     _usedIds.add(id);
+    _conversationIdToNotificationId[conversationId] = id;
     return id;
   }
 

@@ -313,7 +313,7 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
           return Container(
             decoration: BoxDecoration(
               color: context.listBgColor,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: SafeArea(
               top: false,
@@ -322,11 +322,11 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     child: Row(
                       children: [
-                        SizedBox(width: 16),
-                        Expanded(
+                        const SizedBox(width: 16),
+                        const Expanded(
                           child: Text(
                             '聊天背景',
                             style: TextStyle(
@@ -338,7 +338,7 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
                         CupertinoButton(
                           padding: EdgeInsets.zero,
                           onPressed: () => Navigator.pop(ctx),
-                          child: Text('完成'),
+                          child: const Text('完成'),
                         ),
                       ],
                     ),
@@ -346,11 +346,11 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
                   Container(height: 0.5, color: context.separatorColor),
                   // 选择背景
                   CupertinoListTile(
-                    leading: Icon(
+                    leading: const Icon(
                       CupertinoIcons.photo_fill,
                       color: CupertinoColors.systemBlue,
                     ),
-                    title: Text('选择背景'),
+                    title: const Text('选择背景'),
                     onTap: () async {
                       Navigator.pop(ctx);
                       await _pickAndSetBackground(context, chatId, provider);
@@ -358,7 +358,7 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
                       setState(() {});
                     },
                   ),
-                  Container(height: 0.5, margin: EdgeInsets.only(left: 16), color: context.separatorColor),
+                  Container(height: 0.5, margin: const EdgeInsets.only(left: 16), color: context.separatorColor),
                   // 移除背景
                   CupertinoListTile(
                     leading: Icon(
@@ -378,7 +378,7 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
                           }
                         : null,
                   ),
-                  Container(height: 0.5, margin: EdgeInsets.only(left: 16), color: context.separatorColor),
+                  Container(height: 0.5, margin: const EdgeInsets.only(left: 16), color: context.separatorColor),
                   // 高斯模糊度
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

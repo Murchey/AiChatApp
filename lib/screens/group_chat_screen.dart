@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
+import '../models/conversation.dart';
 import '../models/message.dart';
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
@@ -102,6 +104,33 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     _menuOverlay?.remove();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// 跳转到角色的私聊会话
+  void _navigateToCharacterChat(String characterId) {
+    final chatProvider = context.read<ChatProvider>();
+    final characterProvider = context.read<CharacterProvider>();
+    
+    // 根据 characterId 找到对应的 conversation
+    final conversation = chatProvider.conversations.firstWhere(
+      (c) => c.characterId == characterId,
+      orElse: () => Conversation(
+        id: characterId,
+        characterId: characterId,
+        characterName: characterProvider.getCharacterById(characterId)?.displayName ?? '',
+        characterAvatar: characterProvider.getCharacterById(characterId)?.avatar ?? '',
+      ),
+    );
+    
+    Navigator.pushNamed(
+      context,
+      AppRoutes.chat,
+      arguments: {
+        'conversationId': conversation.id,
+        'characterName': conversation.characterName,
+        'characterAvatar': conversation.characterAvatar,
+      },
+    );
   }
 
   bool _isAtBottom() {
@@ -1027,6 +1056,9 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                               onLongPress: (message, bubbleKey) =>
                                   _showBubbleMenu(message, bubbleKey),
                               onFileTap: _openFileMessage,
+                              onCharacterAvatarTap: isUser || msg.senderCharacterId.isEmpty
+                                  ? null
+                                  : () => _navigateToCharacterChat(msg.senderCharacterId),
                             ),
                           ],
                         ),

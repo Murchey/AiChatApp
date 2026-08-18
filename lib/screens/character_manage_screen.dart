@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
+import '../models/character_pack_entry.dart';
 import '../providers/character_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../services/character_pack_service.dart';
@@ -31,31 +32,144 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
         .toList();
   }
 
-  /// 选择 zip 角色包并解析，进入勾选导入页
+  /// 选择 zip 包并解析，进入勾选导入页
+  /// 弹窗询问是单角色数据包还是多角色数据包：
+  /// - 单角色：解析后直接导入（跳过勾选页）
+  /// - 多角色：解析后进入勾选页让用户选择
   Future<void> _pickAndImportPack() async {
     if (_busy) return;
+    // 先询问导入类型
+    final isSingle = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('导入 zip 包'),
+        content: const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            '请选择要导入的数据包类型：',
+            textAlign: TextAlign.center,
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('单角色数据包'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+          CupertinoDialogAction(
+            child: const Text('多角色数据包'),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+        ],
+      ),
+    );
+    if (isSingle == null || !mounted) return;
+
     setState(() => _busy = true);
     try {
       final result = await pickAndParseCharacterPack();
       if (result == null || !mounted) return;
       if (result.entries.isEmpty) {
-        _showTip('该 zip 中没有找到角色包（需包含 Profile.json 的角色文件夹）');
+        _showTip('该 zip 中没有找到角色数据（需包含 Profile.json 的角色文件夹）');
         return;
       }
-      await Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (_) => CharacterImportScreen(
-            entries: result.entries,
-            zipName: result.name,
+
+      if (isSingle) {
+        // 单角色：解析后直接导入，跳过勾选页
+        await _importEntries(result.entries);
+      } else {
+        // 多角色：进入勾选页让用户选择
+        await Navigator.push(
+          context,
+          CupertinoPageRoute(
+            builder: (_) => CharacterImportScreen(
+              entries: result.entries,
+              zipName: result.name,
+            ),
           ),
-        ),
-      );
+        );
+      }
     } catch (e) {
       if (mounted) _showTip('导入失败：$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 直接导入所有可导入的角色条目（单角色数据包专用，跳过勾选页）
+  Future<void> _importEntries(List<CharacterPackEntry> entries) async {
+    final provider = context.read<CharacterProvider>();
+    final memoryProvider = context.read<MemoryPointProvider>();
+    const uuid = Uuid();
+    var count = 0;
+
+    for (final entry in entries) {
+      if (entry.error != null) continue;
+      final name = entry.character.name.trim();
+      if (name.isEmpty) continue;
+
+      // 检查是否重名
+      final existing = provider.findCharacterByName(name);
+      if (existing != null) {
+        // 重名：弹窗确认覆盖
+        final overwrite = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('角色已存在'),
+            content: Text('已存在名为「$name」的角色，是否覆盖？'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('跳过'),
+                onPressed: () => Navigator.pop(ctx, false),
+              ),
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                child: const Text('覆盖'),
+                onPressed: () => Navigator.pop(ctx, true),
+              ),
+            ],
+          ),
+        );
+        if (overwrite != true || !mounted) continue;
+
+        // 覆盖：保留原 id，替换资料
+        final json = entry.character.toJson()
+          ..['id'] = existing.id
+          ..['name'] = name;
+        var character = Character.fromJson(json);
+        // 合并朋友圈
+        if (existing.moments.isNotEmpty || character.moments.isNotEmpty) {
+          character = character.copyWith(
+            moments: CharacterImportScreen.mergeMomentsOnOverwrite(
+              existing.moments,
+              character.moments,
+            ),
+          );
+        }
+        await provider.overwriteCharacter(character);
+        // 更新记忆点
+        if (entry.memoryPoints.isNotEmpty) {
+          await memoryProvider.replacePoints(existing.id, entry.memoryPoints);
+        }
+      } else {
+        // 新建角色
+        final newId = uuid.v4();
+        final json = entry.character.toJson()..['id'] = newId;
+        var character = Character.fromJson(json);
+        await provider.addCharacter(character);
+        if (entry.memoryPoints.isNotEmpty) {
+          await memoryProvider.replacePoints(newId, entry.memoryPoints);
+        }
+      }
+      count++;
+    }
+
+    if (!mounted) return;
+    _showTip(count > 0 ? '成功导入 $count 个角色' : '未导入任何角色');
   }
 
   /// 导出选中的角色为 zip 角色包
