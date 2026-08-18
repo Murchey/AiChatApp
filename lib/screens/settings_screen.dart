@@ -6,6 +6,7 @@ import '../models/workshop_asset.dart';
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/auto_moment_provider.dart';
+import '../providers/proactive_greeting_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
@@ -82,6 +83,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (mounted) {
       showAppToast('测试完成，请到朋友圈查看');
+    }
+  }
+
+  /// 快速测试主动问候（开发者模式专用）。
+  /// 立即让所有已开启主动问候的角色触发一次问候消息。
+  Future<void> _quickTestProactiveGreeting() async {
+    final apiProvider = context.read<ApiProvider>();
+    final characterProvider = context.read<CharacterProvider>();
+    final chatProvider = context.read<ChatProvider>();
+    final chatSettings = context.read<ChatSettingsProvider>();
+    final greetingProvider = context.read<ProactiveGreetingProvider>();
+    final memoryPointProvider = context.read<MemoryPointProvider>();
+
+    if (apiProvider.getModelById(apiProvider.momentModelId) == null &&
+        apiProvider.models.isEmpty) {
+      showAppToast('请先在「API 设置」中配置至少一个模型');
+      return;
+    }
+    if (characterProvider.isLoading) {
+      showAppToast('角色数据加载中，请稍后再试');
+      return;
+    }
+
+    // 检查是否有角色开启了主动问候
+    final hasEnabled = characterProvider.manageableCharacters.any(
+      (c) => greetingProvider.configFor(c.id).enabled,
+    );
+    if (!hasEnabled) {
+      showAppToast('没有角色开启「主动问候」，请先在角色聊天设置中开启');
+      return;
+    }
+
+    showAppToast('已触发，正在生成主动问候消息…');
+    await AutoMomentService.instance.checkProactiveGreeting(
+      characterProvider: characterProvider,
+      apiProvider: apiProvider,
+      chatProvider: chatProvider,
+      chatSettings: chatSettings,
+      greetingProvider: greetingProvider,
+      memoryPointProvider: memoryPointProvider,
+      force: true,
+    );
+    if (mounted) {
+      showAppToast('测试完成，请到聊天列表查看');
     }
   }
 
@@ -682,6 +727,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   onTap: () => _quickTestAutoMoment(),
+                ),
+                Container(
+                  height: 0.5,
+                  margin: const EdgeInsets.only(left: 16),
+                  color: context.separatorColor,
+                ),
+                CupertinoListTile(
+                  leading: const Icon(
+                    CupertinoIcons.text_bubble,
+                    color: CupertinoColors.systemTeal,
+                  ),
+                  title: const Text('立即触发角色主动问候'),
+                  subtitle: Text(
+                    '立即让所有已开启「主动问候」的角色触发一次问候消息，'
+                    '用于快速验证效果（正常使用无需点击）',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  onTap: () => _quickTestProactiveGreeting(),
                 ),
                 Container(
                   height: 0.5,

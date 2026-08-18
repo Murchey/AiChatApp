@@ -7,6 +7,7 @@ import '../models/character.dart';
 import '../models/conversation.dart';
 import '../models/visibility_group.dart';
 import '../providers/auto_moment_provider.dart';
+import '../providers/proactive_greeting_provider.dart';
 import '../providers/api_provider.dart';
 import '../providers/chat_background_provider.dart';
 import '../providers/chat_provider.dart';
@@ -457,6 +458,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           if (widget.showChatManage && conversation != null) ...[
             const SizedBox(height: 24),
             _buildAutoMomentSection(),
+            const SizedBox(height: 16),
+            _buildProactiveGreetingSection(),
             const SizedBox(height: 24),
             _buildManageSection(),
           ],
@@ -1169,6 +1172,74 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
+  // ── 主动问候 ──
+  Widget _buildProactiveGreetingSection() {
+    return Consumer<ProactiveGreetingProvider>(
+      builder: (context, greetingProvider, _) {
+        final config = greetingProvider.configFor(_characterId);
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: context.listBgColor,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            children: [
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.text_bubble,
+                  color: context.textPrimaryColor,
+                ),
+                title: Text(
+                  '主动问候',
+                  style: TextStyle(color: context.textPrimaryColor),
+                ),
+                subtitle: Text(
+                  config.enabled
+                      ? _describeGreetingConfig(config)
+                      : '用户长时间未聊天时，角色会主动发消息问候',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSwitch(
+                  value: config.enabled,
+                  onChanged: (v) =>
+                      greetingProvider.setEnabled(_characterId, v),
+                ),
+              ),
+              if (config.enabled) ...[
+                Container(
+                  height: 0.5,
+                  margin: const EdgeInsets.only(left: 16),
+                  color: context.separatorColor,
+                ),
+                _ProactiveGreetingPickerSection(
+                  key: ValueKey('proactive_greeting_picker_$_characterId'),
+                  initialIdleHours: config.idleHours,
+                  onChanged: (h) =>
+                      greetingProvider.setIdleHours(_characterId, h),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _describeGreetingConfig(ProactiveGreetingConfig config) {
+    final idx =
+        ProactiveGreetingProvider.idleOptions.indexOf(config.idleHours);
+    final label =
+        ProactiveGreetingProvider.idleLabels[idx < 0 ? 3 : idx];
+    return '$label后，角色会主动发消息问候你';
+  }
+
   String _describeConfig(AutoMomentConfig config) {
     final idx = AutoMomentProvider.periodOptions.indexOf(config.periodHours);
     final label = AutoMomentProvider.periodLabels[idx < 0 ? 3 : idx];
@@ -1668,6 +1739,132 @@ class _AutoMomentPickerState extends State<_AutoMomentPicker> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 主动问候频率选择器：类似朋友圈的 drawer 滚轮，选择空闲时长
+class _ProactiveGreetingPickerSection extends StatefulWidget {
+  final int initialIdleHours;
+  final ValueChanged<int> onChanged;
+
+  const _ProactiveGreetingPickerSection({
+    super.key,
+    required this.initialIdleHours,
+    required this.onChanged,
+  });
+
+  @override
+  State<_ProactiveGreetingPickerSection> createState() =>
+      _ProactiveGreetingPickerSectionState();
+}
+
+class _ProactiveGreetingPickerSectionState
+    extends State<_ProactiveGreetingPickerSection> {
+  bool _expanded = false;
+  late FixedExtentScrollController _controller;
+
+  int _idleIndex(int hours) {
+    final idx = ProactiveGreetingProvider.idleOptions.indexOf(hours);
+    return idx < 0 ? 3 : idx; // 默认 3 天
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = FixedExtentScrollController(
+      initialItem: _idleIndex(widget.initialIdleHours),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = ProactiveGreetingProvider
+        .idleLabels[_idleIndex(widget.initialIdleHours)];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Container(
+            color: context.listBgColor,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Row(
+              children: [
+                Icon(
+                  CupertinoIcons.clock,
+                  size: 20,
+                  color: context.textPrimaryColor,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '触发频率',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  _expanded
+                      ? CupertinoIcons.chevron_up
+                      : CupertinoIcons.chevron_down,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: _expanded
+              ? SizedBox(
+                  height: 160,
+                  child: CupertinoPicker(
+                    scrollController: _controller,
+                    itemExtent: 32,
+                    onSelectedItemChanged: (i) =>
+                        widget.onChanged(ProactiveGreetingProvider.idleOptions[i]),
+                    children: ProactiveGreetingProvider.idleLabels
+                        .map((l) => Center(
+                              child: Text(
+                                l,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: context.textPrimaryColor,
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
     );
   }
 }

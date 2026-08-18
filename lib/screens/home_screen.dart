@@ -11,6 +11,7 @@ import '../providers/group_chat_provider.dart';
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/auto_moment_provider.dart';
+import '../providers/proactive_greeting_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/settings_provider.dart';
@@ -125,6 +126,16 @@ class _HomeScreenState extends State<HomeScreen>
       autoMomentProvider: context.read<AutoMomentProvider>(),
       memoryPointProvider: context.read<MemoryPointProvider>(),
       user: context.read<AuthProvider>().user,
+    );
+    // 检查主动问候（不阻塞主流程）
+    if (!mounted) return;
+    await AutoMomentService.instance.checkProactiveGreeting(
+      characterProvider: characterProvider,
+      apiProvider: context.read<ApiProvider>(),
+      chatProvider: context.read<ChatProvider>(),
+      chatSettings: context.read<ChatSettingsProvider>(),
+      greetingProvider: context.read<ProactiveGreetingProvider>(),
+      memoryPointProvider: context.read<MemoryPointProvider>(),
     );
   }
 

@@ -10,10 +10,12 @@ import '../providers/chat_settings_provider.dart';
 import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/moment_notification_provider.dart';
+import '../providers/proactive_greeting_provider.dart';
 import '../providers/token_usage_provider.dart';
 import 'dev_log_service.dart';
 import 'llm_service.dart';
 import 'moment_ai_service.dart';
+import 'notification_service.dart';
 
 /// 角色自动发朋友圈调度器。
 ///
@@ -208,6 +210,208 @@ class AutoMomentService {
       characterId,
       now.add(Duration(minutes: (nextHours * 60).round())),
     );
+  }
+
+  /// 扫描并触发主动问候。
+  ///
+  /// [force] 为 true 时跳过所有检查（nextDueAt / 空闲时长），直接为每个
+  /// 已开启的角色生成一条问候消息，用于开发者快速测试。
+  Future<void> checkProactiveGreeting({
+    required CharacterProvider characterProvider,
+    required ApiProvider apiProvider,
+    required ChatProvider chatProvider,
+    required ChatSettingsProvider chatSettings,
+    required ProactiveGreetingProvider greetingProvider,
+    required MemoryPointProvider memoryPointProvider,
+    bool force = false,
+  }) async {
+    try {
+      // 优先使用朋友圈互动模型，其次取第一个可用模型
+      final model = apiProvider.getModelById(apiProvider.momentModelId) ??
+          (apiProvider.models.isNotEmpty ? apiProvider.models.first : null);
+      if (model == null) {
+        DevLogService.instance.log('主动问候：未配置可用模型，跳过');
+        return;
+      }
+
+      final now = DateTime.now();
+      var triggered = 0;
+
+      for (final character in characterProvider.manageableCharacters) {
+        final config = greetingProvider.configFor(character.id);
+        if (!config.enabled) continue;
+
+        if (!force) {
+          // 正常模式：检查 nextDueAt 和空闲时长
+          final dueAt = config.nextDueAt;
+          if (dueAt != null && dueAt.isAfter(now)) continue;
+
+          // 首次开启：初始化排期
+          if (dueAt == null) {
+            final nextCheck = now.add(Duration(hours: config.idleHours));
+            await greetingProvider.setNextDueAt(character.id, nextCheck);
+            continue;
+          }
+
+          // 获取最后消息时间
+          final lastMsgTime =
+              chatProvider.getLastMessageTimeForCharacter(character.id);
+
+          // 从未聊过天：跳过
+          if (lastMsgTime == null) {
+            await _advanceGreetingNextDue(greetingProvider, character.id, now);
+            continue;
+          }
+
+          // 计算空闲时长
+          final idleHours = now.difference(lastMsgTime).inHours;
+
+          // 未达到空闲阈值：跳过
+          if (idleHours < config.idleHours) {
+            await _advanceGreetingNextDue(greetingProvider, character.id, now);
+            continue;
+          }
+        }
+
+        // 计算空闲时长（用于生成上下文，force 模式下可能为 0）
+        final lastMsgTime =
+            chatProvider.getLastMessageTimeForCharacter(character.id);
+        final idleHours = lastMsgTime != null
+            ? now.difference(lastMsgTime).inHours
+            : config.idleHours;
+
+        DevLogService.instance.log(
+          '主动问候：触发「${character.displayName}」'
+          '${force ? '（开发者模式）' : '（空闲 ${idleHours}h）'}',
+        );
+
+        // 获取聊天记录上下文
+        final chatHistory =
+            chatProvider.getRecentHistoryForCharacter(character.id, 5);
+        final memoryPoints =
+            memoryPointProvider.pointsFor(character.id).map((p) => p.content).toList();
+
+        // 生成问候内容
+        final content = await _generateGreeting(
+          model: model,
+          character: character,
+          chatHistory: chatHistory,
+          memoryPoints: memoryPoints,
+          idleHours: idleHours,
+        );
+
+        if (content == null || content.isEmpty) {
+          DevLogService.instance.log(
+            '主动问候：「${character.displayName}」生成内容为空，跳过',
+          );
+          if (!force) {
+            await _advanceGreetingNextDue(greetingProvider, character.id, now);
+          }
+          continue;
+        }
+
+        // 发送消息到聊天中（作为角色发送）
+        final conversation = chatProvider.getOrCreateConversation(
+          characterId: character.id,
+          characterName: character.displayName,
+          characterAvatar: character.avatar,
+        );
+        await chatProvider.sendGreetingMessage(
+          conversationId: conversation.id,
+          characterId: character.id,
+          content: content,
+        );
+
+        // 发送系统通知提醒用户
+        await NotificationService.instance.showCharacterNotification(
+          conversationId: conversation.id,
+          characterName: character.displayName,
+          content: content,
+          unreadCount: 1,
+          avatarBase64: character.avatar,
+        );
+
+        triggered++;
+        DevLogService.instance.log(
+          '主动问候：「${character.displayName}」已发送问候消息',
+        );
+
+        // 推进下次检查时间
+        if (!force) {
+          await _advanceGreetingNextDue(greetingProvider, character.id, now);
+        }
+      }
+
+      DevLogService.instance.log(
+        '主动问候：完成，共触发 $triggered 个角色'
+        '${force ? '（开发者模式）' : ''}',
+      );
+    } catch (e) {
+      DevLogService.instance.log('主动问候检查异常：$e');
+    }
+  }
+
+  /// 推进主动问候下次检查时间：idleHours ± 30% 随机抖动
+  Future<void> _advanceGreetingNextDue(
+    ProactiveGreetingProvider provider,
+    String characterId,
+    DateTime now,
+  ) async {
+    final config = provider.configFor(characterId);
+    final jitter = (Random().nextDouble() * 0.6) - 0.3; // -0.3 ~ +0.3
+    final nextHours = config.idleHours * (1 + jitter);
+    await provider.setNextDueAt(
+      characterId,
+      now.add(Duration(hours: nextHours.round())),
+    );
+  }
+
+  /// 生成主动问候消息内容。
+  Future<String?> _generateGreeting({
+    required ApiModel model,
+    required Character character,
+    required List<Map<String, String>> chatHistory,
+    List<String> memoryPoints = const [],
+    required int idleHours,
+  }) async {
+    final system = _systemWithMemory(
+      character.systemPrompt,
+      memoryPoints,
+      fallback: '你是「${character.displayName}」。',
+    );
+
+    final idleDesc = idleHours >= 24
+        ? '${(idleHours / 24).round()}天'
+        : '$idleHours小时';
+
+    final messages = <Map<String, Object>>[
+      {'role': 'system', 'content': system},
+      {
+        'role': 'user',
+        'content': '（系统提示：用户已经 $idleDesc 没有和你聊天了。'
+            '请以「${character.displayName}」的身份，主动给用户发一条问候消息。'
+            '要求：自然、温暖、符合角色性格，不要太长，像真人朋友发消息一样。'
+            '只输出消息内容，不要加任何前缀或解释。）',
+      },
+    ];
+
+    try {
+      final result = await LLMService.fetchCompletion(
+        model: model,
+        messages: messages,
+        temperature: 0.85,
+        maxTokens: 200,
+      );
+      TokenUsageProvider.instance.addUsage(
+        TokenUsageProvider.kMomentUsageId,
+        result.usage,
+      );
+      final content = result.content.trim();
+      return content.isEmpty ? null : content;
+    } catch (e) {
+      DevLogService.instance.log('主动问候生成失败：$e');
+      return null;
+    }
   }
 
   /// 生成一条符合角色人设的朋友圈文案（纯文字）。

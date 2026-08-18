@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'config/theme.dart';
 import 'config/routes.dart';
 import 'providers/auto_moment_provider.dart';
+import 'providers/proactive_greeting_provider.dart';
 import 'providers/api_provider.dart';
 import 'providers/chat_settings_provider.dart';
 import 'providers/group_chat_provider.dart';
@@ -33,6 +34,7 @@ class _AiChatAppState extends State<AiChatApp> {
     context.read<MomentNotificationProvider>().init();
     context.read<MemoryPointProvider>().init();
     context.read<AutoMomentProvider>().init();
+    context.read<ProactiveGreetingProvider>().init();
     context.read<WorkshopProvider>().init();
     // 预加载累计 tokens 统计：数据就绪后再进入统计页，避免显示"清零"假象
     context.read<TokenUsageProvider>().init();

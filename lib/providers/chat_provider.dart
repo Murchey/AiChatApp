@@ -155,6 +155,17 @@ class ChatProvider extends ChangeNotifier {
     return const [];
   }
 
+  /// 获取某角色最后一条消息的时间。
+  /// 没有会话记录时返回 null。
+  DateTime? getLastMessageTimeForCharacter(String characterId) {
+    for (final c in _conversations) {
+      if (c.characterId == characterId) {
+        return c.lastMessageTime;
+      }
+    }
+    return null;
+  }
+
   /// 从本地存储加载会话与聊天记录（持久化）。
   /// 全部 JSON 反序列化与上下文 token 重算都在后台 isolate 中执行，
   /// 避免大量聊天记录在主线程解码拖慢启动。
@@ -282,6 +293,28 @@ class ChatProvider extends ChangeNotifier {
     // 无需等待 API 返回（API 返回后会用真实 usage.prompt_tokens 校准覆盖）
     _contextTokens[conversationId] =
         _estimateSendInputBudget(conversationId, extra: [content]);
+    _lastError = null;
+    notifyListeners();
+    await _persist();
+  }
+
+  /// 发送主动问候消息：以角色身份发送一条消息到聊天中。
+  Future<void> sendGreetingMessage({
+    required String conversationId,
+    required String characterId,
+    required String content,
+  }) async {
+    final message = Message(
+      id: const Uuid().v4(),
+      conversationId: conversationId,
+      content: content,
+      sender: MessageSender.character,
+      senderCharacterId: characterId,
+    );
+
+    _messagesMap[conversationId] ??= [];
+    _messagesMap[conversationId]!.add(message);
+    _updateConversationLastMessage(conversationId, content);
     _lastError = null;
     notifyListeners();
     await _persist();
