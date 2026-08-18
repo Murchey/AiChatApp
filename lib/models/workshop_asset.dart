@@ -15,6 +15,9 @@ class WorkshopAsset {
   /// zip 文件名
   final String name;
 
+  /// 显示名称（优先使用 label，为空时回退到 name）
+  final String label;
+
   /// 下载直链（GitHub 无资产记录时可由 tag + 文件名拼接）
   final String downloadUrl;
 
@@ -24,9 +27,20 @@ class WorkshopAsset {
   const WorkshopAsset({
     required this.tag,
     required this.name,
+    this.label = '',
     required this.downloadUrl,
     this.sizeBytes,
   });
+
+  /// 获取显示名称：优先使用 label，为空时回退到 name（去掉 .zip 后缀）
+  String get displayName {
+    if (label.isNotEmpty) return label;
+    // 去掉 .zip 后缀，让显示更简洁
+    if (name.toLowerCase().endsWith('.zip')) {
+      return name.substring(0, name.length - 4);
+    }
+    return name;
+  }
 
   bool get isCharacter => tag == kCharacterPackTag;
   bool get isGame => tag == kGamePackTag;

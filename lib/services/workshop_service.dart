@@ -98,6 +98,7 @@ class WorkshopService {
         final am = a as Map<String, dynamic>;
         final name = am['name']?.toString() ?? '';
         if (!name.toLowerCase().endsWith('.zip')) continue;
+        final label = am['label']?.toString() ?? '';
         var downloadUrl = am['browser_download_url']?.toString() ?? '';
         // Gitee 资产记录无直链时按命名规范拼接
         if (downloadUrl.isEmpty && isGitee) {
@@ -108,6 +109,7 @@ class WorkshopService {
         assets.add(WorkshopAsset(
           tag: tag,
           name: name,
+          label: label,
           downloadUrl: downloadUrl,
           sizeBytes: (am['size'] as num?)?.toInt(),
         ));

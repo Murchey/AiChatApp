@@ -80,7 +80,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     if (query.isEmpty) return const [];
     return _allItems.where((item) {
       if (_checked[item.asset.tag] != true) return false;
-      final name = item.asset.name;
+      final name = item.asset.displayName;
       // 汉字/原文匹配（忽略大小写）
       if (name.toLowerCase().contains(query)) return true;
       // 拼音匹配：如查「zhangsan」可命中「张三」
@@ -206,7 +206,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
       final entries = await CharacterPackService.parsePack(path);
       if (!mounted) return false;
       if (entries.isEmpty) {
-        _showTip('「${item.asset.name}」中没有找到角色包（需包含 Profile.json 的角色文件夹）');
+        _showTip('「${item.asset.displayName}」中没有找到角色包（需包含 Profile.json 的角色文件夹）');
         return false;
       }
       await Navigator.push(
@@ -214,13 +214,13 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
         CupertinoPageRoute(
           builder: (_) => CharacterImportScreen(
             entries: entries,
-            zipName: item.asset.name,
+            zipName: item.asset.displayName,
           ),
         ),
       );
       return true;
     } catch (e) {
-      if (mounted) _showTip('「${item.asset.name}」导入失败：$e');
+      if (mounted) _showTip('「${item.asset.displayName}」导入失败：$e');
       return false;
     }
   }
@@ -231,13 +231,13 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
       final entries = await CharacterPackService.parseMomentsPack(path);
       if (!mounted) return false;
       if (entries.isEmpty) {
-        _showTip('「${item.asset.name}」中没有找到朋友圈数据（需包含 moments.json 的角色文件夹）');
+        _showTip('「${item.asset.displayName}」中没有找到朋友圈数据（需包含 moments.json 的角色文件夹）');
         return false;
       }
       await _confirmImportMoments(entries);
       return true;
     } catch (e) {
-      if (mounted) _showTip('「${item.asset.name}」导入失败：$e');
+      if (mounted) _showTip('「${item.asset.displayName}」导入失败：$e');
       return false;
     }
   }
@@ -695,7 +695,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.asset.name,
+                    item.asset.displayName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -933,7 +933,7 @@ class _BatchDownloadDialogState extends State<_BatchDownloadDialog> {
           builder: (ctx) => CupertinoAlertDialog(
             title: const Text('下载失败'),
             content: Text(
-              '「${item.asset.name}」下载失败，请检查网络或代理设置',
+              '「${item.asset.displayName}」下载失败，请检查网络或代理设置',
               textAlign: TextAlign.center,
             ),
             actions: [
@@ -970,7 +970,7 @@ class _BatchDownloadDialogState extends State<_BatchDownloadDialog> {
   Widget build(BuildContext context) {
     final total = widget.items.length;
     final currentName = _currentIndex < total
-        ? widget.items[_currentIndex].asset.name
+        ? widget.items[_currentIndex].asset.displayName
         : '';
     final percent = (_currentProgress * 100).round();
 
