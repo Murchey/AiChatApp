@@ -1,5 +1,7 @@
 # AiChat
 
+> 📖 **English Version** — [README_FILES/README_EN.md](README_FILES/README_EN.md)
+
 一款**角色扮演类微信聊天风格**的 Flutter Android 应用：内置多个角色，可与角色进行一对一的沉浸式聊天（支持发送图片、合并转发、角色包导入导出、自动更新等）。
 
 > 纯 Cupertino（iOS 风格）UI，仅适配 Android。
