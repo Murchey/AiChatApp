@@ -33,6 +33,12 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }
@@ -51,7 +57,4 @@ dependencies {
     // core library desugaring（flutter_local_notifications 依赖 java.time 等 API）
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     
-    // Jetpack Glance（App Widget UI 框架）
-    implementation("androidx.glance:glance-appwidget:1.1.1")
-    implementation("androidx.glance:glance-material:1.1.1")
 }
