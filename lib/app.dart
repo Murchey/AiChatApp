@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import 'config/theme.dart';
@@ -6,6 +7,7 @@ import 'config/routes.dart';
 import 'providers/auto_moment_provider.dart';
 import 'providers/proactive_greeting_provider.dart';
 import 'providers/api_provider.dart';
+import 'providers/chat_provider.dart';
 import 'providers/chat_settings_provider.dart';
 import 'providers/group_chat_provider.dart';
 import 'providers/memory_point_provider.dart';
@@ -14,6 +16,7 @@ import 'providers/settings_provider.dart';
 import 'providers/token_usage_provider.dart';
 import 'providers/workshop_provider.dart';
 import 'services/notification_service.dart';
+import 'services/widget_sync_service.dart';
 import 'utils/app_toast.dart';
 
 class AiChatApp extends StatefulWidget {
@@ -24,6 +27,8 @@ class AiChatApp extends StatefulWidget {
 }
 
 class _AiChatAppState extends State<AiChatApp> {
+  static const _navChannel = MethodChannel('com.aichat.ai_chat/navigation');
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +47,78 @@ class _AiChatAppState extends State<AiChatApp> {
     NotificationService.instance.init();
     // 检查仓库更新通知
     _checkWorkshopUpdates();
+    // 监听小组件导航
+    _setupNavigationHandler();
+    // 初始化时同步数据到小组件
+    _syncWidgetData();
+  }
+
+  void _syncWidgetData() {
+    Future.delayed(const Duration(seconds: 2), () async {
+      if (!mounted) return;
+      try {
+        // 保存需要的数据引用
+        final tokenProvider = context.read<TokenUsageProvider>();
+        final chatProvider = context.read<ChatProvider>();
+        
+        // 同步 Token 数据
+        final allUsages = tokenProvider.allUsages;
+        int privateChat = 0, groupChat = 0, moment = 0;
+        allUsages.forEach((id, usage) {
+          if (id == TokenUsageProvider.kMomentUsageId) {
+            moment = usage.totalTokens;
+          } else if (id.startsWith('group_')) {
+            groupChat += usage.totalTokens;
+          } else {
+            privateChat += usage.totalTokens;
+          }
+        });
+        
+        await WidgetSyncService.syncTokenUsage(
+          total: tokenProvider.total,
+          sent: tokenProvider.sentTotal,
+          received: tokenProvider.receivedTotal,
+          privateChat: privateChat,
+          groupChat: groupChat,
+          moment: moment,
+        );
+        
+        // 同步会话数据
+        final convList = chatProvider.conversations.map((conv) => {
+          'id': conv.id,
+          'character_id': conv.characterId,
+          'character_name': conv.characterName,
+          'last_message': conv.lastMessage,
+          'last_message_time': conv.lastMessageTime.millisecondsSinceEpoch,
+          'unread_count': conv.unreadCount,
+          'pinned': conv.pinned,
+        }).toList();
+        
+        await WidgetSyncService.syncConversations(convList);
+        
+        debugPrint('[App] Widget data synced on startup');
+      } catch (e) {
+        debugPrint('[App] Widget sync failed: $e');
+      }
+    });
+  }
+
+  void _setupNavigationHandler() {
+    _navChannel.setMethodCallHandler((call) async {
+      if (call.method == 'openChat') {
+        final conversationId = call.arguments as String?;
+        if (conversationId != null && mounted) {
+          // 延迟导航，等待页面加载完成
+          await Future.delayed(const Duration(milliseconds: 500));
+          if (mounted) {
+            final navContext = appNavigatorKey.currentContext;
+            if (navContext != null) {
+              Navigator.of(navContext).pushNamed('/chat', arguments: conversationId);
+            }
+          }
+        }
+      }
+    });
   }
 
   Future<void> _checkWorkshopUpdates() async {

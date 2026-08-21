@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 小组件背景色 -->
+    <color name="widget_background">#FF121212</color>
+
+    <!-- 文字颜色 -->
+    <color name="widget_text_primary">#FFFFFFFF</color>
+    <color name="widget_text_secondary">#FFB0B0B0</color>
+
+    <!-- 强调色 -->
+    <color name="widget_accent">#FF81C784</color>
+    <color name="widget_accent_blue">#FF90CAF9</color>
+    <color name="widget_accent_orange">#FFFFCC80</color>
+
+    <!-- 分类统计颜色 -->
+    <color name="widget_green">#FF81C784</color>
+    <color name="widget_blue">#FF90CAF9</color>
+    <color name="widget_orange">#FFFFCC80</color>
+    <color name="widget_purple">#FFCE93D8</color>
+
+    <!-- 头像颜色 -->
+    <color name="widget_avatar_background">#FF2A2A2A</color>
+    <color name="widget_avatar_text">#FFD6D6D6</color>
+
+    <!-- 未读徽章 -->
+    <color name="widget_badge">#FFEF5350</color>
+    <color name="widget_badge_text">#FFFFFFFF</color>
+
+    <!-- 列表行背景 -->
+    <color name="widget_row_background">#FF1E1E1E</color>
+</resources>

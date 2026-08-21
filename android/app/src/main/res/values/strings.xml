@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AiChat</string>
+    
+    <!-- Token 小组件 -->
+    <string name="token_widget_name">Token 统计</string>
+    <string name="token_widget_desc">显示 AI Token 消耗统计</string>
+    
+    <!-- 会话小组件 -->
+    <string name="conversation_widget_name">最近对话</string>
+    <string name="conversation_widget_desc">显示最近聊天会话</string>
+</resources>

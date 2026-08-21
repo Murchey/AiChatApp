@@ -9,6 +9,7 @@ import '../models/conversation.dart';
 import '../services/llm_service.dart';
 import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
+import '../services/widget_sync_service.dart';
 import 'api_provider.dart';
 import 'token_usage_provider.dart';
 
@@ -243,7 +244,30 @@ class ChatProvider extends ChangeNotifier {
       debugPrint('[ChatProvider] 持久化失败: $e');
     } finally {
       _persistRunning = false;
+      // 同步到小组件（异步，不阻塞）
+      _syncToWidget();
     }
+  }
+  
+  /// 同步会话数据到小组件
+  void _syncToWidget() {
+    Future.microtask(() async {
+      try {
+        final convList = _conversations.map((conv) => {
+          'id': conv.id,
+          'character_id': conv.characterId,
+          'character_name': conv.characterName,
+          'last_message': conv.lastMessage,
+          'last_message_time': conv.lastMessageTime.millisecondsSinceEpoch,
+          'unread_count': conv.unreadCount,
+          'pinned': conv.pinned,
+        }).toList();
+        
+        await WidgetSyncService.syncConversations(convList);
+      } catch (e) {
+        debugPrint('[ChatProvider] Widget sync failed: $e');
+      }
+    });
   }
 
   Conversation getOrCreateConversation({

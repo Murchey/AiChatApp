@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
+import com.aichat.ai_chat.widget.WidgetUpdateManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -15,6 +16,8 @@ import java.io.FileOutputStream
 class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "com.aichat.ai_chat/files"
+        private const val NAV_CHANNEL = "com.aichat.ai_chat/navigation"
+        private const val WIDGET_CHANNEL = "com.aichat.ai_chat/widget"
         private const val REQUEST_PICK_FILE = 0x1101
         private const val REQUEST_SAVE_FILE = 0x1102
     }
@@ -22,9 +25,55 @@ class MainActivity : FlutterActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private var pendingSaveName: String = ""
     private var pendingSaveBytes: ByteArray? = null
+    private var navigationChannel: MethodChannel? = null
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        handleWidgetIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleWidgetIntent(intent)
+    }
+
+    private fun handleWidgetIntent(intent: Intent?) {
+        if (intent?.action == "OPEN_CHAT") {
+            val conversationId = intent.getStringExtra("conversation_id")
+            if (conversationId != null) {
+                // 延迟发送，等待 Flutter 引擎准备就绪
+                navigationChannel?.invokeMethod("openChat", conversationId)
+            }
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        
+        // 初始化导航通道
+        navigationChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NAV_CHANNEL)
+        
+        // 小组件更新通道
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "updateWidgets" -> {
+                        WidgetUpdateManager.updateAllWidgets(this)
+                        result.success(true)
+                    }
+                    "updateTokenWidget" -> {
+                        WidgetUpdateManager.updateTokenWidgets(this)
+                        result.success(true)
+                    }
+                    "updateConversationWidget" -> {
+                        WidgetUpdateManager.updateConversationWidgets(this)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        
+        // 文件操作通道
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

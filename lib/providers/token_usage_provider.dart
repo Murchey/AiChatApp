@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/token_usage.dart';
 import '../services/llm_service.dart';
+import '../services/widget_sync_service.dart';
 
 /// 各会话（私聊 / 群聊）累计 token 消耗统计。
 ///
@@ -84,7 +85,39 @@ class TokenUsageProvider extends ChangeNotifier {
     }
     notifyListeners();
     await _persist();
+    _syncToWidget();
     return next;
+  }
+  
+  /// 同步数据到小组件
+  void _syncToWidget() {
+    // 异步同步，不阻塞主流程
+    Future.microtask(() async {
+      try {
+        // 计算各分类统计
+        int privateChat = 0, groupChat = 0, moment = 0;
+        _usages.forEach((id, usage) {
+          if (id == kMomentUsageId) {
+            moment = usage.totalTokens;
+          } else if (id.startsWith('group_')) {
+            groupChat += usage.totalTokens;
+          } else {
+            privateChat += usage.totalTokens;
+          }
+        });
+        
+        await WidgetSyncService.syncTokenUsage(
+          total: total,
+          sent: sentTotal,
+          received: receivedTotal,
+          privateChat: privateChat,
+          groupChat: groupChat,
+          moment: moment,
+        );
+      } catch (e) {
+        debugPrint('[TokenUsageProvider] Widget sync failed: $e');
+      }
+    });
   }
 
   /// 某会话的累计用量（无记录返回空用量）
