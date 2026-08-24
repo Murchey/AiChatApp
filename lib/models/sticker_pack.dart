@@ -83,6 +83,15 @@ class UserSticker {
   final DateTime createdAt;
   final int useCount;
 
+  /// 用于本地语义检索的图片含义描述，可由用户在管理页维护。
+  final String description;
+
+  /// 用于快速召回的关键词，例如“无语、熊猫头、吐槽”。
+  final List<String> keywords;
+
+  /// 情绪标签，例如“开心、无奈、撒娇”。
+  final List<String> emotionTags;
+
   const UserSticker({
     required this.id,
     required this.sha256,
@@ -90,6 +99,9 @@ class UserSticker {
     required this.label,
     required this.createdAt,
     this.useCount = 0,
+    this.description = '',
+    this.keywords = const [],
+    this.emotionTags = const [],
   });
 
   factory UserSticker.fromJson(Map<String, dynamic> json) => UserSticker(
@@ -100,6 +112,9 @@ class UserSticker {
         createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
             DateTime.now(),
         useCount: (json['use_count'] as num?)?.toInt() ?? 0,
+        description: json['description'] as String? ?? '',
+        keywords: _decodeStringList(json['keywords']),
+        emotionTags: _decodeStringList(json['emotion_tags']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -109,16 +124,36 @@ class UserSticker {
         'label': label,
         'created_at': createdAt.toIso8601String(),
         'use_count': useCount,
+        'description': description,
+        'keywords': keywords,
+        'emotion_tags': emotionTags,
       };
 
-  UserSticker copyWith({String? label, int? useCount}) => UserSticker(
+  UserSticker copyWith({
+    String? label,
+    int? useCount,
+    String? description,
+    List<String>? keywords,
+    List<String>? emotionTags,
+  }) =>
+      UserSticker(
         id: id,
         sha256: sha256,
         imagePath: imagePath,
         label: label ?? this.label,
         createdAt: createdAt,
         useCount: useCount ?? this.useCount,
+        description: description ?? this.description,
+        keywords: keywords ?? this.keywords,
+        emotionTags: emotionTags ?? this.emotionTags,
       );
+
+  static List<String> _decodeStringList(dynamic raw) => raw is List
+      ? raw
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList()
+      : const [];
 }
 
 /// 扁平化后的选择器条目。

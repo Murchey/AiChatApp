@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,8 @@ import '../services/llm_service.dart';
 import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
 import '../services/widget_sync_service.dart';
+import '../models/sticker_pack.dart';
+import '../services/sticker_query_protocol.dart';
 import 'api_provider.dart';
 import 'token_usage_provider.dart';
 
@@ -471,6 +474,7 @@ class ChatProvider extends ChangeNotifier {
     List<String> memoryPoints = const [],
     String extraSystemContext =
         '', // 角色记忆池等额外记忆上下文，透传给 generateProactiveMessages
+    UserSticker? Function(String query)? findSticker,
   }) {
     debugPrint(
         '[ChatProvider] runProactiveReply 被调用: $conversationId replyToUser=$replyToUser');
@@ -499,6 +503,7 @@ class ChatProvider extends ChangeNotifier {
       activeEnd: activeEnd,
       memoryPoints: memoryPoints,
       extraSystemContext: extraSystemContext,
+      findSticker: findSticker,
     );
     _runningReply = future;
     return future;
@@ -522,6 +527,7 @@ class ChatProvider extends ChangeNotifier {
     String activeEnd = '',
     List<String> memoryPoints = const [],
     String extraSystemContext = '',
+    UserSticker? Function(String query)? findSticker,
   }) async {
     debugPrint('[ChatProvider] _doRunProactiveReply 开始: $conversationId');
     try {
@@ -548,11 +554,36 @@ class ChatProvider extends ChangeNotifier {
       // 累计真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens）
       TokenUsageProvider.instance.addUsage(conversationId, result.usage);
       final random = Random();
+      final displayedMessages = <String>[];
+      var stickerSent = false;
       for (final content in messages) {
-        addProactiveMessage(conversationId, content);
+        final query = StickerQueryProtocol.extractQuery(content);
+        final visibleContent = StickerQueryProtocol.visibleText(content);
+        if (query != null) {
+          // 每轮最多发送一张；只有本地真实检索到的表情包才会显示。
+          final sticker = !stickerSent ? findSticker?.call(query) : null;
+          if (sticker != null) {
+            final beforeCount = _messagesMap[conversationId]?.length ?? 0;
+            addCharacterStickerMessage(
+              conversationId: conversationId,
+              stickerPath: sticker.imagePath,
+              label: sticker.label,
+            );
+            if ((_messagesMap[conversationId]?.length ?? 0) > beforeCount) {
+              stickerSent = true;
+              // 仅供调用方判断本轮是否有回复；不会作为文本气泡写入会话。
+              displayedMessages.add('[表情包]');
+            }
+          }
+          // 模型偶尔会把查询标记和正常文字写在同一元素中；仅展示剥离标记后的文字。
+          if (visibleContent.isEmpty) continue;
+        }
+        if (visibleContent.isEmpty) continue;
+        addProactiveMessage(conversationId, visibleContent);
+        displayedMessages.add(visibleContent);
         HapticFeedback.lightImpact(); // 消息提示震动
         // 延迟 = 随机 0~1s + 消息长度 * 50ms（模拟打字耗时）+ 600ms 消息间隔
-        final delay = random.nextDouble() * 1000 + content.length * 50;
+        final delay = random.nextDouble() * 1000 + visibleContent.length * 50;
         await Future.delayed(Duration(milliseconds: delay.round() + 600));
       }
       // 已使用的上下文 = 会话累计（摘要起全部文本消息 + 系统提示词）。
@@ -563,7 +594,7 @@ class ChatProvider extends ChangeNotifier {
       final estimated = _estimateSendInputBudget(conversationId);
       _contextTokens[conversationId] =
           prompt != null && prompt > estimated ? prompt : estimated;
-      return messages;
+      return displayedMessages;
     } finally {
       debugPrint('[ChatProvider] _doRunProactiveReply 结束: $conversationId');
       _replyingConversationId = null;
@@ -826,6 +857,34 @@ class ChatProvider extends ChangeNotifier {
         );
       }
     }
+    notifyListeners();
+    _persist();
+  }
+
+  /// 角色表情只允许由本地检索得到的真实文件创建，避免模型伪造路径或编号。
+  void addCharacterStickerMessage({
+    required String conversationId,
+    required String stickerPath,
+    String? label,
+  }) {
+    if (stickerPath.trim().isEmpty || !File(stickerPath).existsSync()) {
+      debugPrint('[Sticker] 角色表情发送失败：图片文件不存在 path=$stickerPath');
+      return;
+    }
+    debugPrint('[Sticker] 角色表情发送成功 label=${label ?? ''} path=$stickerPath');
+    _messagesMap[conversationId] ??= [];
+    _messagesMap[conversationId]!.add(Message(
+      id: const Uuid().v4(),
+      conversationId: conversationId,
+      content: stickerPath,
+      type: MessageType.sticker,
+      sender: MessageSender.character,
+      stickerLabel: label?.trim().isEmpty == true ? null : label?.trim(),
+    ));
+    _updateConversationLastMessage(
+      conversationId,
+      label?.trim().isNotEmpty == true ? '[表情包: ${label!.trim()}]' : '[表情包]',
+    );
     notifyListeners();
     _persist();
   }

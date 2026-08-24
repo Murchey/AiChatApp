@@ -43,10 +43,8 @@ class PromptBuilder {
     String extraContext = '',
   }) {
     final active = _inActivePeriod(currentTime, activeStart, activeEnd);
-    final memory = memoryPoints
-        .map((m) => m.trim())
-        .where((m) => m.isNotEmpty)
-        .toList();
+    final memory =
+        memoryPoints.map((m) => m.trim()).where((m) => m.isNotEmpty).toList();
     final extra = extraContext.trim();
     final template = '''
 ${replyToUser ? '你是 $characterName，正在微信上回复用户最近发来的消息。' : '你是 $characterName，正在和用户进行微信聊天。'}
@@ -61,12 +59,9 @@ ${memory.map((m) => '- $m').join('\n')}'''}
 ${extra.isEmpty ? '' : '\n$extra\n'}
 ## 回复要求
 1. 消息内容必须极度口语化，像真实微信聊天，允许语气词、标点省略、表情包文字（如[捂脸]）或不规范大小写。
-2. ${replyToUser
-        ? '针对用户最近发来的消息，把想说的话拆分为 3~6 条短消息进行回复，每条消息 5~10 个字，最多不超过 20 个字。'
-        : '模拟真实微信聊天习惯：把想说的话拆分为 3~6 条短消息，每条消息 5~10 个字，最多不超过 20 个字。'}
-3. ${active
-        ? '当前正处于用户设定的活跃时段（$activeStart ~ $activeEnd）内：即使时间看起来较晚，也绝对不要主动道别、说晚安或提前结束对话，继续保持活跃、自然地陪用户聊天。'
-        : '结合"当前时间"和你的"人设作息"判断：如果当前时间极不合理（如凌晨3点且你不是夜猫子），可以跳过本次回复。'}'''.trim();
+2. ${replyToUser ? '针对用户最近发来的消息，把想说的话拆分为 3~6 条短消息进行回复，每条消息 5~10 个字，最多不超过 20 个字。' : '模拟真实微信聊天习惯：把想说的话拆分为 3~6 条短消息，每条消息 5~10 个字，最多不超过 20 个字。'}
+3. ${active ? '当前正处于用户设定的活跃时段（$activeStart ~ $activeEnd）内：即使时间看起来较晚，也绝对不要主动道别、说晚安或提前结束对话，继续保持活跃、自然地陪用户聊天。' : '结合"当前时间"和你的"人设作息"判断：如果当前时间极不合理（如凌晨3点且你不是夜猫子），可以跳过本次回复。'}'''
+        .trim();
 
     final base = sanitize(baseSystemPrompt);
     if (base.isEmpty) return template;
@@ -133,6 +128,9 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
         '你的最终回复必须且只能是一个 JSON 字符串数组，'
         '格式如 ["消息1", "消息2"]，数组的每个元素就是你发送的一条消息。'
         '不要输出任何解释性文字、Markdown 代码块（如 ```json）或 JSON 对象。'
+        '如确实需要发送用户已有的表情包，可额外加入至多一条独立元素，'
+        '格式必须是[[查询表情包:情绪或场景关键词]]（例如[[查询表情包:无语又好笑]]）。'
+        '不要猜测表情包内容、不要写图片路径或编号；未查到合适表情包时应用会自动忽略该元素。'
         '$timeLine';
   }
 

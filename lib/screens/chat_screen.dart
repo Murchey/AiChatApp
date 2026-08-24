@@ -1330,6 +1330,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       activeEnd: character?.activeEnd ?? '',
       memoryPoints: memoryPoints,
       extraSystemContext: memoryPool,
+      findSticker: (query) {
+        final matches =
+            context.read<StickerProvider>().searchUserStickers(query, limit: 1);
+        return matches.isEmpty ? null : matches.first;
+      },
     );
     debugPrint(
         '[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');

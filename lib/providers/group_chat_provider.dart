@@ -8,6 +8,7 @@ import '../models/message.dart';
 import '../services/llm_service.dart';
 import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
+import '../services/sticker_query_protocol.dart';
 import 'api_provider.dart';
 import 'token_usage_provider.dart';
 
@@ -632,21 +633,26 @@ class GroupChatProvider extends ChangeNotifier {
         // 累计该群真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens）
         TokenUsageProvider.instance.addUsage(groupId, result.usage);
 
+        var visibleMessageIndex = 0;
         for (var i = 0; i < result.messages.length; i++) {
           if (generation != _replyGeneration) break;
-          final content = result.messages[i];
+          // 群聊暂未支持角色发送图片表情：剥离内部查询标记，纯标记直接忽略。
+          final content = StickerQueryProtocol.visibleText(result.messages[i]);
+          if (content.isEmpty) continue;
           _addGroupMessage(
             groupId,
             member.characterId,
             member.name,
             content,
             // 仅首条消息带引用块，避免连续多条都带引用显得累赘
-            quoteContent: i == 0 ? (quote?.content ?? '') : '',
-            quoteSender: i == 0 ? (quote?.name ?? '') : '',
+            quoteContent:
+                visibleMessageIndex == 0 ? (quote?.content ?? '') : '',
+            quoteSender: visibleMessageIndex == 0 ? (quote?.name ?? '') : '',
             avatarBase64: member.avatarBase64,
             // 回复轮内不逐条落盘，整轮结束后统一写一次
             persist: false,
           );
+          visibleMessageIndex++;
           // 模拟打字耗时 + 消息间隔，贴近群聊逐条弹出观感
           final delay = random.nextDouble() * 800 + content.length * 40 + 500;
           await Future.delayed(Duration(milliseconds: delay.round()));

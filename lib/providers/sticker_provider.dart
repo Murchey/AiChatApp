@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../models/sticker_pack.dart';
 import '../utils/sticker_hash_utils.dart';
 import '../utils/sticker_path_helper.dart';
+import '../services/sticker_search_service.dart';
 
 class StickerProvider extends ChangeNotifier {
   static const _packsKey = 'sticker_packs_v1';
@@ -117,6 +118,38 @@ class StickerProvider extends ChangeNotifier {
     await _persist();
     notifyListeners();
   }
+
+  Future<void> updateUserStickerMetadata({
+    required String stickerId,
+    required String label,
+    required String description,
+    required List<String> keywords,
+    required List<String> emotionTags,
+  }) async {
+    final index =
+        _userStickers.indexWhere((sticker) => sticker.id == stickerId);
+    if (index == -1) return;
+    _userStickers[index] = _userStickers[index].copyWith(
+      label: label.trim(),
+      description: description.trim(),
+      keywords: _normalizeTags(keywords),
+      emotionTags: _normalizeTags(emotionTags),
+    );
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 供角色回复流程调用：只返回少量候选，永远不会把完整表情包清单交给模型。
+  List<UserSticker> searchUserStickers(String query, {int limit = 5}) =>
+      StickerSearchService.search(_userStickers, query, limit: limit);
+
+  static List<String> _normalizeTags(Iterable<String> values) => values
+      .expand((value) => value.split(RegExp(r'[,，、\n]')))
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty)
+      .toSet()
+      .take(12)
+      .toList();
 
   Future<void> removePackSticker(StickerEntry entry) async {
     final packId = entry.packId;

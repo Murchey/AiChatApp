@@ -16,6 +16,97 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
   final Set<String> _selected = {};
   bool _editing = false;
 
+  Future<void> _showSearchTest() async {
+    final controller = TextEditingController();
+    var results = const <UserSticker>[];
+    await showCupertinoDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => CupertinoAlertDialog(
+          title: const Text('测试表情包检索'),
+          content: SizedBox(
+            width: 280,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('输入情绪或场景词，确认角色可检索到的本地表情包。'),
+                const SizedBox(height: 10),
+                CupertinoTextField(
+                  controller: controller,
+                  autofocus: true,
+                  placeholder: '例如：猫猫傲娇、无语吐槽',
+                  onSubmitted: (_) => _runSearchTest(
+                      controller, setDialogState, (value) => results = value),
+                ),
+                const SizedBox(height: 8),
+                CupertinoButton.filled(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+                  onPressed: () => _runSearchTest(
+                      controller, setDialogState, (value) => results = value),
+                  child: const Text('开始检索'),
+                ),
+                if (results.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 86,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: results.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (_, index) {
+                        final sticker = results[index];
+                        return SizedBox(
+                          width: 72,
+                          child: Column(children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.file(File(sticker.imagePath),
+                                  width: 52, height: 52, fit: BoxFit.cover),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(sticker.label.isEmpty ? '未备注' : sticker.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11)),
+                          ]),
+                        );
+                      },
+                    ),
+                  ),
+                ] else if (controller.text.trim().isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 10),
+                    child: Text('未命中。请补充备注、关键词或情绪标签。'),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('完成'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+  }
+
+  void _runSearchTest(
+    TextEditingController controller,
+    StateSetter setDialogState,
+    void Function(List<UserSticker>) updateResults,
+  ) {
+    setDialogState(() {
+      updateResults(context
+          .read<StickerProvider>()
+          .searchUserStickers(controller.text, limit: 5));
+    });
+  }
+
   Future<void> _deleteSelected() async {
     final provider = context.read<StickerProvider>();
     final selected = provider.userStickers
@@ -47,18 +138,41 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
     if (mounted) setState(() => _selected.clear());
   }
 
-  Future<void> _editLabel(UserSticker sticker) async {
-    final controller = TextEditingController(text: sticker.label);
-    final value = await showCupertinoDialog<String>(
+  Future<void> _editMetadata(UserSticker sticker) async {
+    final labelController = TextEditingController(text: sticker.label);
+    final descriptionController =
+        TextEditingController(text: sticker.description);
+    final keywordsController =
+        TextEditingController(text: sticker.keywords.join('、'));
+    final emotionController =
+        TextEditingController(text: sticker.emotionTags.join('、'));
+    final saved = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('编辑备注'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: CupertinoTextField(
-            controller: controller,
-            autofocus: true,
-            placeholder: '表情包备注',
+        title: const Text('编辑表情包信息'),
+        content: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Column(
+              children: [
+                CupertinoTextField(
+                    controller: labelController,
+                    autofocus: true,
+                    placeholder: '备注，如：熊猫头无语'),
+                const SizedBox(height: 8),
+                CupertinoTextField(
+                    controller: descriptionController,
+                    placeholder: '含义描述，如：面无表情地表达无奈',
+                    maxLines: 2),
+                const SizedBox(height: 8),
+                CupertinoTextField(
+                    controller: keywordsController,
+                    placeholder: '关键词，用顿号或逗号分隔'),
+                const SizedBox(height: 8),
+                CupertinoTextField(
+                    controller: emotionController, placeholder: '情绪标签，如：无语、吐槽'),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -68,18 +182,25 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
           ),
           CupertinoDialogAction(
             isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('保存'),
           ),
         ],
       ),
     );
-    controller.dispose();
-    if (value == null || !mounted) return;
-    await context.read<StickerProvider>().updateUserStickerLabel(
-          sticker.id,
-          value,
-        );
+    if (saved == true && mounted) {
+      await context.read<StickerProvider>().updateUserStickerMetadata(
+            stickerId: sticker.id,
+            label: labelController.text,
+            description: descriptionController.text,
+            keywords: keywordsController.text.split(RegExp(r'[,，、\n]')),
+            emotionTags: emotionController.text.split(RegExp(r'[,，、\n]')),
+          );
+    }
+    labelController.dispose();
+    descriptionController.dispose();
+    keywordsController.dispose();
+    emotionController.dispose();
   }
 
   Future<void> _deletePack(StickerPack pack) async {
@@ -179,66 +300,75 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
     return CupertinoListSection.insetGrouped(
       backgroundColor: context.scaffoldColor,
       header: Text('我的表情包（${stickers.length} 张）'),
-      children: stickers.isEmpty
-          ? [const CupertinoListTile(title: Text('暂无自定义表情包'))]
-          : [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 4,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                  ),
-                  itemCount: stickers.length,
-                  itemBuilder: (_, index) {
-                    final sticker = stickers[index];
-                    final selected = _selected.contains(sticker.id);
-                    return GestureDetector(
-                      onTap: () {
-                        if (!_editing) {
-                          _editLabel(sticker);
-                          return;
-                        }
-                        setState(() {
-                          if (selected) {
-                            _selected.remove(sticker.id);
-                          } else {
-                            _selected.add(sticker.id);
-                          }
-                        });
-                      },
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.file(File(sticker.imagePath),
-                                  fit: BoxFit.cover),
-                            ),
-                          ),
-                          if (_editing)
-                            Positioned(
-                              top: 4,
-                              left: 4,
-                              child: Icon(
-                                selected
-                                    ? CupertinoIcons.check_mark_circled_solid
-                                    : CupertinoIcons.circle,
-                                color: selected
-                                    ? context.accentColor
-                                    : CupertinoColors.white,
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+      children: [
+        CupertinoListTile(
+          leading: Icon(CupertinoIcons.search, color: context.accentColor),
+          title: const Text('测试表情包检索'),
+          subtitle: const Text('输入关键词，确认角色可检索到的表情包'),
+          trailing: Icon(CupertinoIcons.chevron_right,
+              size: 16, color: context.textSecondaryColor),
+          onTap: _showSearchTest,
+        ),
+        if (stickers.isEmpty)
+          const CupertinoListTile(title: Text('暂无自定义表情包'))
+        else
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
               ),
-            ],
+              itemCount: stickers.length,
+              itemBuilder: (_, index) {
+                final sticker = stickers[index];
+                final selected = _selected.contains(sticker.id);
+                return GestureDetector(
+                  onTap: () {
+                    if (!_editing) {
+                      _editMetadata(sticker);
+                      return;
+                    }
+                    setState(() {
+                      if (selected) {
+                        _selected.remove(sticker.id);
+                      } else {
+                        _selected.add(sticker.id);
+                      }
+                    });
+                  },
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(File(sticker.imagePath),
+                              fit: BoxFit.cover),
+                        ),
+                      ),
+                      if (_editing)
+                        Positioned(
+                          top: 4,
+                          left: 4,
+                          child: Icon(
+                            selected
+                                ? CupertinoIcons.check_mark_circled_solid
+                                : CupertinoIcons.circle,
+                            color: selected
+                                ? context.accentColor
+                                : CupertinoColors.white,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
     );
   }
 
