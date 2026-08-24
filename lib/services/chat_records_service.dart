@@ -7,6 +7,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/message.dart';
+import '../providers/sticker_provider.dart';
+import '../utils/sticker_hash_utils.dart';
+import '../utils/sticker_path_helper.dart';
 
 /// 聊天记录导出 / 导入服务
 ///
@@ -27,6 +30,7 @@ class ChatRecordsService {
     final exported = <Map<String, dynamic>>[];
     var imageIndex = 0;
     var fileIndex = 0;
+    var stickerIndex = 0;
 
     for (final m in messages) {
       final data = <String, dynamic>{
@@ -40,6 +44,8 @@ class ChatRecordsService {
         // 群聊专属：记录发送者角色，导入后可还原多角色发言
         'sender_character_id': m.senderCharacterId,
         'sender_name': m.senderName,
+        'sticker_label': m.stickerLabel,
+        'sticker_source': m.stickerSource,
       };
       if (m.isForwardCard) {
         data['forwarded_items'] =
@@ -51,7 +57,8 @@ class ChatRecordsService {
         if (file.existsSync()) {
           final ext = _extensionOf(m.content);
           final name = 'image_${imageIndex++}.$ext';
-          archive.addFile(ArchiveFile.bytes('images/$name', file.readAsBytesSync()));
+          archive.addFile(
+              ArchiveFile.bytes('images/$name', file.readAsBytesSync()));
           data['content'] = 'images/$name';
         }
       } else if (m.type == MessageType.file) {
@@ -59,8 +66,18 @@ class ChatRecordsService {
         if (file.existsSync()) {
           var name = m.content.split(RegExp(r'[/\\]')).last;
           if (name.isEmpty) name = 'file_${fileIndex++}.dat';
-          archive.addFile(ArchiveFile.bytes('files/$name', file.readAsBytesSync()));
+          archive.addFile(
+              ArchiveFile.bytes('files/$name', file.readAsBytesSync()));
           data['content'] = 'files/$name';
+        }
+      } else if (m.type == MessageType.sticker) {
+        final file = File(m.content);
+        if (file.existsSync()) {
+          final ext = _extensionOf(m.content);
+          final name = 'sticker_${stickerIndex++}.$ext';
+          archive.addFile(
+              ArchiveFile.bytes('stickers/$name', file.readAsBytesSync()));
+          data['content'] = 'stickers/$name';
         }
       }
       exported.add(data);
@@ -73,6 +90,7 @@ class ChatRecordsService {
       'export_time': DateTime.now().toIso8601String(),
       'message_count': exported.length,
       'messages': exported,
+      'has_stickers': stickerIndex > 0,
     };
     archive.addFile(ArchiveFile.string(
       'chat.json',
@@ -111,7 +129,8 @@ class ChatRecordsService {
       throw const FormatException('压缩包中未找到 chat.json，请确认是聊天记录包');
     }
 
-    final root = jsonDecode(_decodeText(chatFile.content)) as Map<String, dynamic>;
+    final root =
+        jsonDecode(_decodeText(chatFile.content)) as Map<String, dynamic>;
     final rawMessages = root['messages'] as List<dynamic>? ?? [];
 
     // 提取目录：应用文档目录/chat_import_{时间戳}/
@@ -120,6 +139,8 @@ class ChatRecordsService {
       '${docDir.path}/chat_import_${DateTime.now().millisecondsSinceEpoch}',
     );
     await importDir.create(recursive: true);
+    final stickerProvider = StickerProvider();
+    await stickerProvider.init();
 
     final messages = <Message>[];
     for (final raw in rawMessages) {
@@ -130,6 +151,7 @@ class ChatRecordsService {
       final type = switch (typeStr) {
         'image' => MessageType.image,
         'file' => MessageType.file,
+        'sticker' => MessageType.sticker,
         'system' => MessageType.system,
         _ => MessageType.text,
       };
@@ -148,6 +170,32 @@ class ChatRecordsService {
           content = targetFile.path;
         }
       }
+      var stickerLabel = map['sticker_label'] as String?;
+      final stickerSource = map['sticker_source'] as String?;
+      if (type == MessageType.sticker && content.isNotEmpty) {
+        final entry = fileMap[content];
+        if (entry != null) {
+          final bytes = entry.content as List<int>;
+          final hash = stickerSha256(Uint8List.fromList(bytes));
+          final existing = await stickerProvider.findByHash(hash);
+          if (existing != null && File(existing.imagePath).existsSync()) {
+            content = existing.imagePath;
+          } else {
+            final customDir = await StickerPathHelper.customDirectory();
+            final target = File(
+              '${customDir.path}/${stickerFileName(hash, content)}',
+            );
+            if (!target.existsSync()) {
+              await target.writeAsBytes(bytes, flush: true);
+            }
+            final added = await stickerProvider.addUserSticker(
+              imagePath: target.path,
+              label: stickerLabel ?? '',
+            );
+            content = added.imagePath;
+          }
+        }
+      }
 
       final forwarded = (map['forwarded_items'] as List<dynamic>? ?? [])
           .map((e) => ForwardItem.fromJson(e as Map<String, dynamic>))
@@ -161,12 +209,14 @@ class ChatRecordsService {
         sender: (map['is_from_user'] as bool? ?? false)
             ? MessageSender.user
             : MessageSender.character,
-        createdAt:
-            DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??
+            DateTime.now(),
         quoteContent: map['quote_content'] as String? ?? '',
         quoteSender: map['quote_sender'] as String? ?? '',
         senderCharacterId: map['sender_character_id'] as String? ?? '',
         senderName: map['sender_name'] as String? ?? '',
+        stickerLabel: stickerLabel,
+        stickerSource: stickerSource,
         forwardedItems: forwarded,
       ));
     }

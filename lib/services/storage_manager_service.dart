@@ -96,6 +96,7 @@ class StorageManagerService {
   // 聊天相关目录：导入聊天提取的文件 + 每个会话独立设置的聊天背景图
   static const _chatDirs = ['chat_backgrounds'];
   static const _chatPrefixes = ['chat_import_'];
+  static const _stickerDirs = ['stickers'];
 
   // 引擎/系统运行时目录（非用户数据、非缓存，排除出占用统计与删除）
   // 例如 debug 模式下 Flutter 引擎落盘的 flutter_assets（kernel_blob 等）
@@ -116,6 +117,7 @@ class StorageManagerService {
     _debugDumpDirs(prefs);
     return [
       await _chatItem(prefs),
+      await _stickerItem(),
       await _characterItem(prefs),
       _notificationItem(prefs),
       _profileItem(prefs),
@@ -135,6 +137,19 @@ class StorageManagerService {
       id: 'chat',
       title: '聊天记录',
       subtitle: '全部会话与消息，含导入的图片和文件；删除后不可恢复',
+      isUserData: true,
+      sizeBytes: bytes,
+      deletable: bytes > 0,
+    );
+  }
+
+  /// 表情包图片与元数据目录。
+  static Future<StorageItem> _stickerItem() async {
+    final bytes = await _docDirsSize(names: _stickerDirs, prefixes: const []);
+    return StorageItem(
+      id: 'stickers',
+      title: '表情包',
+      subtitle: '创意工坊表情包与用户收藏的自定义图片；删除后可重新导入',
       isUserData: true,
       sizeBytes: bytes,
       deletable: bytes > 0,
@@ -254,6 +269,12 @@ class StorageManagerService {
     return _deleteDocDirs(names: _chatDirs, prefixes: _chatPrefixes);
   }
 
+  /// 删除全部表情包文件。元数据会由 StickerProvider 在下次初始化时自然失效，
+  /// 由页面层同时清理 Provider 状态。
+  static Future<int> clearStickerFiles() async {
+    return _deleteDocDirs(names: _stickerDirs, prefixes: const []);
+  }
+
   /// 删除发布/导入的朋友圈图片目录（user_moments、moment_import_*）
   static Future<int> clearCharacterFiles() async {
     return _deleteDocDirs(names: _characterDirs, prefixes: _characterPrefixes);
@@ -350,7 +371,8 @@ class StorageManagerService {
     try {
       for (final e in dir.listSync(recursive: true)) {
         if (e is File) {
-          debugPrint('[StorageScan]   文件 ${_basename(e.path)} = ${e.lengthSync()}');
+          debugPrint(
+              '[StorageScan]   文件 ${_basename(e.path)} = ${e.lengthSync()}');
         }
       }
     } catch (_) {}
@@ -399,6 +421,7 @@ class StorageManagerService {
       _characterPrefixes.any((p) => name.startsWith(p)) ||
       _chatDirs.contains(name) ||
       _chatPrefixes.any((p) => name.startsWith(p)) ||
+      _stickerDirs.contains(name) ||
       _systemDirs.contains(name);
 
   /// 文件是否属于安全可删类型（图片/压缩包/临时文件）
@@ -448,8 +471,8 @@ class StorageManagerService {
       for (final entity in Directory(docDir.path).listSync()) {
         if (entity is! Directory) continue;
         final name = _basename(entity.path);
-        final matched = names.contains(name) ||
-            prefixes.any((p) => name.startsWith(p));
+        final matched =
+            names.contains(name) || prefixes.any((p) => name.startsWith(p));
         if (!matched) continue;
         final size = _dirSize(entity);
         try {
@@ -507,8 +530,7 @@ class StorageManagerService {
       for (final entity in dir.listSync()) {
         if (entity is! Directory) continue;
         final name = _basename(entity.path);
-        if (names.contains(name) ||
-            prefixes.any((p) => name.startsWith(p))) {
+        if (names.contains(name) || prefixes.any((p) => name.startsWith(p))) {
           total += _dirSize(entity);
         }
       }

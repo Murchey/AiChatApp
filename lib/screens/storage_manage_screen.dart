@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/moment_notification_provider.dart';
+import '../providers/sticker_provider.dart';
 import '../services/storage_manager_service.dart';
 import '../services/workshop_service.dart';
 import '../utils/app_toast.dart';
@@ -66,6 +67,8 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
     switch (item.id) {
       case 'chat':
         return '将删除全部聊天记录（含导入的图片和文件），删除后不可恢复。确定继续吗？';
+      case 'stickers':
+        return '将删除全部表情包图片和收藏元数据，聊天记录中的表情包图片也会失效。确定继续吗？';
       case 'character':
         return '将删除自定义角色、朋友圈动态与图片（含头像/背景），恢复为内置默认角色。确定继续吗？';
       case 'notification':
@@ -103,6 +106,7 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
     final characterProvider = context.read<CharacterProvider>();
     final notificationProvider = context.read<MomentNotificationProvider>();
     final authProvider = context.read<AuthProvider>();
+    final stickerProvider = context.read<StickerProvider>();
 
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
@@ -133,6 +137,15 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
       case 'chat':
         await chatProvider.clearAllData();
         await StorageManagerService.clearChatFiles();
+        break;
+      case 'stickers':
+        await StorageManagerService.clearStickerFiles();
+        for (final sticker in [...stickerProvider.userStickers]) {
+          await stickerProvider.removeUserSticker(sticker.id);
+        }
+        for (final pack in [...stickerProvider.packs]) {
+          await stickerProvider.removeStickerPack(pack.id);
+        }
         break;
       case 'character':
         await characterProvider.resetAllData();
@@ -177,9 +190,7 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
     if (!mounted) return;
     if (plan.deletableBytes <= 0) {
       showAppToast(
-        plan.retainedBytes > 0
-            ? '没有可安全删除的内容（其余均为数据文件，已保留）'
-            : '没有可清理的内容',
+        plan.retainedBytes > 0 ? '没有可安全删除的内容（其余均为数据文件，已保留）' : '没有可清理的内容',
       );
       return;
     }
@@ -289,7 +300,8 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
     );
   }
 
-  Widget _buildSection({required String header, required List<StorageItem> items}) {
+  Widget _buildSection(
+      {required String header, required List<StorageItem> items}) {
     if (items.isEmpty) return const SizedBox.shrink();
     return CupertinoListSection.insetGrouped(
       backgroundColor: context.scaffoldColor,

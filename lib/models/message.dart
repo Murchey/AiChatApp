@@ -1,4 +1,4 @@
-enum MessageType { text, image, file, system }
+enum MessageType { text, image, file, sticker, system }
 
 enum MessageSender { user, character }
 
@@ -58,6 +58,12 @@ class Message {
   // 引用消息内容（可选）
   final String quoteContent;
   final String quoteSender;
+
+  /// 用户发送表情包时填写的语义备注。
+  final String? stickerLabel;
+
+  /// 表情包来源标记，例如创意工坊仓库或本地导入。
+  final String? stickerSource;
   // 合并转发的原始消息列表（非空表示这是一条"聊天记录"卡片）
   final List<ForwardItem> forwardedItems;
   // 是否为会话压缩生成的摘要消息（压缩时不删除前文原文，仅用此标记定位上下文起点）
@@ -75,6 +81,8 @@ class Message {
     this.isRead = false,
     this.quoteContent = '',
     this.quoteSender = '',
+    this.stickerLabel,
+    this.stickerSource,
     this.forwardedItems = const [],
     this.isCompressionSummary = false,
   }) : createdAt = createdAt ?? DateTime.now();
@@ -102,11 +110,12 @@ class Message {
       isRead: json['is_read'] as bool? ?? false,
       quoteContent: json['quote_content'] as String? ?? '',
       quoteSender: json['quote_sender'] as String? ?? '',
+      stickerLabel: json['sticker_label'] as String?,
+      stickerSource: json['sticker_source'] as String?,
       forwardedItems: (json['forwarded_items'] as List<dynamic>? ?? [])
           .map((e) => ForwardItem.fromJson(e as Map<String, dynamic>))
           .toList(),
-      isCompressionSummary:
-          json['is_compression_summary'] as bool? ?? false,
+      isCompressionSummary: json['is_compression_summary'] as bool? ?? false,
     );
   }
 
@@ -123,6 +132,8 @@ class Message {
       'is_read': isRead,
       'quote_content': quoteContent,
       'quote_sender': quoteSender,
+      'sticker_label': stickerLabel,
+      'sticker_source': stickerSource,
       'forwarded_items': forwardedItems.map((e) => e.toJson()).toList(),
       'is_compression_summary': isCompressionSummary,
     };

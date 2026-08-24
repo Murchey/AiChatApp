@@ -17,7 +17,8 @@ class ChatProvider extends ChangeNotifier {
   static const _conversationsKey = 'chat_conversations_v1';
   static const _messagesKey = 'chat_messages_v1';
   static const _contextTokensKey = 'chat_context_tokens_v1'; // 各会话上下文 token 累计值
-  static const _systemTokensKey = 'chat_system_tokens_v1'; // 各会话系统提示词 + 输出指令 token（持久化，重启恢复）
+  static const _systemTokensKey =
+      'chat_system_tokens_v1'; // 各会话系统提示词 + 输出指令 token（持久化，重启恢复）
 
   // 会话压缩参数
   static const int kKeepRecentMessages = 20; // 压缩时保留的最近消息条数
@@ -31,8 +32,10 @@ class ChatProvider extends ChangeNotifier {
   String? _activeConversationId; // 当前打开的聊天会话（其内新增角色消息不记未读）
   String? _replyingConversationId; // 正在生成/逐条渲染回复的会话（防止重复触发）
   Future<List<String>>? _runningReply; // 进行中的回复流程（重复触发时复用）
-  final Map<String, int> _contextTokens = {}; // 会话 → 上下文 token 用量（输入侧，API usage 优先）
-  final Map<String, int> _systemTokens = {}; // 会话 → 系统提示词 + 输出指令 token（内存态，供乐观更新）
+  final Map<String, int> _contextTokens =
+      {}; // 会话 → 上下文 token 用量（输入侧，API usage 优先）
+  final Map<String, int> _systemTokens =
+      {}; // 会话 → 系统提示词 + 输出指令 token（内存态，供乐观更新）
 
   /// 会话列表：置顶会话排最前，其余按最近消息时间倒序
   List<Conversation> get conversations {
@@ -89,7 +92,8 @@ class ChatProvider extends ChangeNotifier {
     if (index == -1) return 0;
     final count = _conversations[index].unreadCount + 1;
     _conversations[index] = _conversations[index].copyWith(unreadCount: count);
-    debugPrint('[ChatProvider] 未读+1 $conversationId → $count（active=$_activeConversationId）');
+    debugPrint(
+        '[ChatProvider] 未读+1 $conversationId → $count（active=$_activeConversationId）');
     return count;
   }
 
@@ -108,8 +112,7 @@ class ChatProvider extends ChangeNotifier {
   /// 会话按「最近一条匹配消息」的时间降序排列（更新鲜的排前面）。
   /// 图片/文件消息（正文为文件路径）与压缩摘要消息不参与匹配；
   /// 合并转发卡片展开其内部文本参与匹配。
-  List<MapEntry<Conversation, List<Message>>> searchMessages(
-      String keyword) {
+  List<MapEntry<Conversation, List<Message>>> searchMessages(String keyword) {
     final kw = keyword.trim().toLowerCase();
     if (kw.isEmpty) return const [];
     final groups = <MapEntry<Conversation, List<Message>>>[];
@@ -120,8 +123,7 @@ class ChatProvider extends ChangeNotifier {
         if (m.isCompressionSummary) continue;
         if (m.isForwardCard) {
           final hit = m.forwardedItems.any(
-            (f) =>
-                f.type == 'text' && f.content.toLowerCase().contains(kw),
+            (f) => f.type == 'text' && f.content.toLowerCase().contains(kw),
           );
           if (hit) matches.add(m);
         } else if (m.type == MessageType.text &&
@@ -248,21 +250,24 @@ class ChatProvider extends ChangeNotifier {
       _syncToWidget();
     }
   }
-  
+
   /// 同步会话数据到小组件
   void _syncToWidget() {
     Future.microtask(() async {
       try {
-        final convList = _conversations.map((conv) => {
-          'id': conv.id,
-          'character_id': conv.characterId,
-          'character_name': conv.characterName,
-          'last_message': conv.lastMessage,
-          'last_message_time': conv.lastMessageTime.millisecondsSinceEpoch,
-          'unread_count': conv.unreadCount,
-          'pinned': conv.pinned,
-        }).toList();
-        
+        final convList = _conversations
+            .map((conv) => {
+                  'id': conv.id,
+                  'character_id': conv.characterId,
+                  'character_name': conv.characterName,
+                  'last_message': conv.lastMessage,
+                  'last_message_time':
+                      conv.lastMessageTime.millisecondsSinceEpoch,
+                  'unread_count': conv.unreadCount,
+                  'pinned': conv.pinned,
+                })
+            .toList();
+
         await WidgetSyncService.syncConversations(convList);
       } catch (e) {
         debugPrint('[ChatProvider] Widget sync failed: $e');
@@ -395,9 +400,9 @@ class ChatProvider extends ChangeNotifier {
       currentTime: now,
     );
     // 记录本会话的系统提示词 + 输出指令 token，供发送消息时乐观更新进度条
-    _systemTokens[conversationId] =
-        _estimateTextTokens(prompt) + _estimateTextTokens(outputInstruction) +
-            kPerMessageJsonTokens * 2;
+    _systemTokens[conversationId] = _estimateTextTokens(prompt) +
+        _estimateTextTokens(outputInstruction) +
+        kPerMessageJsonTokens * 2;
     // 会话压缩：开启压缩且模型上下文已知时，先检查历史长度是否达到阈值。
     // 预算同时计入系统提示词与格式指令占用的 token——
     // 系统提示词越长，压缩越早触发，避免「提示词 + 历史」超过模型上下文上限
@@ -407,14 +412,14 @@ class ChatProvider extends ChangeNotifier {
         compressModel: compressModel,
         contextLength: contextLength,
         threshold: compressThreshold,
-        systemPromptTokens:
-            _estimateTextTokens(prompt) + _estimateTextTokens(outputInstruction) +
-                kPerMessageJsonTokens * 2, // 系统提示词与输出指令各是一条消息
+        systemPromptTokens: _estimateTextTokens(prompt) +
+            _estimateTextTokens(outputInstruction) +
+            kPerMessageJsonTokens * 2, // 系统提示词与输出指令各是一条消息
       );
     }
     try {
-      final history = historyMessages ??
-          _buildHistory(conversationId, contextCount);
+      final history =
+          historyMessages ?? _buildHistory(conversationId, contextCount);
       // 图片消息走 OpenAI 兼容视觉格式，让角色"看到"图片后回复
       if (imagePath != null && imagePath.isNotEmpty) {
         return await LLMService.generateVisionReply(
@@ -464,9 +469,11 @@ class ChatProvider extends ChangeNotifier {
     String activeStart = '',
     String activeEnd = '',
     List<String> memoryPoints = const [],
-    String extraSystemContext = '', // 角色记忆池等额外记忆上下文，透传给 generateProactiveMessages
+    String extraSystemContext =
+        '', // 角色记忆池等额外记忆上下文，透传给 generateProactiveMessages
   }) {
-    debugPrint('[ChatProvider] runProactiveReply 被调用: $conversationId replyToUser=$replyToUser');
+    debugPrint(
+        '[ChatProvider] runProactiveReply 被调用: $conversationId replyToUser=$replyToUser');
     // 同一会话的回复进行中：直接复用同一次流程（防止重复触发/误报空回复）
     if (_runningReply != null && _replyingConversationId == conversationId) {
       debugPrint('[ChatProvider] 复用进行中的回复流程: $conversationId');
@@ -628,7 +635,8 @@ class ChatProvider extends ChangeNotifier {
         Message(
           id: const Uuid().v4(),
           conversationId: conversationId,
-          content: '［已${force ? '手动' : '自动'}压缩更早的 ${toCompress.length} 条消息］\n$summary',
+          content:
+              '［已${force ? '手动' : '自动'}压缩更早的 ${toCompress.length} 条消息］\n$summary',
           type: MessageType.text,
           sender: MessageSender.character,
           isCompressionSummary: true,
@@ -665,7 +673,8 @@ class ChatProvider extends ChangeNotifier {
 
   /// 估算一段文本的 token 数（委托 LLMService 本地分词估算：
   /// 中文保守 1 字 ≈ 2 token，英文约 4 字符 ≈ 1 token）
-  static int _estimateTextTokens(String text) => LLMService.estimateTokens(text);
+  static int _estimateTextTokens(String text) =>
+      LLMService.estimateTokens(text);
 
   /// 估算文本消息列表的 token 数（含每条消息的 JSON 结构开销）
   static int _estimateTokens(List<Message> messages) {
@@ -679,8 +688,8 @@ class ChatProvider extends ChangeNotifier {
 
   /// 本地分词估算某会话的上下文 token（从最后一条压缩摘要消息起取全部 + 可选额外文本），
   /// 每条消息计入 JSON 结构开销。作为无真实 usage 记录时的兜底粗估。
-  int _estimateConversationTokens(
-      String conversationId, [List<String> extra = const []]) {
+  int _estimateConversationTokens(String conversationId,
+      [List<String> extra = const []]) {
     return _estimateSendBudget(conversationId, 0, extra);
   }
 
@@ -762,6 +771,14 @@ class ChatProvider extends ChangeNotifier {
     final result = <Map<String, String>>[];
     for (int i = start; i < history.length; i++) {
       final m = history[i];
+      if (m.type == MessageType.sticker) {
+        final label = m.stickerLabel?.trim() ?? '';
+        result.add({
+          'role': m.isFromUser ? 'user' : 'assistant',
+          'content': label.isEmpty ? '[用户发送了一个表情包]' : '[用户发送了一个表情包（备注：$label）]',
+        });
+        continue;
+      }
       if (m.type != MessageType.text) continue; // 图片/文件消息不入上下文
       // 合并转发卡片：展开为原始对话消息，参与上下文
       if (m.isForwardCard) {
@@ -843,18 +860,20 @@ class ChatProvider extends ChangeNotifier {
     required List<Message> messages,
   }) async {
     if (messages.isEmpty) return;
-    final items = messages.map((m) => ForwardItem(
-          senderName: m.isFromUser ? '我' : sourceName,
-          isUser: m.isFromUser,
-          content: m.content,
-          type: m.type == MessageType.image
-              ? 'image'
-              : m.type == MessageType.file
-                  ? 'file'
-                  : 'text',
-          createdAt: m.createdAt,
-          characterAvatar: m.isFromUser ? '' : sourceAvatar,
-        )).toList();
+    final items = messages
+        .map((m) => ForwardItem(
+              senderName: m.isFromUser ? '我' : sourceName,
+              isUser: m.isFromUser,
+              content: m.content,
+              type: m.type == MessageType.image
+                  ? 'image'
+                  : m.type == MessageType.file
+                      ? 'file'
+                      : 'text',
+              createdAt: m.createdAt,
+              characterAvatar: m.isFromUser ? '' : sourceAvatar,
+            ))
+        .toList();
     _messagesMap[conversationId] ??= [];
     _messagesMap[conversationId]!.add(Message(
       id: const Uuid().v4(),
@@ -948,6 +967,35 @@ class ChatProvider extends ChangeNotifier {
     _messagesMap[conversationId] ??= [];
     _messagesMap[conversationId]!.add(userMessage);
     _updateConversationLastMessage(conversationId, '[图片]');
+    notifyListeners();
+    await _persist();
+  }
+
+  /// 发送表情包消息。回复仍由输入框的对号按钮触发，与图片消息保持一致。
+  Future<void> sendStickerMessage({
+    required String conversationId,
+    required String stickerPath,
+    required String? label,
+    String? stickerSource,
+  }) async {
+    final normalizedLabel = label?.trim();
+    final userMessage = Message(
+      id: const Uuid().v4(),
+      conversationId: conversationId,
+      content: stickerPath,
+      type: MessageType.sticker,
+      sender: MessageSender.user,
+      stickerLabel: normalizedLabel?.isEmpty == true ? null : normalizedLabel,
+      stickerSource: stickerSource,
+    );
+    _messagesMap[conversationId] ??= [];
+    _messagesMap[conversationId]!.add(userMessage);
+    _updateConversationLastMessage(
+      conversationId,
+      normalizedLabel == null || normalizedLabel.isEmpty
+          ? '[表情包]'
+          : '[表情包: $normalizedLabel]',
+    );
     notifyListeners();
     await _persist();
   }
@@ -1152,8 +1200,9 @@ _DecodedStore _decodePersistStore(_RawStore raw) {
     final convStr = raw.conversationsJson;
     if (convStr != null) {
       final list = jsonDecode(convStr) as List<dynamic>;
-      conversations =
-          list.map((e) => Conversation.fromJson(e as Map<String, dynamic>)).toList();
+      conversations = list
+          .map((e) => Conversation.fromJson(e as Map<String, dynamic>))
+          .toList();
     }
   } catch (_) {}
   try {

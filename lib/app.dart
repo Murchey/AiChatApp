@@ -15,6 +15,7 @@ import 'providers/moment_notification_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/token_usage_provider.dart';
 import 'providers/workshop_provider.dart';
+import 'providers/sticker_provider.dart';
 import 'services/notification_service.dart';
 import 'services/widget_sync_service.dart';
 import 'utils/app_toast.dart';
@@ -41,6 +42,7 @@ class _AiChatAppState extends State<AiChatApp> {
     context.read<AutoMomentProvider>().init();
     context.read<ProactiveGreetingProvider>().init();
     context.read<WorkshopProvider>().init();
+    context.read<StickerProvider>().init();
     // 预加载累计 tokens 统计：数据就绪后再进入统计页，避免显示"清零"假象
     context.read<TokenUsageProvider>().init();
     // 初始化系统通知（创建渠道并请求 Android 13+ 通知权限）
@@ -60,7 +62,7 @@ class _AiChatAppState extends State<AiChatApp> {
         // 保存需要的数据引用
         final tokenProvider = context.read<TokenUsageProvider>();
         final chatProvider = context.read<ChatProvider>();
-        
+
         // 同步 Token 数据
         final allUsages = tokenProvider.allUsages;
         int privateChat = 0, groupChat = 0, moment = 0;
@@ -73,7 +75,7 @@ class _AiChatAppState extends State<AiChatApp> {
             privateChat += usage.totalTokens;
           }
         });
-        
+
         await WidgetSyncService.syncTokenUsage(
           total: tokenProvider.total,
           sent: tokenProvider.sentTotal,
@@ -82,20 +84,23 @@ class _AiChatAppState extends State<AiChatApp> {
           groupChat: groupChat,
           moment: moment,
         );
-        
+
         // 同步会话数据
-        final convList = chatProvider.conversations.map((conv) => {
-          'id': conv.id,
-          'character_id': conv.characterId,
-          'character_name': conv.characterName,
-          'last_message': conv.lastMessage,
-          'last_message_time': conv.lastMessageTime.millisecondsSinceEpoch,
-          'unread_count': conv.unreadCount,
-          'pinned': conv.pinned,
-        }).toList();
-        
+        final convList = chatProvider.conversations
+            .map((conv) => {
+                  'id': conv.id,
+                  'character_id': conv.characterId,
+                  'character_name': conv.characterName,
+                  'last_message': conv.lastMessage,
+                  'last_message_time':
+                      conv.lastMessageTime.millisecondsSinceEpoch,
+                  'unread_count': conv.unreadCount,
+                  'pinned': conv.pinned,
+                })
+            .toList();
+
         await WidgetSyncService.syncConversations(convList);
-        
+
         debugPrint('[App] Widget data synced on startup');
       } catch (e) {
         debugPrint('[App] Widget sync failed: $e');
@@ -111,10 +116,10 @@ class _AiChatAppState extends State<AiChatApp> {
           // 延迟导航，等待页面加载完成
           await Future.delayed(const Duration(milliseconds: 500));
           if (mounted) {
-            final navContext = appNavigatorKey.currentContext;
-            if (navContext != null) {
-              Navigator.of(navContext).pushNamed('/chat', arguments: conversationId);
-            }
+            appNavigatorKey.currentState?.pushNamed(
+              '/chat',
+              arguments: conversationId,
+            );
           }
         }
       }
@@ -165,9 +170,12 @@ class _AiChatAppState extends State<AiChatApp> {
                     data: body,
                     styleSheet: MarkdownStyleSheet(
                       p: const TextStyle(fontSize: 13, height: 1.4),
-                      h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      h3: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      h1: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
+                      h2: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                      h3: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.bold),
                       listBullet: const TextStyle(fontSize: 13),
                     ),
                   ),

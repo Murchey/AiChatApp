@@ -24,6 +24,7 @@ import 'bubble_style_screen.dart';
 import 'memory_pool_manager_screen.dart';
 import 'splash_icon_screen.dart';
 import 'storage_manage_screen.dart';
+import 'sticker_manage_screen.dart';
 import 'ui_style_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -134,9 +135,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 忽略内容去重，直接显示一次通知弹窗
   Future<void> _quickTestWorkshopNotify() async {
     final workshopProvider = context.read<WorkshopProvider>();
-    
+
     // 检查是否已配置通知仓库
-    if (!workshopProvider.notifyEnabled || workshopProvider.notifyRepoId == null) {
+    if (!workshopProvider.notifyEnabled ||
+        workshopProvider.notifyRepoId == null) {
       showAppToast('请先在「创意工坊设置」中开启通知并选择仓库');
       return;
     }
@@ -169,14 +171,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 模拟一次 APP 更新检测，无论是否有更新都显示弹窗
   Future<void> _triggerAppUpdateDialog() async {
     showAppToast('正在检测更新...');
-    
+
     final settings = context.read<SettingsProvider>();
     UpdateInfo? info = await UpdateService.checkForUpdate(
       proxyUrl: settings.updateProxyUrl,
     );
-    
+
     if (!mounted) return;
-    
+
     // 如果没有检测到更新，创建一个模拟的更新信息用于测试
     info ??= const UpdateInfo(
       latestVersion: '99.0.0',
@@ -187,10 +189,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           '- 优化体验 B\n'
           '- 修复问题 C\n\n'
           '> 此为测试弹窗，实际更新请关注正式版本发布',
-      giteeDownloadUrl: 'https://gitee.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
-      githubDownloadUrl: 'https://github.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
+      giteeDownloadUrl:
+          'https://gitee.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
+      githubDownloadUrl:
+          'https://github.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
     );
-    
+
     // 显示更新弹窗
     showUpdateAvailableDialog(
       context,
@@ -228,9 +232,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     data: body,
                     styleSheet: MarkdownStyleSheet(
                       p: const TextStyle(fontSize: 13, height: 1.4),
-                      h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      h3: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      h1: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
+                      h2: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                      h3: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.bold),
                       listBullet: const TextStyle(fontSize: 13),
                     ),
                   ),
@@ -486,6 +493,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('数据管理'),
+            children: [
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.smiley,
+                  color: context.accentColor,
+                ),
+                title: const Text('管理表情包'),
+                subtitle: Text(
+                  '查看、删除和编辑已添加的表情包',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const StickerManageScreen(),
+                  ),
+                ),
+              ),
+            ],
+          ),
           // 主题色
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
@@ -506,8 +548,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     for (final color in AppColors.presetColors)
                       _PresetColorDot(
                         color: color,
-                        selected: color.toARGB32() ==
-                            settings.accentColor.toARGB32(),
+                        selected:
+                            color.toARGB32() == settings.accentColor.toARGB32(),
                         onTap: () => settings.setAccentColor(color),
                       ),
                   ],
@@ -663,9 +705,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               CupertinoListTile(
                 title: const Text('未读消息发送系统通知'),
                 subtitle: Text(
-                  settings.unreadNotify
-                      ? '离开聊天界面时角色新消息将通过系统通知提醒'
-                      : '已关闭',
+                  settings.unreadNotify ? '离开聊天界面时角色新消息将通过系统通知提醒' : '已关闭',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -813,9 +853,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               CupertinoListTile(
                 title: const Text('启动时自动检测更新'),
                 subtitle: Text(
-                  settings.autoCheckUpdate
-                      ? '已启用，启动时自动检测新版本'
-                      : '已关闭',
+                  settings.autoCheckUpdate ? '已启用，启动时自动检测新版本' : '已关闭',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -1062,10 +1100,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: '自己气泡颜色（浅色模式）',
                         initialColor:
                             settings.bubbleColor(BubbleColorSlot.selfLight),
-                        onColorChanged: (c) =>
-                            settings.setBubbleColor(BubbleColorSlot.selfLight, c),
-                        onReset: () =>
-                            settings.resetBubbleColor(BubbleColorSlot.selfLight),
+                        onColorChanged: (c) => settings.setBubbleColor(
+                            BubbleColorSlot.selfLight, c),
+                        onReset: () => settings
+                            .resetBubbleColor(BubbleColorSlot.selfLight),
                       ),
                     ),
                     _BubbleColorRow(
@@ -1076,10 +1114,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: '对方气泡颜色（浅色模式）',
                         initialColor:
                             settings.bubbleColor(BubbleColorSlot.otherLight),
-                        onColorChanged: (c) => settings
-                            .setBubbleColor(BubbleColorSlot.otherLight, c),
-                        onReset: () =>
-                            settings.resetBubbleColor(BubbleColorSlot.otherLight),
+                        onColorChanged: (c) => settings.setBubbleColor(
+                            BubbleColorSlot.otherLight, c),
+                        onReset: () => settings
+                            .resetBubbleColor(BubbleColorSlot.otherLight),
                       ),
                     ),
                     _BubbleColorRow(
@@ -1090,8 +1128,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: '自己气泡颜色（深色模式）',
                         initialColor:
                             settings.bubbleColor(BubbleColorSlot.selfDark),
-                        onColorChanged: (c) =>
-                            settings.setBubbleColor(BubbleColorSlot.selfDark, c),
+                        onColorChanged: (c) => settings.setBubbleColor(
+                            BubbleColorSlot.selfDark, c),
                         onReset: () =>
                             settings.resetBubbleColor(BubbleColorSlot.selfDark),
                       ),
@@ -1104,10 +1142,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: '对方气泡颜色（深色模式）',
                         initialColor:
                             settings.bubbleColor(BubbleColorSlot.otherDark),
-                        onColorChanged: (c) => settings
-                            .setBubbleColor(BubbleColorSlot.otherDark, c),
-                        onReset: () =>
-                            settings.resetBubbleColor(BubbleColorSlot.otherDark),
+                        onColorChanged: (c) => settings.setBubbleColor(
+                            BubbleColorSlot.otherDark, c),
+                        onReset: () => settings
+                            .resetBubbleColor(BubbleColorSlot.otherDark),
                       ),
                     ),
                     _BubbleColorRow(
@@ -1118,22 +1156,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: '自己气泡字体颜色（浅色模式）',
                         initialColor:
                             settings.bubbleTextColor(BubbleTextSlot.selfLight),
-                        onColorChanged: (c) => settings
-                            .setBubbleTextColor(BubbleTextSlot.selfLight, c),
+                        onColorChanged: (c) => settings.setBubbleTextColor(
+                            BubbleTextSlot.selfLight, c),
                         onReset: () => settings
                             .resetBubbleTextColor(BubbleTextSlot.selfLight),
                       ),
                     ),
                     _BubbleColorRow(
                       title: '对方气泡字体（浅色）',
-                      color: settings.bubbleTextColor(BubbleTextSlot.otherLight),
+                      color:
+                          settings.bubbleTextColor(BubbleTextSlot.otherLight),
                       onTap: () => _showColorPicker(
                         context: ctx,
                         title: '对方气泡字体颜色（浅色模式）',
                         initialColor:
                             settings.bubbleTextColor(BubbleTextSlot.otherLight),
-                        onColorChanged: (c) => settings
-                            .setBubbleTextColor(BubbleTextSlot.otherLight, c),
+                        onColorChanged: (c) => settings.setBubbleTextColor(
+                            BubbleTextSlot.otherLight, c),
                         onReset: () => settings
                             .resetBubbleTextColor(BubbleTextSlot.otherLight),
                       ),
@@ -1146,10 +1185,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: '自己气泡字体颜色（深色模式）',
                         initialColor:
                             settings.bubbleTextColor(BubbleTextSlot.selfDark),
-                        onColorChanged: (c) => settings
-                            .setBubbleTextColor(BubbleTextSlot.selfDark, c),
-                        onReset: () =>
-                            settings.resetBubbleTextColor(BubbleTextSlot.selfDark),
+                        onColorChanged: (c) => settings.setBubbleTextColor(
+                            BubbleTextSlot.selfDark, c),
+                        onReset: () => settings
+                            .resetBubbleTextColor(BubbleTextSlot.selfDark),
                       ),
                     ),
                     _BubbleColorRow(
@@ -1160,10 +1199,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: '对方气泡字体颜色（深色模式）',
                         initialColor:
                             settings.bubbleTextColor(BubbleTextSlot.otherDark),
-                        onColorChanged: (c) => settings
-                            .setBubbleTextColor(BubbleTextSlot.otherDark, c),
-                        onReset: () =>
-                            settings.resetBubbleTextColor(BubbleTextSlot.otherDark),
+                        onColorChanged: (c) => settings.setBubbleTextColor(
+                            BubbleTextSlot.otherDark, c),
+                        onReset: () => settings
+                            .resetBubbleTextColor(BubbleTextSlot.otherDark),
                       ),
                     ),
                   ],
@@ -1287,19 +1326,50 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
 
   // 预设颜色网格（色相 × 亮度）
   static const _colorGrid = [
-    [Color(0xFFF44336), Color(0xFFE91E63), Color(0xFF9C27B0), Color(0xFF673AB7)],
-    [Color(0xFF3F51B5), Color(0xFF2196F3), Color(0xFF03A9F4), Color(0xFF00BCD4)],
-    [Color(0xFF009688), Color(0xFF4CAF50), Color(0xFF8BC34A), Color(0xFFCDDC39)],
-    [Color(0xFFFFEB3B), Color(0xFFFFC107), Color(0xFFFF9800), Color(0xFFFF5722)],
-    [Color(0xFF795548), Color(0xFF9E9E9E), Color(0xFF607D8B), Color(0xFF000000)],
-    [Color(0xFFFFFFFF), Color(0xFFF5F5F5), Color(0xFFE0E0E0), Color(0xFFBDBDBD)],
+    [
+      Color(0xFFF44336),
+      Color(0xFFE91E63),
+      Color(0xFF9C27B0),
+      Color(0xFF673AB7)
+    ],
+    [
+      Color(0xFF3F51B5),
+      Color(0xFF2196F3),
+      Color(0xFF03A9F4),
+      Color(0xFF00BCD4)
+    ],
+    [
+      Color(0xFF009688),
+      Color(0xFF4CAF50),
+      Color(0xFF8BC34A),
+      Color(0xFFCDDC39)
+    ],
+    [
+      Color(0xFFFFEB3B),
+      Color(0xFFFFC107),
+      Color(0xFFFF9800),
+      Color(0xFFFF5722)
+    ],
+    [
+      Color(0xFF795548),
+      Color(0xFF9E9E9E),
+      Color(0xFF607D8B),
+      Color(0xFF000000)
+    ],
+    [
+      Color(0xFFFFFFFF),
+      Color(0xFFF5F5F5),
+      Color(0xFFE0E0E0),
+      Color(0xFFBDBDBD)
+    ],
   ];
 
   @override
   void initState() {
     super.initState();
     _hsv = HSVColor.fromColor(widget.initialColor);
-    _hexController = TextEditingController(text: _colorToHex(widget.initialColor));
+    _hexController =
+        TextEditingController(text: _colorToHex(widget.initialColor));
   }
 
   @override
@@ -1388,7 +1458,8 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
                     color: context.fieldBgColor,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   onSubmitted: (value) {
                     final color = _hexToColor(value);
                     if (color != null) {
@@ -1412,13 +1483,15 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
           _buildSlider(
             label: '饱和度',
             value: _hsv.saturation,
-            activeColor: HSVColor.fromAHSV(1, _hsv.hue, 1, _hsv.value).toColor(),
+            activeColor:
+                HSVColor.fromAHSV(1, _hsv.hue, 1, _hsv.value).toColor(),
             onChanged: (v) => _update(saturation: v),
           ),
           _buildSlider(
             label: '亮度',
             value: _hsv.value,
-            activeColor: HSVColor.fromAHSV(1, _hsv.hue, _hsv.saturation, 1).toColor(),
+            activeColor:
+                HSVColor.fromAHSV(1, _hsv.hue, _hsv.saturation, 1).toColor(),
             onChanged: (v) => _update(value: v),
           ),
         ],

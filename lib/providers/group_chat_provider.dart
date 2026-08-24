@@ -179,7 +179,8 @@ class GroupChatProvider extends ChangeNotifier {
         await prefs.setString(
           _messagesKey,
           jsonEncode(_messages.map(
-            (key, value) => MapEntry(key, value.map((m) => m.toJson()).toList()),
+            (key, value) =>
+                MapEntry(key, value.map((m) => m.toJson()).toList()),
           )),
         );
       } while (_persistDirty);
@@ -523,6 +524,10 @@ class GroupChatProvider extends ChangeNotifier {
         return '[图片]';
       case MessageType.file:
         return '[文件] ${m.content.split('/').last}';
+      case MessageType.sticker:
+        return m.stickerLabel?.trim().isNotEmpty == true
+            ? '[表情包: ${m.stickerLabel!.trim()}]'
+            : '[表情包]';
       case MessageType.text:
       case MessageType.system:
         return m.content;
@@ -566,9 +571,7 @@ class GroupChatProvider extends ChangeNotifier {
     final ordered = <GroupMemberReply>[
       for (final m in members)
         if (mentionedSet.contains(m.characterId)) m,
-      ...members
-          .where((m) => !mentionedSet.contains(m.characterId))
-          .toList()
+      ...members.where((m) => !mentionedSet.contains(m.characterId)).toList()
         ..shuffle(random),
     ];
 
@@ -645,8 +648,7 @@ class GroupChatProvider extends ChangeNotifier {
             persist: false,
           );
           // 模拟打字耗时 + 消息间隔，贴近群聊逐条弹出观感
-          final delay =
-              random.nextDouble() * 800 + content.length * 40 + 500;
+          final delay = random.nextDouble() * 800 + content.length * 40 + 500;
           await Future.delayed(Duration(milliseconds: delay.round()));
         }
       } on LLMException catch (e) {
@@ -762,14 +764,11 @@ class GroupChatProvider extends ChangeNotifier {
     String userNickname,
   ) {
     final group = getGroupById(groupId);
-    final groupName = group?.name.trim().isEmpty == false
-        ? group!.name.trim()
-        : '群聊';
+    final groupName =
+        group?.name.trim().isEmpty == false ? group!.name.trim() : '群聊';
     final groupDescription = group?.description.trim() ?? '';
-    final memory = m.memoryPoints
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
+    final memory =
+        m.memoryPoints.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     final now = DateTime.now();
     // 角色人设（角色系统提示词）：必须拼入，否则回复不贴人设
     final persona = m.systemPrompt.trim();
@@ -801,12 +800,14 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
 1. 消息必须极度口语化，像真实微信群聊，允许语气词、表情包文字（如[捂脸]）或不规范大小写。
 2. 针对群聊中的最新内容，把想说的话拆分为 1~3 条短消息，每条 5~15 个字，最多不超过 20 个字。
 3. 只输出你自己想说的话：严禁复述、转述、总结或引用其他成员的发言内容，也不要出现"XX说……"之类的句式。
-4. $activeLine'''.trim();
+4. $activeLine'''
+        .trim();
   }
 
   /// 构建群聊上下文（供模型理解语境）：用户消息 role=user，
   /// 角色消息 role=assistant 并带发送者名前缀，便于区分是谁说的。
-  List<Map<String, Object>> _buildGroupHistory(String groupId, int contextCount) {
+  List<Map<String, Object>> _buildGroupHistory(
+      String groupId, int contextCount) {
     final messages = _messages[groupId] ?? const <Message>[];
     final start = contextCount > 0 && messages.length > contextCount
         ? messages.length - contextCount
@@ -830,6 +831,13 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
             result.add({
               'role': 'user',
               'content': '[用户发送了一个文件：${m.content.split('/').last}]',
+            });
+          case MessageType.sticker:
+            final label = m.stickerLabel?.trim() ?? '';
+            result.add({
+              'role': 'user',
+              'content':
+                  label.isEmpty ? '[用户发送了一个表情包]' : '[用户发送了一个表情包（备注：$label）]',
             });
           case MessageType.text:
           case MessageType.system:

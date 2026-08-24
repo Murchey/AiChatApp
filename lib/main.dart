@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'app.dart';
 import 'providers/api_provider.dart';
+import 'providers/sticker_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/auto_moment_provider.dart';
 import 'providers/chat_background_provider.dart';
@@ -33,6 +34,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => AutoMomentProvider()),
         ChangeNotifierProvider(create: (_) => ProactiveGreetingProvider()),
         ChangeNotifierProvider(create: (_) => WorkshopProvider()),
+        ChangeNotifierProvider(create: (_) => StickerProvider()),
         ChangeNotifierProvider.value(value: TokenUsageProvider.instance),
       ],
       child: const AiChatApp(),

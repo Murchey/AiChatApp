@@ -9,23 +9,91 @@ import 'character_avatar.dart';
 /// 微信表情代码 → emoji 映射：AI 按输出规则会携带表情包文字（如 [捂脸]），
 /// 渲染时转成真实 emoji 图标，贴近微信聊天观感。未收录的代码原样保留。
 const Map<String, String> _emojiCodeMap = {
-  '微笑': '😊', '呲牙': '😁', '得意': '😎', '愉快': '😄', '偷笑': '😏',
-  '坏笑': '😏', '憨笑': '😊', '害羞': '😳', '可爱': '🥰', '捂脸': '🤦',
-  '笑哭': '😂', '大笑': '😂', '流泪': '😭', '大哭': '😭', '委屈': '😢',
-  '快哭了': '😢', '难过': '😞', '尴尬': '😅', '冷汗': '😰', '流汗': '😓',
-  '擦汗': '😓', '发呆': '😳', '晕': '😵', '衰': '😩', '鄙视': '🙄',
-  '白眼': '🙄', '傲慢': '😤', '发怒': '😡', '咒骂': '🤬', '怄火': '😠',
-  '惊讶': '😱', '惊恐': '😨', '吓': '😱', '疑问': '❓', '闭嘴': '🤐',
-  '嘘': '🤫', '睡': '😴', '困': '😪', '哈欠': '🥱', '饥饿': '😋',
-  '吐': '🤮', '抠鼻': '🤏', '骷髅': '💀', '猪头': '🐷', '炸弹': '💣',
-  '菜刀': '🔪', '刀': '🔪', '西瓜': '🍉', '啤酒': '🍺', '咖啡': '☕',
-  '饭': '🍚', '蛋糕': '🎂', '玫瑰': '🌹', '凋谢': '🥀', '爱心': '❤️',
-  '心碎': '💔', '嘴唇': '👄', '亲亲': '😘', '飞吻': '😘', '拥抱': '🤗',
-  '强': '👍', '弱': '👎', '差劲': '👎', '握手': '🤝', '抱拳': '🙏',
-  '胜利': '✌️', '拳头': '👊', '敲打': '👊', '鼓掌': '👏', '再见': '👋',
-  'OK': '👌', 'NO': '🙅', '勾引': '👉', '奋斗': '💪', '给力': '💪',
-  '磕头': '🙇', '月亮': '🌙', '太阳': '☀️', '闪电': '⚡', '礼物': '🎁',
-  '篮球': '🏀', '足球': '⚽', '乒乓': '🏓', '瓢虫': '🐞', '便便': '💩',
+  '微笑': '😊',
+  '呲牙': '😁',
+  '得意': '😎',
+  '愉快': '😄',
+  '偷笑': '😏',
+  '坏笑': '😏',
+  '憨笑': '😊',
+  '害羞': '😳',
+  '可爱': '🥰',
+  '捂脸': '🤦',
+  '笑哭': '😂',
+  '大笑': '😂',
+  '流泪': '😭',
+  '大哭': '😭',
+  '委屈': '😢',
+  '快哭了': '😢',
+  '难过': '😞',
+  '尴尬': '😅',
+  '冷汗': '😰',
+  '流汗': '😓',
+  '擦汗': '😓',
+  '发呆': '😳',
+  '晕': '😵',
+  '衰': '😩',
+  '鄙视': '🙄',
+  '白眼': '🙄',
+  '傲慢': '😤',
+  '发怒': '😡',
+  '咒骂': '🤬',
+  '怄火': '😠',
+  '惊讶': '😱',
+  '惊恐': '😨',
+  '吓': '😱',
+  '疑问': '❓',
+  '闭嘴': '🤐',
+  '嘘': '🤫',
+  '睡': '😴',
+  '困': '😪',
+  '哈欠': '🥱',
+  '饥饿': '😋',
+  '吐': '🤮',
+  '抠鼻': '🤏',
+  '骷髅': '💀',
+  '猪头': '🐷',
+  '炸弹': '💣',
+  '菜刀': '🔪',
+  '刀': '🔪',
+  '西瓜': '🍉',
+  '啤酒': '🍺',
+  '咖啡': '☕',
+  '饭': '🍚',
+  '蛋糕': '🎂',
+  '玫瑰': '🌹',
+  '凋谢': '🥀',
+  '爱心': '❤️',
+  '心碎': '💔',
+  '嘴唇': '👄',
+  '亲亲': '😘',
+  '飞吻': '😘',
+  '拥抱': '🤗',
+  '强': '👍',
+  '弱': '👎',
+  '差劲': '👎',
+  '握手': '🤝',
+  '抱拳': '🙏',
+  '胜利': '✌️',
+  '拳头': '👊',
+  '敲打': '👊',
+  '鼓掌': '👏',
+  '再见': '👋',
+  'OK': '👌',
+  'NO': '🙅',
+  '勾引': '👉',
+  '奋斗': '💪',
+  '给力': '💪',
+  '磕头': '🙇',
+  '月亮': '🌙',
+  '太阳': '☀️',
+  '闪电': '⚡',
+  '礼物': '🎁',
+  '篮球': '🏀',
+  '足球': '⚽',
+  '乒乓': '🏓',
+  '瓢虫': '🐞',
+  '便便': '💩',
 };
 
 /// 匹配 [表情名] 形式的微信表情代码（名字 1~8 个字）
@@ -76,20 +144,27 @@ class ChatBubble extends StatefulWidget {
   final Message message;
   final String userAvatar;
   final String characterAvatar;
+
   /// 群聊中角色消息的发送者显示名（非空时显示在气泡上方，私聊为空）
   final String senderName;
+
   /// 回调参数为消息本身 + 气泡的 GlobalKey（用于定位菜单）
   final Function(Message message, GlobalKey bubbleKey)? onLongPress;
+
   /// 多选模式：点击气泡切换选中，且不再触发长按菜单
   final bool selectMode;
   final bool selected;
   final VoidCallback? onTap;
+
   /// 点击"合并转发"聊天记录卡片时回调（进入详情页）
   final VoidCallback? onForwardTap;
+
   /// 点击文件消息卡片时回调（参数为文件路径，用于打开文件）
   final Future<void> Function(String filePath)? onFileTap;
+
   /// 点击"我"的头像时回调（进入自己的空间页）
   final VoidCallback? onUserAvatarTap;
+
   /// 点击"对方"头像时回调（进入对方的空间页）
   final VoidCallback? onCharacterAvatarTap;
 
@@ -154,6 +229,9 @@ class _ChatBubbleState extends State<ChatBubble> {
     final avatar = isUser ? widget.userAvatar : widget.characterAvatar;
     final isImage = message.type == MessageType.image;
     final isFile = message.type == MessageType.file;
+    final isSticker = message.type == MessageType.sticker;
+
+    if (isSticker) return _buildStickerMessage(context, isUser, avatar);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -175,79 +253,141 @@ class _ChatBubbleState extends State<ChatBubble> {
               // 头像中线附近，无需再下移；私聊无昵称则下移 20px。
               padding: EdgeInsets.only(
                 top: (context.bubbleStyle == BubbleStyle.sr ||
-                        context.bubbleStyle == BubbleStyle.ww ||
-                        context.bubbleStyle == BubbleStyle.zmd) &&
+                            context.bubbleStyle == BubbleStyle.ww ||
+                            context.bubbleStyle == BubbleStyle.zmd) &&
                         widget.senderName.isEmpty
                     ? 20
                     : 0,
               ),
               child: Column(
-              crossAxisAlignment:
-                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 群聊中角色消息显示发送者昵称（私聊无）
-                if (!isUser && widget.senderName.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 2, bottom: 3),
-                    child: Text(
-                      widget.senderName,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
+                crossAxisAlignment:
+                    isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 群聊中角色消息显示发送者昵称（私聊无）
+                  if (!isUser && widget.senderName.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 2, bottom: 3),
+                      child: Text(
+                        widget.senderName,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                    ),
+                  GestureDetector(
+                    onTap: widget.selectMode ? widget.onTap : null,
+                    onLongPress: widget.selectMode
+                        ? null
+                        : (widget.onLongPress != null
+                            ? () => widget.onLongPress!(message, _bubbleKey)
+                            : null),
+                    child: _buildBubbleBox(
+                      context,
+                      isImage,
+                      isFile,
+                      Column(
+                        crossAxisAlignment: isUser
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          // 引用块
+                          if (message.quoteContent.isNotEmpty)
+                            _buildQuoteBlock(context, widget.message),
+                          if (isImage)
+                            _buildImageContent(context)
+                          else if (isFile) ...[
+                            _buildFileContent(context),
+                            const SizedBox(height: 6),
+                          ] else ...[
+                            RichText(
+                              text: _buildMessageSpan(
+                                context,
+                                message.content,
+                                context.bubbleTextColor(isUser),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ),
-                GestureDetector(
-                  onTap: widget.selectMode ? widget.onTap : null,
-                  onLongPress: widget.selectMode
-                      ? null
-                      : (widget.onLongPress != null
-                          ? () => widget.onLongPress!(message, _bubbleKey)
-                          : null),
-                  child: _buildBubbleBox(
-                    context,
-                    isImage,
-                    isFile,
-                    Column(
-                      crossAxisAlignment: isUser
-                          ? CrossAxisAlignment.end
-                          : CrossAxisAlignment.start,
-                      children: [
-                        // 引用块
-                        if (message.quoteContent.isNotEmpty)
-                          _buildQuoteBlock(context, widget.message),
-                        if (isImage)
-                          _buildImageContent(context)
-                        else if (isFile) ...[
-                          _buildFileContent(context),
-                          const SizedBox(height: 6),
-                        ] else ...[
-                          RichText(
-                            text: _buildMessageSpan(
-                              context,
-                              message.content,
-                              context.bubbleTextColor(isUser),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        // 多选模式：消息在右侧时勾选框在气泡左侧
-        if (widget.selectMode && isUser) _buildSelectCheck(context),
-        if (isUser) ...[
-          const SizedBox(width: 8),
-          _buildAvatar(context, avatar, onTap: widget.onUserAvatarTap),
+          // 多选模式：消息在右侧时勾选框在气泡左侧
+          if (widget.selectMode && isUser) _buildSelectCheck(context),
+          if (isUser) ...[
+            const SizedBox(width: 8),
+            _buildAvatar(context, avatar, onTap: widget.onUserAvatarTap),
+          ],
         ],
-      ],
-    ),
-  );
+      ),
+    );
+  }
+
+  Widget _buildStickerMessage(
+      BuildContext context, bool isUser, String avatar) {
+    final message = widget.message;
+    final image = GestureDetector(
+      onTap: () => showCupertinoDialog(
+        context: context,
+        builder: (_) => _StickerPreviewDialog(
+          imagePath: message.content,
+          label: message.stickerLabel,
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.file(
+          File(message.content),
+          width: math.min(180, MediaQuery.sizeOf(context).width * 0.45),
+          height: math.min(180, MediaQuery.sizeOf(context).width * 0.45),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            width: 120,
+            height: 120,
+            color: context.fieldBgColor,
+            alignment: Alignment.center,
+            child:
+                Icon(CupertinoIcons.photo, color: context.textSecondaryColor),
+          ),
+        ),
+      ),
+    );
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+          mainAxisAlignment:
+              isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isUser) ...[
+              _buildAvatar(context, avatar, onTap: widget.onCharacterAvatarTap),
+              const SizedBox(width: 8),
+            ],
+            image,
+            if (isUser) ...[
+              const SizedBox(width: 8),
+              _buildAvatar(context, avatar, onTap: widget.onUserAvatarTap),
+            ],
+          ]),
+    );
+    return KeyedSubtree(
+      key: _bubbleKey,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.selectMode ? widget.onTap : null,
+        onLongPress: widget.selectMode
+            ? null
+            : (widget.onLongPress == null
+                ? null
+                : () => widget.onLongPress!(widget.message, _bubbleKey)),
+        child: row,
+      ),
+    );
   }
 
   /// 构建气泡主体容器：ww 鸣潮 / zmd 终末地样式用 CustomClipper 绘制带尾巴形状，
@@ -260,8 +400,7 @@ class _ChatBubbleState extends State<ChatBubble> {
   ) {
     final isUser = widget.message.isFromUser;
     // 尾巴样式（ww/zmd）：上边共线尾巴 + 大圆角弧线
-    final isTailStyle =
-        !isImage &&
+    final isTailStyle = !isImage &&
         !isFile &&
         (context.bubbleStyle == BubbleStyle.ww ||
             context.bubbleStyle == BubbleStyle.zmd);
@@ -352,9 +491,8 @@ class _ChatBubbleState extends State<ChatBubble> {
                     color: context.separatorColor,
                     width: 0.5,
                   ),
-        boxShadow: isImage || isFile
-            ? const <BoxShadow>[]
-            : context.bubbleShadow,
+        boxShadow:
+            isImage || isFile ? const <BoxShadow>[] : context.bubbleShadow,
       ),
       child: child,
     );
@@ -369,9 +507,8 @@ class _ChatBubbleState extends State<ChatBubble> {
             ? CupertinoIcons.checkmark_circle_fill
             : CupertinoIcons.circle,
         size: 22,
-        color: widget.selected
-            ? context.accentColor
-            : context.textSecondaryColor,
+        color:
+            widget.selected ? context.accentColor : context.textSecondaryColor,
       ),
     );
   }
@@ -457,7 +594,8 @@ class _ChatBubbleState extends State<ChatBubble> {
           ),
           // 我方转发人头像（右侧）
           const SizedBox(width: 8),
-          _buildAvatar(context, widget.userAvatar, onTap: widget.onUserAvatarTap),
+          _buildAvatar(context, widget.userAvatar,
+              onTap: widget.onUserAvatarTap),
         ],
       ),
     );
@@ -562,9 +700,8 @@ class _ChatBubbleState extends State<ChatBubble> {
 
   /// 引用消息块
   Widget _buildQuoteBlock(BuildContext context, Message message) {
-    final quoteName = message.quoteSender.isNotEmpty
-        ? '${message.quoteSender}: '
-        : '';
+    final quoteName =
+        message.quoteSender.isNotEmpty ? '${message.quoteSender}: ' : '';
     return Container(
       // 引用块跟随内容宽度收缩，避免把气泡撑满整行
       constraints: const BoxConstraints(maxWidth: 240),
@@ -601,6 +738,41 @@ class _ChatBubbleState extends State<ChatBubble> {
   }
 }
 
+class _StickerPreviewDialog extends StatelessWidget {
+  final String imagePath;
+  final String? label;
+
+  const _StickerPreviewDialog({required this.imagePath, this.label});
+
+  @override
+  Widget build(BuildContext context) => CupertinoPopupSurface(
+        isSurfacePainted: false,
+        child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: Container(
+            color: CupertinoColors.black.withValues(alpha: 0.88),
+            padding: const EdgeInsets.all(20),
+            child: SafeArea(
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  InteractiveViewer(
+                    child: Image.file(File(imagePath), fit: BoxFit.contain),
+                  ),
+                  if (label?.trim().isNotEmpty == true)
+                    Positioned(
+                      bottom: 12,
+                      child: Text(label!,
+                          style: const TextStyle(color: CupertinoColors.white)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
 /// 构建「上边共线尾巴 + 圆角」的气泡路径（ww/zmd 共用）。
 /// 尾巴尖端在气泡顶边（与头像中线对齐），回程弧线圆心在气泡外侧尖端一侧，
 /// 两侧镜像对称。参数：
@@ -631,8 +803,8 @@ Path _buildTailBubblePath(
     path.lineTo(0, h - bottomCornerRadius); // 左边线
     path.quadraticBezierTo(0, h, bottomCornerRadius, h); // 左下角
     path.lineTo(w - tailLen - tailSideCornerRadius, h); // 底边
-    path.quadraticBezierTo(w - tailLen, h, w - tailLen,
-        h - tailSideCornerRadius); // 尾巴侧下角
+    path.quadraticBezierTo(
+        w - tailLen, h, w - tailLen, h - tailSideCornerRadius); // 尾巴侧下角
     // 尾巴回程：竖直直线 + 固定半径弧线（圆心在气泡外侧尖端一侧）
     path.lineTo(w - tailLen, kneeY);
     path.arcToPoint(Offset(w, 0), radius: Radius.circular(tailArcRadius));
@@ -667,8 +839,10 @@ class WwBubbleClipper extends CustomClipper<Path> {
 
   /// 尾巴伸出长度（尖端到气泡主体侧边的水平距离）
   static const double tailLen = 14;
+
   /// 尾巴回程弧线 / 远离尾巴下角大圆角半径
   static const double rBig = 15;
+
   /// 其余两个小角圆角半径
   static const double rSmall = 5;
 
@@ -698,8 +872,10 @@ class ZmdBubbleClipper extends CustomClipper<Path> {
 
   /// 尾巴伸出长度（与鸣潮一致）
   static const double tailLen = 14;
+
   /// 尾巴回程弧线半径
   static const double tailArcRadius = 10;
+
   /// 其余三个角圆角半径（与 tail 连接处一致）
   static const double cornerRadius = 10;
 

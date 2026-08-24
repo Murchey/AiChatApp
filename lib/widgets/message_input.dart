@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/theme.dart';
+import '../screens/sticker_picker_screen.dart';
 import 'chat_send_button.dart';
 
 class MessageInput extends StatefulWidget {
@@ -12,6 +13,7 @@ class MessageInput extends StatefulWidget {
   final VoidCallback? onExport; // 导出聊天记录
   final VoidCallback? onImport; // 导入聊天记录（zip）
   final Future<bool> Function()? onFeatureDetect; // 功能检测：测试当前模型是否支持图片（返回是否通过）
+  final Future<void> Function(StickerSelection selection)? onStickerSelected;
   final VoidCallback? onRequestReply; // 请求角色回复（对号按钮触发）
   final bool replyEnabled; // 对号按钮是否可点：上一条消息是用户发送时才可点
   /// 外部可通过此 key 调用 setText / focus
@@ -27,6 +29,7 @@ class MessageInput extends StatefulWidget {
     this.onExport,
     this.onImport,
     this.onFeatureDetect,
+    this.onStickerSelected,
     this.onRequestReply,
     this.replyEnabled = true,
   });
@@ -45,6 +48,7 @@ class MessageInputState extends State<MessageInput> {
   final FocusNode _inputFocusNode = FocusNode();
   bool _hasText = false;
   bool _showGrid = false;
+  bool _showStickerPanel = false;
 
   /// 外部可直接设置输入框内容
   void setText(String text) {
@@ -79,9 +83,10 @@ class MessageInputState extends State<MessageInput> {
     });
     // 点击（聚焦）输入框时自动折叠面板
     _inputFocusNode.addListener(() {
-      if (_inputFocusNode.hasFocus && _showGrid) {
+      if (_inputFocusNode.hasFocus && (_showGrid || _showStickerPanel)) {
         setState(() {
           _showGrid = false;
+          _showStickerPanel = false;
         });
       }
     });
@@ -118,6 +123,15 @@ class MessageInputState extends State<MessageInput> {
     }
   }
 
+  void _handleStickerTap() {
+    // 表情包面板和加号面板共用输入栏状态，互相排斥。
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _showGrid = false;
+      _showStickerPanel = !_showStickerPanel;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -144,6 +158,14 @@ class MessageInputState extends State<MessageInput> {
                         ? CupertinoIcons.keyboard
                         : CupertinoIcons.add_circled,
                     color: context.textSecondaryColor,
+                  ),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _handleStickerTap,
+                  child: Icon(
+                    CupertinoIcons.smiley,
+                    color: context.accentColor,
                   ),
                 ),
                 Expanded(
@@ -189,6 +211,20 @@ class MessageInputState extends State<MessageInput> {
         ),
         // 网格菜单面板（位于输入框下方，将输入框抬起）
         if (_showGrid) _buildGridPanel(context),
+        if (_showStickerPanel)
+          SizedBox(
+            height: (MediaQuery.viewInsetsOf(context).bottom > 0
+                    ? MediaQuery.viewInsetsOf(context).bottom
+                    : MediaQuery.sizeOf(context).height * 0.4)
+                .clamp(280.0, 420.0),
+            child: StickerPickerScreen.embedded(
+              onSelected: (selection) async {
+                await widget.onStickerSelected?.call(selection);
+                if (mounted) setState(() => _showStickerPanel = false);
+              },
+              onClose: () => setState(() => _showStickerPanel = false),
+            ),
+          ),
       ],
     );
   }
@@ -287,9 +323,7 @@ class MessageInputState extends State<MessageInput> {
           crossAxisCount: 4,
           mainAxisSpacing: 12,
           crossAxisSpacing: 16,
-          children: items
-              .map((item) => _buildGridTile(context, item))
-              .toList(),
+          children: items.map((item) => _buildGridTile(context, item)).toList(),
         ),
       ),
     );
