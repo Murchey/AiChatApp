@@ -108,8 +108,8 @@ class _MomentNotificationsScreenState extends State<MomentNotificationsScreen> {
                     ),
                     itemBuilder: (context, index) {
                       final n = activities[index];
-                      final character = characterProvider
-                          .getCharacterById(n.characterId);
+                      final character =
+                          characterProvider.getCharacterById(n.characterId);
                       // 动态发布者是「我」还是某个角色：决定「赞了你的动态」/「赞了 A 的朋友圈」
                       final isMine = n.ownerCharacterId.isEmpty ||
                           n.ownerCharacterId ==

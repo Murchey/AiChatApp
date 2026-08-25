@@ -357,6 +357,26 @@ class _ChatBubbleState extends State<ChatBubble> {
         ),
       ),
     );
+    // 群聊中角色表情包上方显示发送者昵称（与文本气泡一致）
+    final imageColumn = Column(
+      crossAxisAlignment:
+          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!isUser && widget.senderName.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 2, bottom: 3),
+            child: Text(
+              widget.senderName,
+              style: TextStyle(
+                fontSize: 12,
+                color: context.textSecondaryColor,
+              ),
+            ),
+          ),
+        image,
+      ],
+    );
     final row = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(
@@ -368,7 +388,7 @@ class _ChatBubbleState extends State<ChatBubble> {
               _buildAvatar(context, avatar, onTap: widget.onCharacterAvatarTap),
               const SizedBox(width: 8),
             ],
-            image,
+            imageColumn,
             if (isUser) ...[
               const SizedBox(width: 8),
               _buildAvatar(context, avatar, onTap: widget.onUserAvatarTap),

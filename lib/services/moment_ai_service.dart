@@ -252,8 +252,8 @@ class MomentAiService {
     } catch (e) {
       // 兜底捕获：任何未预期异常（如本地存储失败）都不向外抛出，
       // 保证排队链不断裂、调用方（含 unawaited）无未处理异步异常
-      DevLogService.instance.log(
-          '朋友圈互动异常（已忽略，不影响后续互动）：${LLMService.describeException(e)}');
+      DevLogService.instance
+          .log('朋友圈互动异常（已忽略，不影响后续互动）：${LLMService.describeException(e)}');
     }
   }
 
@@ -287,8 +287,7 @@ class MomentAiService {
 
     final model = apiProvider.getModelById(bp.modelId);
     if (model == null) {
-      DevLogService.instance.log(
-          '朋友圈互动断点：模型不可用，保留断点等待模型配置后恢复');
+      DevLogService.instance.log('朋友圈互动断点：模型不可用，保留断点等待模型配置后恢复');
       return;
     }
 
@@ -412,7 +411,8 @@ class MomentAiService {
       jsonMode: true,
     );
     // 累计该次朋友圈互动消耗（输入 = prompt_tokens，输出 = completion_tokens）
-    TokenUsageProvider.instance.addUsage(TokenUsageProvider.kMomentUsageId, result.usage);
+    TokenUsageProvider.instance
+        .addUsage(TokenUsageProvider.kMomentUsageId, result.usage);
     debugPrint('[MomentAi] ${character.displayName} 原始响应: ${result.content}');
     return _parseDecision(result.content);
   }
@@ -439,9 +439,8 @@ class MomentAiService {
         ],
     });
     // 发布者身份：明确告知模型"朋友圈主人是谁"，避免把发布者误认为用户
-    final ownerDesc = ownerIsUser
-        ? '你'
-        : (ownerName.isEmpty ? '朋友圈主人' : '「$ownerName」');
+    final ownerDesc =
+        ownerIsUser ? '你' : (ownerName.isEmpty ? '朋友圈主人' : '「$ownerName」');
     // 关系：发布者是用户时沿用"与用户的关系"；
     // 发布者是其他角色时，我们缺少角色间关系数据，明确说明是朋友圈社交关系，
     // 避免把"与用户的关系"错套在发布者身上（这是误认用户的主要来源之一）
@@ -450,8 +449,7 @@ class MomentAiService {
         : '你与$ownerDesc 同在一个朋友圈，是普通朋友关系';
     // 聊天记录只在与"用户"相关的互动中附带：
     // 发布者是其他角色时省略，否则"角色与用户的聊天记录"会诱导模型把发布者当成用户
-    final chatSection =
-        ownerIsUser ? _chatHistorySection(chatHistory) : '';
+    final chatSection = ownerIsUser ? _chatHistorySection(chatHistory) : '';
     return '以下是$ownerDesc 刚发布的一条朋友圈（JSON 格式）：\n'
         '$json\n\n'
         '$relationDesc\n\n'
@@ -549,10 +547,8 @@ class MomentAiService {
 
   /// 组装「长期记忆」段落（无记忆点时返回空串）。
   static String _memoryPointsSection(List<String> memoryPoints) {
-    final memory = memoryPoints
-        .map((m) => m.trim())
-        .where((m) => m.isNotEmpty)
-        .toList();
+    final memory =
+        memoryPoints.map((m) => m.trim()).where((m) => m.isNotEmpty).toList();
     if (memory.isEmpty) return '';
     return '## 你的长期记忆\n'
         '这些是用户主动保存的、关于你们之间重要约定与经历的长期记忆，'
@@ -587,10 +583,12 @@ class MomentAiService {
     if (decoded is! Map<String, dynamic>) {
       throw const LLMException('模型返回的不是有效的 JSON 决策');
     }
-    final like = _readBool(decoded, const ['like', 'liked', 'is_like', 'like_it']);
-    final comment = (decoded['comment'] ?? decoded['content'] ?? decoded['reply'] ?? '')
-        .toString()
-        .trim();
+    final like =
+        _readBool(decoded, const ['like', 'liked', 'is_like', 'like_it']);
+    final comment =
+        (decoded['comment'] ?? decoded['content'] ?? decoded['reply'] ?? '')
+            .toString()
+            .trim();
     return MomentDecision(like: like ?? false, comment: comment);
   }
 
@@ -695,8 +693,7 @@ class MomentAiService {
   }) async {
     final replyKey = _replyKey(character.id, moment.id);
     if (_replyingMomentIds.contains(replyKey)) {
-      DevLogService.instance
-          .log('「${character.displayName}」评论回复进行中，跳过重复触发');
+      DevLogService.instance.log('「${character.displayName}」评论回复进行中，跳过重复触发');
       return;
     }
     _replyingMomentIds.add(replyKey);
@@ -803,8 +800,7 @@ class MomentAiService {
                 '${LLMService.estimateTokens(system) + LLMService.estimateTokens(userPrompt)} token');
           }
         } catch (e) {
-          DevLogService.instance.log(
-              '「${character.displayName}」评论回复压缩失败，按原文回复：'
+          DevLogService.instance.log('「${character.displayName}」评论回复压缩失败，按原文回复：'
               '${LLMService.describeException(e)}');
         }
       } else if (model.contextLength > 0) {
@@ -824,7 +820,8 @@ class MomentAiService {
         maxTokens: 200,
       );
       // 累计该次朋友圈评论回复消耗
-      TokenUsageProvider.instance.addUsage(TokenUsageProvider.kMomentUsageId, result.usage);
+      TokenUsageProvider.instance
+          .addUsage(TokenUsageProvider.kMomentUsageId, result.usage);
       final reply = _cleanReply(result.content);
       if (reply.isEmpty) return;
 
@@ -980,8 +977,7 @@ class _InteractionBreakpoint {
           const [],
       totalFailures: (json['total_failures'] as num?)?.toInt() ?? 0,
       modelId: json['model_id'] as String? ?? '',
-      ownerId: json['owner_id'] as String? ??
-          CharacterProvider.selfCharacterId,
+      ownerId: json['owner_id'] as String? ?? CharacterProvider.selfCharacterId,
     );
   }
 

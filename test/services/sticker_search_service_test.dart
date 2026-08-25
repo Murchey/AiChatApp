@@ -40,4 +40,38 @@ void main() {
 
     expect(result, isEmpty);
   });
+
+  test('searchAll merges pack stickers and user stickers with ranking', () {
+    final pack = StickerPack(
+      id: 'p1',
+      name: '上班日常',
+      author: '测试作者',
+      coverImagePath: '/packs/p1/1.png',
+      imagePaths: const ['/packs/p1/1.png', '/packs/p1/2.png'],
+      importedAt: now,
+      labels: const {0: '猫猫傲娇', 1: '面无表情'},
+    );
+
+    final matches = StickerSearchService.searchAll(
+      userStickers: [
+        sticker(id: 'u1', label: '熊猫头无语', keywords: ['无语'], emotions: ['无奈'])
+      ],
+      packs: [pack],
+      query: '傲娇',
+    );
+
+    expect(matches, isNotEmpty);
+    expect(matches.first.imagePath, '/packs/p1/1.png'); // 单图备注权重最高
+    expect(matches.first.label, '猫猫傲娇');
+  });
+
+  test('searchAll returns empty when nothing matches', () {
+    final matches = StickerSearchService.searchAll(
+      userStickers: [sticker(id: 'u1', label: '开心')],
+      packs: const [],
+      query: '睡觉',
+    );
+
+    expect(matches, isEmpty);
+  });
 }

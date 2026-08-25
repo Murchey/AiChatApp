@@ -41,6 +41,7 @@ class PromptBuilder {
     String activeEnd = '',
     List<String> memoryPoints = const [],
     String extraContext = '',
+    bool roleplayMode = false,
   }) {
     final active = _inActivePeriod(currentTime, activeStart, activeEnd);
     final memory =
@@ -59,7 +60,7 @@ ${memory.map((m) => '- $m').join('\n')}'''}
 ${extra.isEmpty ? '' : '\n$extra\n'}
 ## 回复要求
 1. 消息内容必须极度口语化，像真实微信聊天，允许语气词、标点省略、表情包文字（如[捂脸]）或不规范大小写。
-2. ${replyToUser ? '针对用户最近发来的消息，把想说的话拆分为 3~6 条短消息进行回复，每条消息 5~10 个字，最多不超过 20 个字。' : '模拟真实微信聊天习惯：把想说的话拆分为 3~6 条短消息，每条消息 5~10 个字，最多不超过 20 个字。'}
+2. ${roleplayMode ? '使用括号动作流语C格式：用（动作/神态/环境描写）描写动作，后接自然台词；不要拆成短信，也不要输出 JSON。' : replyToUser ? '针对用户最近发来的消息，把想说的话拆分为 3~6 条短消息进行回复，每条消息 5~10 个字，最多不超过 20 个字。' : '模拟真实微信聊天习惯：把想说的话拆分为 3~6 条短消息，每条消息 5~10 个字，最多不超过 20 个字。'}
 3. ${active ? '当前正处于用户设定的活跃时段（$activeStart ~ $activeEnd）内：即使时间看起来较晚，也绝对不要主动道别、说晚安或提前结束对话，继续保持活跃、自然地陪用户聊天。' : '结合"当前时间"和你的"人设作息"判断：如果当前时间极不合理（如凌晨3点且你不是夜猫子），可以跳过本次回复。'}'''
         .trim();
 
@@ -119,10 +120,24 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
     required String characterName,
     bool replyToUser = false,
     DateTime? currentTime,
+    bool roleplayMode = false,
   }) {
     final timeLine = currentTime == null
         ? ''
         : '\n当前时间：${formatTime(currentTime)} (格式: YYYY-MM-DD HH:mm:ss)';
+    if (roleplayMode) {
+      return '【系统指令】现在请以 $characterName 的身份，'
+          '${replyToUser ? '回复用户最近发来的消息' : '主动给用户发消息'}。'
+          '请使用括号动作流语C格式，不要输出 JSON、Markdown 或任何解释。'
+          '格式规则：用全角圆括号描写动作、神态或环境，台词直接写在括号后；'
+          '例如：（指尖轻轻叩击桌面，目光并未从书页上移开）这茶凉了，换一盏吧。'
+          '（抬眼看向你，语气平淡）你方才说的事，我再想想。'
+          '动作必须使用（动作/神态/环境描写），台词与动作自然交替。'
+          '不要把动作和台词放进方括号或 JSON。'
+          '如确实需要发送用户已有的表情包，可在动作流中单独加入至多一条'
+          '[[查询表情包:情绪或场景关键词]]，应用会自动替换为真实表情包。'
+          '不要猜测表情包路径或编号。$timeLine';
+    }
     return '【系统指令】现在请以 $characterName 的身份，'
         '${replyToUser ? '回复用户最近发来的消息' : '主动给用户发几条消息'}。'
         '你的最终回复必须且只能是一个 JSON 字符串数组，'

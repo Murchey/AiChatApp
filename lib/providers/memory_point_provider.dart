@@ -26,9 +26,7 @@ class MemoryPointProvider extends ChangeNotifier {
     if (_loaded) return;
     _loaded = true;
     final prefs = await SharedPreferences.getInstance();
-    final keys = prefs.getKeys()
-        .where((k) => k.startsWith(_prefix))
-        .toList();
+    final keys = prefs.getKeys().where((k) => k.startsWith(_prefix)).toList();
     for (final key in keys) {
       final characterId = key.substring(_prefix.length);
       final raw = prefs.getString(key);
@@ -46,10 +44,8 @@ class MemoryPointProvider extends ChangeNotifier {
 
   /// 为角色添加一条记忆点（批量去重：内容相同的只保留一条）
   Future<void> addPoints(String characterId, List<String> contents) async {
-    final clean = contents
-        .map((c) => c.trim())
-        .where((c) => c.isNotEmpty)
-        .toList();
+    final clean =
+        contents.map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
     if (clean.isEmpty) return;
     final existing = _pointsByCharacter[characterId] ?? [];
     final seen = existing.map((p) => p.content).toSet();
@@ -67,7 +63,8 @@ class MemoryPointProvider extends ChangeNotifier {
 
   /// 用角色包的记忆点整体替换某角色的记忆点（内容去重、保留原创建时间）。
   /// 空列表等价于清空该角色的全部记忆点。
-  Future<void> replacePoints(String characterId, List<MemoryPoint> points) async {
+  Future<void> replacePoints(
+      String characterId, List<MemoryPoint> points) async {
     final seen = <String>{};
     final clean = <MemoryPoint>[];
     for (final p in points) {

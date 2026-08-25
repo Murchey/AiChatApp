@@ -29,8 +29,7 @@ class _MemoryPointManageScreenState extends State<MemoryPointManageScreen> {
   }
 
   Future<void> _edit(String pointId, String oldContent) async {
-    final content =
-        await _showEditDialog(title: '编辑记忆点', initial: oldContent);
+    final content = await _showEditDialog(title: '编辑记忆点', initial: oldContent);
     if (content == null || !mounted) return;
     await context
         .read<MemoryPointProvider>()

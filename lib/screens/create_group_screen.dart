@@ -47,9 +47,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final characters = context
-        .watch<CharacterProvider>()
-        .manageableCharacters;
+    final characters = context.watch<CharacterProvider>().manageableCharacters;
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
@@ -60,9 +58,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           child: Text(
             '创建',
             style: TextStyle(
-              color: _canCreate
-                  ? context.accentColor
-                  : context.textSecondaryColor,
+              color:
+                  _canCreate ? context.accentColor : context.textSecondaryColor,
               fontWeight: FontWeight.w600,
             ),
           ),

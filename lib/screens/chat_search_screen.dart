@@ -77,10 +77,14 @@ class _ChatSearchScreenState extends State<ChatSearchScreen> {
     while (true) {
       final idx = lower.indexOf(kw, start);
       if (idx == -1) {
-        if (start < text.length) spans.add(TextSpan(text: text.substring(start)));
+        if (start < text.length) {
+          spans.add(TextSpan(text: text.substring(start)));
+        }
         break;
       }
-      if (idx > start) spans.add(TextSpan(text: text.substring(start, idx)));
+      if (idx > start) {
+        spans.add(TextSpan(text: text.substring(start, idx)));
+      }
       spans.add(TextSpan(
         text: text.substring(idx, idx + kw.length),
         style: TextStyle(
@@ -177,8 +181,7 @@ class _ChatSearchScreenState extends State<ChatSearchScreen> {
   }
 
   /// 结果列表：按会话分组展示，每组以会话头部 + 匹配消息项
-  Widget _buildResultList(
-      List<MapEntry<Conversation, List<Message>>> groups) {
+  Widget _buildResultList(List<MapEntry<Conversation, List<Message>>> groups) {
     final items = <MapEntry<Conversation, Message>>[
       for (final g in groups)
         for (final m in g.value) MapEntry(g.key, m),

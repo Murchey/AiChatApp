@@ -15,10 +15,13 @@ enum AvatarFrameStyle { square, circle }
 enum BubbleStyle {
   /// 默认：矩形圆角 + 描边，背景色可自定义
   classic,
+
   /// sr 崩铁短信样式：大圆角 + 柔和阴影，自带配色（自己=暖棕，对方=浅灰）
   sr,
+
   /// ww 鸣潮样式：上边共线尾巴 + 大圆角弧线，自带配色
   ww,
+
   /// zmd 终末地样式：基于鸣潮的尾巴形状，三角均 15px、尾巴回程弧 10px，
   /// 浅深配色一致（自己=白底黑字带黑描边，对方=深灰底白字）
   zmd,
@@ -43,6 +46,7 @@ extension BubbleStyleX on BubbleStyle {
 enum UiStyle {
   /// 默认：顶部居中标题 + 常规输入栏
   classic,
+
   /// zmd 终末地：标题靠左 + 个性签名副标题 + 在线状态点（绿/红），
   /// 发送按钮深底金边白字，浅深色模式通用
   zmd,
@@ -136,6 +140,8 @@ class SettingsProvider extends ChangeNotifier {
   bool _unreadNotify = true;
   // 开发者模式（在「我」页底部显示通知与日志文本框）
   bool _developerMode = false;
+  // 允许角色在回复中按需发送用户已保存的表情包（默认开启）
+  bool _allowStickerSend = true;
   // 全局角色头像框样式（默认方形）
   AvatarFrameStyle _avatarFrameStyle = AvatarFrameStyle.square;
   // 聊天气泡样式（默认经典）
@@ -151,6 +157,9 @@ class SettingsProvider extends ChangeNotifier {
   String get updateProxyUrl => _updateProxyUrl;
   bool get unreadNotify => _unreadNotify;
   bool get developerMode => _developerMode;
+
+  /// 是否允许角色按需发送用户已保存的表情包
+  bool get allowStickerSend => _allowStickerSend;
   AvatarFrameStyle get avatarFrameStyle => _avatarFrameStyle;
   BubbleStyle get bubbleStyle => _bubbleStyle;
   UiStyle get uiStyle => _uiStyle;
@@ -204,6 +213,7 @@ class SettingsProvider extends ChangeNotifier {
         prefs.getString('update_proxy_url') ?? kProxySources.first;
     _unreadNotify = prefs.getBool('unread_notify') ?? true;
     _developerMode = prefs.getBool('developer_mode') ?? false;
+    _allowStickerSend = prefs.getBool('allow_sticker_send') ?? true;
     _avatarFrameStyle = AvatarFrameStyle.values.firstWhere(
       (s) => s.name == prefs.getString('avatar_frame_style'),
       orElse: () => AvatarFrameStyle.square,
@@ -286,6 +296,14 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 设置是否允许角色按需发送用户已保存的表情包
+  Future<void> setAllowStickerSend(bool value) async {
+    _allowStickerSend = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('allow_sticker_send', value);
+    notifyListeners();
+  }
+
   /// 设置全局角色头像框样式（方形 / 圆形）
   Future<void> setAvatarFrameStyle(AvatarFrameStyle style) async {
     _avatarFrameStyle = style;
@@ -318,9 +336,7 @@ class SettingsProvider extends ChangeNotifier {
     if (!iconDir.existsSync()) iconDir.createSync(recursive: true);
     if (_splashIconPath.isNotEmpty) _deleteFileQuietly(_splashIconPath);
     // 保留原扩展名（便于识别），时间戳避免同名覆盖
-    final ext = sourcePath.contains('.')
-        ? sourcePath.split('.').last
-        : 'img';
+    final ext = sourcePath.contains('.') ? sourcePath.split('.').last : 'img';
     final destPath =
         '${iconDir.path}/splash_${DateTime.now().millisecondsSinceEpoch}.$ext';
     await File(sourcePath).copy(destPath);

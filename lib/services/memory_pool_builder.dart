@@ -85,8 +85,7 @@ class MemoryPoolBuilder {
       sections.add(MapEntry(kMomentsSectionTitle, moments));
     }
 
-    final group =
-        _groupSection(character, groupChatProvider, excludeGroupId);
+    final group = _groupSection(character, groupChatProvider, excludeGroupId);
     if (group != null && !disabled.contains(kGroupSectionTitle)) {
       sections.add(MapEntry(kGroupSectionTitle, group));
     }
@@ -115,9 +114,7 @@ class MemoryPoolBuilder {
       final role = m['role'];
       final content = (m['content'] ?? '').toString().trim();
       if (content.isEmpty) continue;
-      lines.add(role == 'assistant'
-          ? '你：$content'
-          : '用户：$content');
+      lines.add(role == 'assistant' ? '你：$content' : '用户：$content');
     }
     if (lines.isEmpty) return null;
     return '【近期私聊】你和用户最近的聊天：\n${lines.join('\n')}';
@@ -173,16 +170,16 @@ class MemoryPoolBuilder {
     final group = candidates.first;
     final messages = groupChatProvider
         .getMessages(group.id)
-        .where((m) =>
-            m.type == MessageType.text && m.content.trim().isNotEmpty)
+        .where((m) => m.type == MessageType.text && m.content.trim().isNotEmpty)
         .toList();
     if (messages.isEmpty) return null;
     final recent = messages.length > kGroupHistoryCount
         ? messages.sublist(messages.length - kGroupHistoryCount)
         : messages;
     final lines = recent.map((m) {
-      final who =
-          m.isFromUser ? '用户' : (m.senderName.trim().isNotEmpty ? m.senderName.trim() : '成员');
+      final who = m.isFromUser
+          ? '用户'
+          : (m.senderName.trim().isNotEmpty ? m.senderName.trim() : '成员');
       return '$who：${m.content.trim()}';
     }).join('\n');
     return '【近期群聊】你所在的群「${group.name}」（${group.memberCount}人）最近的消息：\n$lines';
@@ -194,11 +191,15 @@ class MemoryPoolBuilder {
       if (character.name.trim().isNotEmpty) '昵称：${character.name.trim()}',
       '关系：${character.userRelationship.trim().isEmpty ? '普通朋友' : character.userRelationship.trim()}',
       if (character.remark.trim().isNotEmpty) '备注：${character.remark.trim()}',
-      if (character.signature.trim().isNotEmpty) '个性签名：${character.signature.trim()}',
+      if (character.signature.trim().isNotEmpty)
+        '个性签名：${character.signature.trim()}',
       if (character.region.trim().isNotEmpty) '地区：${character.region.trim()}',
-      if (character.personality.trim().isNotEmpty) '性格：${character.personality.trim()}',
-      if (character.description.trim().isNotEmpty) '角色介绍：${character.description.trim()}',
-      if (character.greeting.trim().isNotEmpty) '开场白：${character.greeting.trim()}',
+      if (character.personality.trim().isNotEmpty)
+        '性格：${character.personality.trim()}',
+      if (character.description.trim().isNotEmpty)
+        '角色介绍：${character.description.trim()}',
+      if (character.greeting.trim().isNotEmpty)
+        '开场白：${character.greeting.trim()}',
       if (character.tags.isNotEmpty) '标签：${character.tags.join('、')}',
     ];
     final userFields = <String>[

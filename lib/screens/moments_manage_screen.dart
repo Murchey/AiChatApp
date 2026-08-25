@@ -60,9 +60,8 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
 
   /// 确认导入：匹配已有角色则更新其朋友圈，未匹配则新建角色
   Future<void> _confirmImport(List<MomentsPackEntry> entries) async {
-    final valid = entries
-        .where((e) => e.error == null && e.moments.isNotEmpty)
-        .toList();
+    final valid =
+        entries.where((e) => e.error == null && e.moments.isNotEmpty).toList();
     if (valid.isEmpty) {
       _showTip('该 zip 中没有可导入的朋友圈数据');
       return;

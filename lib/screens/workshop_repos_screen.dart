@@ -159,7 +159,8 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
               return GestureDetector(
                 onTap: () => Navigator.pop(ctx, repo),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                   decoration: const BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
@@ -526,7 +527,8 @@ class _TagChip extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+        style:
+            TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -561,8 +563,9 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
     _pathController = TextEditingController(text: widget.initialPath ?? '');
     _proxyUrl = initProxy;
     // 初始代理为自定义时，回填自定义输入框内容
-    _customProxy =
-        initProxy.isNotEmpty && !kProxySources.contains(initProxy) ? initProxy : '';
+    _customProxy = initProxy.isNotEmpty && !kProxySources.contains(initProxy)
+        ? initProxy
+        : '';
   }
 
   @override

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ChatBackgroundInfo {
   /// 背景图片在本地的持久化路径（不存在图片时为空字符串）
   final String imagePath;
+
   /// 高斯模糊度（0 = 不模糊）
   final double blur;
 
@@ -61,9 +62,7 @@ class ChatBackgroundProvider extends ChangeNotifier {
     final old = _cache[chatId] ?? await _loadFromPrefs(chatId);
     if (old.hasImage && old.fileExists) _deleteFileQuietly(old.imagePath);
     // 保留原扩展名（便于识别），时间戳避免同名覆盖
-    final ext = sourcePath.contains('.')
-        ? sourcePath.split('.').last
-        : 'img';
+    final ext = sourcePath.contains('.') ? sourcePath.split('.').last : 'img';
     final destPath =
         '${bgDir.path}/${chatId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
     await File(sourcePath).copy(destPath);

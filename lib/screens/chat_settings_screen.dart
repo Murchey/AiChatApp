@@ -9,6 +9,7 @@ import '../providers/chat_settings_provider.dart';
 
 /// 上下文条数上限（滑条最右端为【无限制】）
 const int kMaxContextCount = 999;
+
 /// 滑条最大值：kMaxContextCount 时为有限条数，此值表示【无限制】
 const int kUnlimitedSliderValue = kMaxContextCount + 1;
 
@@ -16,11 +17,15 @@ const int kUnlimitedSliderValue = kMaxContextCount + 1;
 String _formatContextLength(int length) {
   if (length >= 1000000) {
     final m = length / 1000000;
-    return m == m.roundToDouble() ? '${m.round()}M' : '${m.toStringAsFixed(1)}M';
+    return m == m.roundToDouble()
+        ? '${m.round()}M'
+        : '${m.toStringAsFixed(1)}M';
   }
   if (length >= 1000) {
     final k = length / 1000;
-    return k == k.roundToDouble() ? '${k.round()}K' : '${k.toStringAsFixed(1)}K';
+    return k == k.roundToDouble()
+        ? '${k.round()}K'
+        : '${k.toStringAsFixed(1)}K';
   }
   return '$length';
 }
@@ -103,8 +108,10 @@ class ChatSettingsScreen extends StatelessWidget {
                             width: width,
                             child: ColoredBox(
                               color: context.isDark
-                                  ? CupertinoColors.white.withValues(alpha: 0.15)
-                                  : CupertinoColors.black.withValues(alpha: 0.08),
+                                  ? CupertinoColors.white
+                                      .withValues(alpha: 0.15)
+                                  : CupertinoColors.black
+                                      .withValues(alpha: 0.08),
                             ),
                           ),
                         ),
@@ -209,7 +216,8 @@ class ChatSettingsScreen extends StatelessWidget {
   }
 
   /// 弹出上下文条数编辑弹窗（点击显示小窗触发）
-  void _showEditContextCount(BuildContext context, ChatSettingsProvider settings) {
+  void _showEditContextCount(
+      BuildContext context, ChatSettingsProvider settings) {
     final controller = TextEditingController(
       text: settings.isUnlimitedContext ? '' : '${settings.contextCount}',
     );
@@ -310,6 +318,9 @@ class ChatSettingsScreen extends StatelessWidget {
     final settings = context.watch<ChatSettingsProvider>();
     final api = context.watch<ApiProvider>();
     final chat = context.watch<ChatProvider>();
+    final segmentedTextColor = context.accentColor.computeLuminance() > 0.5
+        ? CupertinoColors.black
+        : CupertinoColors.white;
 
     // 滑条取值：无限制时为滑条最大值，否则为条数
     final sliderValue = settings.isUnlimitedContext
@@ -360,11 +371,14 @@ class ChatSettingsScreen extends StatelessWidget {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: context.accentColor.withValues(alpha: 0.12),
+                              color:
+                                  context.accentColor.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              settings.isUnlimitedContext ? '无限制' : '${settings.contextCount} 条',
+                              settings.isUnlimitedContext
+                                  ? '无限制'
+                                  : '${settings.contextCount} 条',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -475,9 +489,8 @@ class ChatSettingsScreen extends StatelessWidget {
                     SizedBox(
                       width: double.infinity,
                       child: CupertinoSlider(
-                        value: settings.momentMemoryCount
-                            .clamp(0, 10)
-                            .toDouble(),
+                        value:
+                            settings.momentMemoryCount.clamp(0, 10).toDouble(),
                         min: 0,
                         max: 10,
                         divisions: 10,
@@ -514,6 +527,48 @@ class ChatSettingsScreen extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+              ),
+            ],
+          ),
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('回复格式'),
+            children: [
+              CupertinoListTile(
+                title: const Text('语C/短信模式'),
+                subtitle: Text(
+                  settings.isRoleplayMode
+                      ? '语C：括号动作流，例如（抬眼看向你）你来了。'
+                      : '短信：当前使用的短消息分条格式',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSlidingSegmentedControl<ChatMessageMode>(
+                  // 不使用 Cupertino 默认蓝灰配色，跟随应用自定义浅色/暗色主题。
+                  backgroundColor: context.fieldBgColor,
+                  thumbColor: context.accentColor,
+                  padding: const EdgeInsets.all(3),
+                  groupValue: settings.messageMode,
+                  children: {
+                    ChatMessageMode.sms: Text(
+                      '短信',
+                      style: TextStyle(color: segmentedTextColor),
+                    ),
+                    ChatMessageMode.roleplay: Text(
+                      '语C',
+                      style: TextStyle(color: segmentedTextColor),
+                    ),
+                  },
+                  onValueChanged: (mode) {
+                    if (mode != null) settings.setMessageMode(mode);
+                  },
                 ),
               ),
             ],
@@ -565,8 +620,7 @@ class ChatSettingsScreen extends StatelessWidget {
                             vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color:
-                                context.accentColor.withValues(alpha: 0.12),
+                            color: context.accentColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -589,8 +643,7 @@ class ChatSettingsScreen extends StatelessWidget {
                         max: 0.9,
                         divisions: 12,
                         activeColor: context.accentColor,
-                        onChanged: (v) =>
-                            settings.setCompressThreshold(v),
+                        onChanged: (v) => settings.setCompressThreshold(v),
                       ),
                     ),
                     Row(

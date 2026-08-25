@@ -60,8 +60,7 @@ class SplashIconView extends StatelessWidget {
               style: TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
-                color:
-                    dark ? CupertinoColors.white : const Color(0xFF000000),
+                color: dark ? CupertinoColors.white : const Color(0xFF000000),
                 letterSpacing: 2,
               ),
             ),

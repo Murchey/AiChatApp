@@ -101,7 +101,8 @@ class ApiProvider extends ChangeNotifier {
         for (var i = 0; i < _models.length; i++) {
           final m = _models[i];
           var modelName = m.modelName.trim();
-          if (modelName == 'deepseek-chat' || modelName == 'deepseek-reasoner') {
+          if (modelName == 'deepseek-chat' ||
+              modelName == 'deepseek-reasoner') {
             modelName = 'deepseek-v4-flash';
           }
           var contextLength = m.contextLength;

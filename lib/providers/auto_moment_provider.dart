@@ -88,8 +88,7 @@ class AutoMomentProvider extends ChangeNotifier {
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
       map.forEach((id, v) {
-        _configs[id] =
-            AutoMomentConfig.fromJson(v as Map<String, dynamic>);
+        _configs[id] = AutoMomentConfig.fromJson(v as Map<String, dynamic>);
       });
     } catch (_) {
       _configs.clear();

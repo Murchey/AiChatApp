@@ -73,12 +73,12 @@ class CharacterAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCircle =
-        context.watch<SettingsProvider>().avatarFrameStyle ==
+    final isCircle = context.watch<SettingsProvider>().avatarFrameStyle ==
         AvatarFrameStyle.circle;
     final hasImage = base64.isNotEmpty;
-    final radius = isCircle ? null : (borderRadius ?? BorderRadius.circular(size * 0.16));
-    
+    final radius =
+        isCircle ? null : (borderRadius ?? BorderRadius.circular(size * 0.16));
+
     // 裁剪器：圆形用 ClipOval，方形用 ClipRRect（统一为 Widget 函数签名，避免
     // ClipOval.new 这种无参构造 tear-off 与闭包类型不一致导致运行时类型错误）
     final Widget Function(Widget) clipper = isCircle
@@ -93,8 +93,7 @@ class CharacterAvatar extends StatelessWidget {
         borderRadius: isCircle ? null : radius,
         color: hasImage
             ? null
-            : backgroundColor ??
-                  context.accentColor.withValues(alpha: 0.15),
+            : backgroundColor ?? context.accentColor.withValues(alpha: 0.15),
         border: border,
       ),
       alignment: Alignment.center,

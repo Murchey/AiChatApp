@@ -90,8 +90,7 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
     final newScale =
         (_gestureScaleStart * details.scale).clamp(_minScale, _maxScale);
     // 保持手指下的场景点在缩放前后位置不变
-    final focalScene =
-        (_focalStart - _gestureOffsetStart) / _gestureScaleStart;
+    final focalScene = (_focalStart - _gestureOffsetStart) / _gestureScaleStart;
     var newOffset = details.localFocalPoint - focalScene * newScale;
     final childW = _fitW * newScale;
     final childH = _fitH * newScale;
@@ -122,7 +121,8 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
       // 确保导出帧已绘制完成（含最后一次缩放/拖动）
       await WidgetsBinding.instance.endOfFrame;
       final captured = await boundary.toImage(pixelRatio: 3.0);
-      final byteData = await captured.toByteData(format: ui.ImageByteFormat.png);
+      final byteData =
+          await captured.toByteData(format: ui.ImageByteFormat.png);
       captured.dispose();
       final png = byteData?.buffer.asUint8List();
       if (png == null) throw Exception('图像编码失败');
@@ -147,8 +147,7 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
   @override
   Widget build(BuildContext context) {
     // 缩小后露出的空白区域按当前深浅色模式补色
-    final bg =
-        context.isDark ? CupertinoColors.black : CupertinoColors.white;
+    final bg = context.isDark ? CupertinoColors.black : CupertinoColors.white;
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('调整图片'),

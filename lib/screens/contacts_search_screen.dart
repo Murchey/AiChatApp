@@ -77,10 +77,9 @@ class _ContactsSearchScreenState extends State<ContactsSearchScreen> {
                         if (provider.selfCharacter != null)
                           provider.selfCharacter!,
                         ...provider.manageableCharacters,
-                      ]
-                          .where((c) => _matches(c, query))
-                          .toList()
-                        ..sort((a, b) => a.id == CharacterProvider.selfCharacterId
+                      ].where((c) => _matches(c, query)).toList()
+                        ..sort((a, b) => a.id ==
+                                CharacterProvider.selfCharacterId
                             ? -1
                             : (b.id == CharacterProvider.selfCharacterId
                                 ? 1

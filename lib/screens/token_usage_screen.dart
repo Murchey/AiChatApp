@@ -133,7 +133,8 @@ class _TokenUsageScreenState extends State<TokenUsageScreen> {
               header: const Text('私聊'),
               children: [
                 for (final e in privateEntries)
-                  _buildPrivateTile(context, e, chatProvider, characterProvider),
+                  _buildPrivateTile(
+                      context, e, chatProvider, characterProvider),
               ],
             ),
           if (groupEntries.isNotEmpty)
@@ -160,7 +161,10 @@ class _TokenUsageScreenState extends State<TokenUsageScreen> {
                 onPressed: () => _confirmReset(context),
                 child: const Text(
                   '重置 tokens 计数',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color.fromRGBO(250, 250, 250, 100)),
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color.fromRGBO(250, 250, 250, 100)),
                 ),
               ),
             ),
@@ -188,14 +192,13 @@ class _TokenUsageScreenState extends State<TokenUsageScreen> {
     ChatProvider chatProvider,
     CharacterProvider characterProvider,
   ) {
-    final conversation = _firstById(
-        chatProvider.conversations, e.key, (c) => c.id);
+    final conversation =
+        _firstById(chatProvider.conversations, e.key, (c) => c.id);
     final character = conversation != null
         ? characterProvider.getCharacterById(conversation.characterId)
         : null;
-    final title = character?.displayName ??
-        conversation?.characterName ??
-        '已删除的会话';
+    final title =
+        character?.displayName ?? conversation?.characterName ?? '已删除的会话';
     final avatar = conversation?.characterAvatar ?? '';
     return _UsageTile(
       title: title,
@@ -211,7 +214,8 @@ class _TokenUsageScreenState extends State<TokenUsageScreen> {
     GroupChatProvider groupProvider,
   ) {
     final group = _firstById(groupProvider.groups, e.key, (g) => g.id);
-    final title = group == null ? '已删除的群聊' : '${group.name}（${group.memberCount}）';
+    final title =
+        group == null ? '已删除的群聊' : '${group.name}（${group.memberCount}）';
     return _UsageTile(
       title: title,
       avatar: group?.avatar ?? '',

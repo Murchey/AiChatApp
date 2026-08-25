@@ -15,7 +15,8 @@ class GroupChatSettingsScreen extends StatefulWidget {
   const GroupChatSettingsScreen({super.key, required this.groupId});
 
   @override
-  State<GroupChatSettingsScreen> createState() => _GroupChatSettingsScreenState();
+  State<GroupChatSettingsScreen> createState() =>
+      _GroupChatSettingsScreenState();
 }
 
 class _GroupChatSettingsScreenState extends State<GroupChatSettingsScreen> {
@@ -157,8 +158,8 @@ class _GroupChatSettingsScreenState extends State<GroupChatSettingsScreen> {
                             ),
                           ),
                           GestureDetector(
-                            onTap: () =>
-                                _showEditContextCount(context, groupProvider, effective),
+                            onTap: () => _showEditContextCount(
+                                context, groupProvider, effective),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,

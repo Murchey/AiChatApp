@@ -119,9 +119,8 @@ class _MemoryPoolManagerScreenState extends State<MemoryPoolManagerScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: CupertinoSlider(
-                    value: chatSettings.momentMemoryCount
-                        .clamp(0, 10)
-                        .toDouble(),
+                    value:
+                        chatSettings.momentMemoryCount.clamp(0, 10).toDouble(),
                     min: 0,
                     max: 10,
                     divisions: 10,
@@ -198,8 +197,9 @@ class _CharacterCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final disabled =
-        context.watch<ChatSettingsProvider>().disabledPoolSectionsFor(character.id);
+    final disabled = context
+        .watch<ChatSettingsProvider>()
+        .disabledPoolSectionsFor(character.id);
 
     String? contentOf(String title) {
       for (final e in sections) {
@@ -250,7 +250,8 @@ class _CharacterCard extends StatelessWidget {
             _SectionRow(
               title: MemoryPoolBuilder.kPrivateSectionTitle,
               content: contentOf(MemoryPoolBuilder.kPrivateSectionTitle),
-              enabled: !disabled.contains(MemoryPoolBuilder.kPrivateSectionTitle),
+              enabled:
+                  !disabled.contains(MemoryPoolBuilder.kPrivateSectionTitle),
               onChanged: (v) => onSectionChanged(
                 MemoryPoolBuilder.kPrivateSectionTitle,
                 v,

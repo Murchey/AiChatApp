@@ -134,8 +134,7 @@ class _ProviderConfigScreenState extends State<ProviderConfigScreen> {
     }
     final added = <ApiModel>[];
     for (final m in selected) {
-      final contextLength =
-          LLMService.localContextLength(m.modelName) ?? 8000;
+      final contextLength = LLMService.localContextLength(m.modelName) ?? 8000;
       added.add(await api.addModel(
         displayName: m.displayName,
         modelName: m.modelName,

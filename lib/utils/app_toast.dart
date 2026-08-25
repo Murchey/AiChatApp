@@ -9,7 +9,8 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 ///
 /// 使用根 Overlay 插入，任意页面 / 后台任务均可调用，
 /// 页面路由切换不影响提示展示。
-void showAppToast(String message, {Duration duration = const Duration(milliseconds: 2000)}) {
+void showAppToast(String message,
+    {Duration duration = const Duration(milliseconds: 2000)}) {
   final navigator = appNavigatorKey.currentState;
   final overlay = navigator?.overlay;
   if (overlay == null || message.isEmpty) return;

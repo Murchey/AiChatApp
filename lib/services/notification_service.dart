@@ -30,9 +30,8 @@ class NotificationService {
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
     );
     await _plugin.initialize(settings: initSettings);
-    final android =
-        _plugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
     // Android 13+（API 33）需要运行时通知权限
     await android?.requestNotificationsPermission();
     await android?.createNotificationChannel(
@@ -49,7 +48,7 @@ class NotificationService {
 
   /// 已分配的通知 id（同一会话稳定同一 id，不同会话之间避免碰撞）
   final Set<int> _usedIds = {};
-  
+
   /// 会话 ID 到通知 ID 的缓存，确保同一个会话始终使用相同的通知 ID
   final Map<String, int> _conversationIdToNotificationId = {};
 
@@ -61,7 +60,7 @@ class NotificationService {
     if (_conversationIdToNotificationId.containsKey(conversationId)) {
       return _conversationIdToNotificationId[conversationId]!;
     }
-    
+
     var id = conversationId.hashCode & 0x7fffffff;
     while (_usedIds.contains(id)) {
       id = (id + 1) & 0x7fffffff;

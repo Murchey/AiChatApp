@@ -7,8 +7,10 @@ import '../models/moments_pack_entry.dart';
 import '../models/workshop_asset.dart';
 import '../models/workshop_repository.dart';
 import '../providers/character_provider.dart';
+import '../providers/sticker_provider.dart';
 import '../providers/workshop_provider.dart';
 import '../services/character_pack_service.dart';
+import '../services/sticker_pack_service.dart';
 import '../services/workshop_service.dart';
 import '../utils/conversation_relink.dart';
 import '../utils/pinyin_util.dart';
@@ -44,14 +46,17 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
   final Map<String, bool> _checked = {
     kCharacterPackTag: false,
     kGamePackTag: false,
+    kStickerPackTag: false,
   };
   final Map<String, List<_ZipItem>> _items = {
     kCharacterPackTag: [],
     kGamePackTag: [],
+    kStickerPackTag: [],
   };
   final Map<String, bool> _loading = {
     kCharacterPackTag: false,
     kGamePackTag: false,
+    kStickerPackTag: false,
   };
   final Set<String> _selected = {};
   bool _importing = false;
@@ -66,11 +71,15 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     super.dispose();
   }
 
-  String _categoryLabel(String tag) =>
-      tag == kCharacterPackTag ? '角色分类' : '游戏分类';
+  String _categoryLabel(String tag) => switch (tag) {
+        kCharacterPackTag => '角色分类',
+        kGamePackTag => '游戏分类',
+        _ => '表情包分类',
+      };
 
-  List<_ZipItem> get _allItems =>
-      [..._items[kCharacterPackTag]!, ..._items[kGamePackTag]!];
+  List<_ZipItem> get _allItems => [
+        for (final tag in kWorkshopPackTags) ..._items[tag]!,
+      ];
 
   /// 搜索结果：仅在已勾选（标记开启）的两个分类内搜索。
   /// 忽略大小写，同时匹配「名称原文」与「完整拼音」：
@@ -112,6 +121,147 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     if (value) await _loadCategory(tag);
   }
 
+  Future<void> _openCategoryDrawer() {
+    return showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '关闭分类筛选',
+      barrierColor: CupertinoColors.black.withValues(alpha: 0.28),
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (drawerContext, animation, secondaryAnimation) =>
+          StatefulBuilder(
+        builder: (drawerContext, setDrawerState) => Align(
+          alignment: Alignment.centerRight,
+          child: SafeArea(
+            left: false,
+            child: Container(
+              width: MediaQuery.sizeOf(drawerContext).width * 0.82,
+              height: double.infinity,
+              color: context.scaffoldColor,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 12, 10),
+                    child: Row(
+                      children: [
+                        Icon(CupertinoIcons.slider_horizontal_3,
+                            color: context.accentColor),
+                        const SizedBox(width: 8),
+                        Text(
+                          '筛选分类',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                        const Spacer(),
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: () => Navigator.pop(drawerContext),
+                          child: const Icon(CupertinoIcons.xmark),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      children: [
+                        Text(
+                          '选择要浏览的资产分类，开启时会自动拉取对应仓库内容。',
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.4,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildCategoryDrawerTile(
+                          drawerContext: drawerContext,
+                          setDrawerState: setDrawerState,
+                          tag: kCharacterPackTag,
+                          icon: CupertinoIcons.person_2_fill,
+                          title: '按角色分类',
+                          subtitle: '角色包（V1.1.0）',
+                        ),
+                        _buildCategoryDrawerTile(
+                          drawerContext: drawerContext,
+                          setDrawerState: setDrawerState,
+                          tag: kGamePackTag,
+                          icon: CupertinoIcons.gamecontroller_fill,
+                          title: '按游戏分类',
+                          subtitle: '游戏包（V1.0.0）',
+                        ),
+                        _buildCategoryDrawerTile(
+                          drawerContext: drawerContext,
+                          setDrawerState: setDrawerState,
+                          tag: kStickerPackTag,
+                          icon: CupertinoIcons.smiley,
+                          title: '按表情包分类',
+                          subtitle: '表情包包（V1.3.0）',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final position = Tween<Offset>(
+          begin: const Offset(1, 0),
+          end: Offset.zero,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation);
+        return SlideTransition(
+          position: position,
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
+    );
+  }
+
+  Widget _buildCategoryDrawerTile({
+    required BuildContext drawerContext,
+    required StateSetter setDrawerState,
+    required String tag,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final itemCount = _items[tag]?.length ?? 0;
+    final loading = _loading[tag] == true;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: context.listBgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: CupertinoListTile(
+        leading: Icon(icon, color: context.accentColor),
+        title: Text(title),
+        subtitle: Text(
+          loading
+              ? '正在加载…'
+              : '$subtitle${_checked[tag] == true ? ' · $itemCount 个资产' : ''}',
+          style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+        ),
+        trailing: CupertinoSwitch(
+          value: _checked[tag] ?? false,
+          onChanged: (value) async {
+            final future = _toggleCategory(tag, value);
+            // _toggleCategory 在首次 await 前已同步更新分类状态，立即刷新开关。
+            setDrawerState(() {});
+            await future;
+            if (mounted) setDrawerState(() {});
+          },
+        ),
+      ),
+    );
+  }
+
   /// 拉取所有已配置仓库中该 tag 下的 zip 资产
   Future<void> _loadCategory(String tag) async {
     setState(() => _loading[tag] = true);
@@ -140,8 +290,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
   /// 下载选中的 zip 并逐个导入（新机制：先批量下载，再逐个确认导入）
   Future<void> _downloadAndImport() async {
     if (_importing) return;
-    final selected =
-        _allItems.where((i) => _selected.contains(i.key)).toList();
+    final selected = _allItems.where((i) => _selected.contains(i.key)).toList();
     if (selected.isEmpty) return;
     setState(() => _importing = true);
     final workshop = context.read<WorkshopProvider>();
@@ -234,17 +383,56 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
       // parseMomentsPack 也失败
     }
 
+    try {
+      // 尝试表情包解析（V1.3.0 zip：图片 + 可选同名 .txt 备注）
+      final pack = await StickerPackService.parseStickerPackZip(
+        path,
+        name: item.asset.displayName,
+        author: item.repoName,
+      );
+      if (!mounted) return false;
+      if (pack != null) {
+        final confirmed = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('导入表情包'),
+            content: Text(
+              '将导入表情包「${pack.name}」（${pack.imagePaths.length} 张，作者：${pack.author}），'
+              '可在「设置 → 管理表情包」中管理或删除。',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('取消'),
+                onPressed: () => Navigator.pop(ctx, false),
+              ),
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('确定'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed == true && mounted) {
+          await context.read<StickerProvider>().importStickerPack(pack);
+        }
+        return true;
+      }
+    } catch (_) {
+      // 表情包解析失败，继续走类型错误提示
+    }
+
     if (mounted) {
-      _showTip('「${item.asset.displayName}」导入失败：zip 中未找到角色数据或朋友圈数据');
+      _showTip('「${item.asset.displayName}」导入失败：zip 中未找到角色数据、朋友圈数据或表情包图片');
     }
     return false;
   }
 
   /// 确认导入朋友圈：匹配已有角色则更新其朋友圈，未匹配则新建角色
   Future<void> _confirmImportMoments(List<MomentsPackEntry> entries) async {
-    final valid = entries
-        .where((e) => e.error == null && e.moments.isNotEmpty)
-        .toList();
+    final valid =
+        entries.where((e) => e.error == null && e.moments.isNotEmpty).toList();
     if (valid.isEmpty) {
       _showTip('该 zip 中没有可导入的朋友圈数据');
       return;
@@ -336,68 +524,35 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('创意工坊'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _openRepos,
-          child: Icon(
-            CupertinoIcons.gear,
-            size: 22,
-            color: context.accentColor,
-          ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              onPressed: _openCategoryDrawer,
+              child: Icon(
+                CupertinoIcons.slider_horizontal_3,
+                size: 22,
+                color: context.accentColor,
+              ),
+            ),
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              onPressed: _openRepos,
+              child: Icon(
+                CupertinoIcons.gear,
+                size: 22,
+                color: context.accentColor,
+              ),
+            ),
+          ],
         ),
       ),
       child: Column(
         children: [
           _buildRepoSection(context, provider),
-          // 搜索框：位于「可用仓库栏」下方、「分类勾选栏」上方
+          // 搜索范围由右上角筛选 Drawer 中开启的分类决定。
           _buildSearchBar(context),
-          // 分类勾选
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const SizedBox.shrink(),
-            children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.person_2_fill,
-                  color: context.accentColor,
-                ),
-                title: const Text('按角色分类'),
-                subtitle: Text(
-                  '角色包（V1.1.0）',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: CupertinoSwitch(
-                  value: _checked[kCharacterPackTag]!,
-                  onChanged: (v) => _toggleCategory(kCharacterPackTag, v),
-                ),
-              ),
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.gamecontroller_fill,
-                  color: context.accentColor,
-                ),
-                title: const Text('按游戏分类'),
-                subtitle: Text(
-                  '游戏包（V1.0.0）',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: CupertinoSwitch(
-                  value: _checked[kGamePackTag]!,
-                  onChanged: (v) => _toggleCategory(kGamePackTag, v),
-                ),
-              ),
-            ],
-          ),
           // 资产 zip 列表
           Expanded(child: _buildAssetsList(context)),
           // 底部下载导入按钮
@@ -408,7 +563,8 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
               child: CupertinoButton.filled(
                 onPressed:
                     _selected.isEmpty || _importing ? null : _downloadAndImport,
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
@@ -515,6 +671,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     final parts = <String>[
       if (repo.hasCharacter) '角色分类',
       if (repo.hasGame) '游戏分类',
+      if (repo.hasSticker) '表情包分类',
     ];
     return parts.join('·');
   }
@@ -575,7 +732,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Text(
-            '勾选上方「按角色分类」或「按游戏分类」查看可下载的资产 zip',
+            '点击右上角筛选按钮，选择要浏览的资产分类',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 14,
@@ -624,6 +781,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     final items = _items[tag]!;
     final loading = _loading[tag]!;
     final isCharacter = tag == kCharacterPackTag;
+    final isGame = tag == kGamePackTag;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -634,7 +792,9 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
               Icon(
                 isCharacter
                     ? CupertinoIcons.person_2_fill
-                    : CupertinoIcons.gamecontroller_fill,
+                    : (isGame
+                        ? CupertinoIcons.gamecontroller_fill
+                        : CupertinoIcons.smiley),
                 size: 15,
                 color: context.accentColor,
               ),
@@ -721,9 +881,8 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
                   ? CupertinoIcons.checkmark_circle_fill
                   : CupertinoIcons.circle,
               size: 24,
-              color: isSelected
-                  ? context.accentColor
-                  : CupertinoColors.systemGrey,
+              color:
+                  isSelected ? context.accentColor : CupertinoColors.systemGrey,
             ),
           ],
         ),
@@ -949,7 +1108,9 @@ class _BatchDownloadDialogState extends State<_BatchDownloadDialog> {
         );
         if (shouldContinue != true) {
           // 用户选择取消全部，返回已有结果
-          if (mounted) Navigator.pop(context, _results.isNotEmpty ? _results : null);
+          if (mounted) {
+            Navigator.pop(context, _results.isNotEmpty ? _results : null);
+          }
           return;
         }
         // 跳过当前失败的，继续下载下一个

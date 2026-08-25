@@ -1330,11 +1330,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       activeEnd: character?.activeEnd ?? '',
       memoryPoints: memoryPoints,
       extraSystemContext: memoryPool,
-      findSticker: (query) {
-        final matches =
-            context.read<StickerProvider>().searchUserStickers(query, limit: 1);
-        return matches.isEmpty ? null : matches.first;
-      },
+      roleplayMode: chatSettings.isRoleplayMode,
+      // 关闭「允许角色发送表情包」时不注入检索器，查询标记会被静默忽略。
+      findSticker: context.read<SettingsProvider>().allowStickerSend
+          ? (query) => context.read<StickerProvider>().pickStickerForRole(query)
+          : null,
     );
     debugPrint(
         '[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');

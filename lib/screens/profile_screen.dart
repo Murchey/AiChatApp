@@ -101,8 +101,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 color: context.textPrimaryColor,
                               ),
                             ),
-                            if (user != null &&
-                                user.signature.isNotEmpty) ...[
+                            if (user != null && user.signature.isNotEmpty) ...[
                               const SizedBox(height: 4),
                               Text(
                                 user.signature,
@@ -434,7 +433,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         padding: EdgeInsets.all(12),
                         child: Text(
                           '暂无日志',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF8B949E)),
+                          style:
+                              TextStyle(fontSize: 12, color: Color(0xFF8B949E)),
                         ),
                       )
                     : ListView.builder(
@@ -528,7 +528,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     UpdateInfo? info;
     final settings = context.read<SettingsProvider>();
     try {
-      info = await UpdateService.checkForUpdate(proxyUrl: settings.updateProxyUrl);
+      info =
+          await UpdateService.checkForUpdate(proxyUrl: settings.updateProxyUrl);
     } catch (_) {}
 
     if (!context.mounted) return;

@@ -385,11 +385,12 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
     final screenHeight = MediaQuery.of(context).size.height;
     final expandDelta = screenHeight * (_coverFullRatio - _coverRestRatio);
     final expanded = _coverDragOffset >= expandDelta * 0.9;
-    final targetHeight =
-        (((expanded ? screenHeight * _coverFullRatio : screenHeight * _coverRestRatio) +
-                    (expanded ? expandDelta : 0) -
-                    _coverShrink))
-            .clamp(screenHeight * _coverMinRatio, screenHeight * _coverFullRatio);
+    final targetHeight = (((expanded
+                ? screenHeight * _coverFullRatio
+                : screenHeight * _coverRestRatio) +
+            (expanded ? expandDelta : 0) -
+            _coverShrink))
+        .clamp(screenHeight * _coverMinRatio, screenHeight * _coverFullRatio);
     setState(() {
       _coverExpanded = expanded;
       _coverDragOffset = expanded ? expandDelta : 0;
@@ -458,7 +459,8 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
   }
 
   /// 悬浮发送按钮：圆形，右下角，无背景面板。点击进入聊天
-  Widget _buildFloatingSendButton(Character character, ChatProvider chatProvider) {
+  Widget _buildFloatingSendButton(
+      Character character, ChatProvider chatProvider) {
     return GestureDetector(
       onTap: () {
         final conversation = chatProvider.getOrCreateConversation(
@@ -516,7 +518,8 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
     // 吸附动画期间取动画插值高度（一次性播放），滚动期间瞬时跟随目标值
     final double baseHeight = _coverExpanded ? fullHeight : restHeight;
     final double targetCoverHeight =
-        (baseHeight + _coverDragOffset - _coverShrink).clamp(minHeight, fullHeight);
+        (baseHeight + _coverDragOffset - _coverShrink)
+            .clamp(minHeight, fullHeight);
     final double coverHeight =
         _settleAnim != null ? _settleAnim!.value : targetCoverHeight;
     _renderedCoverHeight = coverHeight;
@@ -863,8 +866,7 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
             final m = moments[i - 1];
             return RepaintBoundary(
               child: Padding(
-                padding: const EdgeInsets.only(
-                    left: 16, right: 16, bottom: 12),
+                padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
                 child: MomentCard(
                   character: character,
                   moment: m,

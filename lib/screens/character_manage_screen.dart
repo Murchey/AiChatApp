@@ -264,8 +264,7 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
           ),
           CupertinoDialogAction(
             isDefaultAction: true,
-            onPressed: () =>
-                Navigator.pop(ctx, controller.text.trim()),
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: const Text('创建'),
           ),
         ],

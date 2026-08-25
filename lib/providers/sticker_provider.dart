@@ -65,6 +65,15 @@ class StickerProvider extends ChangeNotifier {
     _packs.removeWhere((pack) => pack.id == packId);
     await _persist();
     notifyListeners();
+    // 删除创意工坊 Pack 时同步清理本地目录，避免残留孤儿文件。
+    try {
+      final dir = await StickerPathHelper.packDirectory(packId);
+      if (dir.existsSync()) {
+        await dir.delete(recursive: true);
+      }
+    } catch (e) {
+      debugPrint('[StickerProvider] 删除 Pack 目录失败: $e');
+    }
   }
 
   Future<UserSticker> addUserSticker({
@@ -142,6 +151,18 @@ class StickerProvider extends ChangeNotifier {
   /// 供角色回复流程调用：只返回少量候选，永远不会把完整表情包清单交给模型。
   List<UserSticker> searchUserStickers(String query, {int limit = 5}) =>
       StickerSearchService.search(_userStickers, query, limit: limit);
+
+  /// 角色发送表情时的最终入口：在「自定义表情」与「创意工坊 Pack 表情」中
+  /// 合并检索，只返回最佳候选（未命中返回 null）。
+  StickerMatch? pickStickerForRole(String query) {
+    final matches = StickerSearchService.searchAll(
+      userStickers: _userStickers,
+      packs: _packs,
+      query: query,
+      limit: 1,
+    );
+    return matches.isEmpty ? null : matches.first;
+  }
 
   static List<String> _normalizeTags(Iterable<String> values) => values
       .expand((value) => value.split(RegExp(r'[,，、\n]')))

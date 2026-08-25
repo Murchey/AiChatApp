@@ -526,6 +526,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
+              CupertinoListTile(
+                title: const Text('允许角色发送表情包'),
+                subtitle: Text(
+                  settings.allowStickerSend
+                      ? '角色可在回复中按需发送你保存的表情包'
+                      : '已关闭，角色回复时不发送表情包',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSwitch(
+                  value: settings.allowStickerSend,
+                  onChanged: (v) => settings.setAllowStickerSend(v),
+                ),
+              ),
             ],
           ),
           // 主题色

@@ -220,10 +220,10 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
     // 选中角色 id 对应的显示名，供生成「XX 加入了群聊」事件气泡
     final nameById = {for (final c in candidates) c.id: c.displayName};
     context.read<GroupChatProvider>().addMembers(
-          widget.groupId,
-          selectedIds,
-          names: [for (final id in selectedIds) nameById[id] ?? ''],
-        );
+      widget.groupId,
+      selectedIds,
+      names: [for (final id in selectedIds) nameById[id] ?? ''],
+    );
   }
 
   Future<void> _removeMember(String characterId) async {
@@ -313,7 +313,8 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
           return Container(
             decoration: BoxDecoration(
               color: context.listBgColor,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: SafeArea(
               top: false,
@@ -322,7 +323,8 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
                     child: Row(
                       children: [
                         const SizedBox(width: 16),
@@ -358,12 +360,17 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
                       setState(() {});
                     },
                   ),
-                  Container(height: 0.5, margin: const EdgeInsets.only(left: 16), color: context.separatorColor),
+                  Container(
+                      height: 0.5,
+                      margin: const EdgeInsets.only(left: 16),
+                      color: context.separatorColor),
                   // 移除背景
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.trash,
-                      color: info.hasImage ? CupertinoColors.systemRed : CupertinoColors.systemGrey,
+                      color: info.hasImage
+                          ? CupertinoColors.systemRed
+                          : CupertinoColors.systemGrey,
                     ),
                     title: Text(
                       '移除背景',
@@ -378,7 +385,10 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
                           }
                         : null,
                   ),
-                  Container(height: 0.5, margin: const EdgeInsets.only(left: 16), color: context.separatorColor),
+                  Container(
+                      height: 0.5,
+                      margin: const EdgeInsets.only(left: 16),
+                      color: context.separatorColor),
                   // 高斯模糊度
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -387,7 +397,8 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
                       children: [
                         Text(
                           '高斯模糊度',
-                          style: TextStyle(fontSize: 14, color: context.textSecondaryColor),
+                          style: TextStyle(
+                              fontSize: 14, color: context.textSecondaryColor),
                         ),
                         const SizedBox(height: 8),
                         CupertinoSlider(
@@ -409,7 +420,8 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
                         ),
                         Text(
                           '当前：${info.blur.round()}',
-                          style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+                          style: TextStyle(
+                              fontSize: 12, color: context.textSecondaryColor),
                         ),
                       ],
                     ),
@@ -424,7 +436,8 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
   }
 
   /// 从相册选图并设置为群聊背景（先进入编辑页缩放裁剪）
-  Future<void> _pickAndSetBackground(BuildContext ctx, String chatId, ChatBackgroundProvider provider) async {
+  Future<void> _pickAndSetBackground(
+      BuildContext ctx, String chatId, ChatBackgroundProvider provider) async {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
@@ -432,7 +445,8 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
     try {
       final cropped = await Navigator.push<String>(
         ctx,
-        CupertinoPageRoute(builder: (_) => ImageCropScreen(imagePath: file.path)),
+        CupertinoPageRoute(
+            builder: (_) => ImageCropScreen(imagePath: file.path)),
       );
       if (cropped == null || !mounted) return;
       await provider.setImage(chatId, cropped);
@@ -444,7 +458,8 @@ class _GroupChatDetailScreenState extends State<GroupChatDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final group = context.watch<GroupChatProvider>().getGroupById(widget.groupId);
+    final group =
+        context.watch<GroupChatProvider>().getGroupById(widget.groupId);
     if (group == null) {
       return CupertinoPageScaffold(
         navigationBar: const CupertinoNavigationBar(middle: Text('群聊详情')),

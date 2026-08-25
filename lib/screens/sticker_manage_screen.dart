@@ -3,7 +3,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/sticker_pack.dart';
+import '../providers/api_provider.dart';
+import '../providers/chat_settings_provider.dart';
 import '../providers/sticker_provider.dart';
+import '../services/llm_service.dart';
 
 class StickerManageScreen extends StatefulWidget {
   const StickerManageScreen({super.key});
@@ -105,6 +108,74 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
           .read<StickerProvider>()
           .searchUserStickers(controller.text, limit: 5));
     });
+  }
+
+  /// 使用当前视觉模型为所有缺描述/关键词的表情包批量生成语义打标。
+  Future<void> _runAutoTagging() async {
+    final api = context.read<ApiProvider>();
+    final model =
+        api.getModelById(context.read<ChatSettingsProvider>().selectedModelId);
+    if (model == null || api.isVisionSupported(model.id) != true) {
+      _showTip('请先在「聊天设置」选择支持图片的模型，再进行自动打标');
+      return;
+    }
+    final provider = context.read<StickerProvider>();
+    final stickers = provider.userStickers
+        .where((s) => s.description.isEmpty && s.keywords.isEmpty)
+        .toList();
+    if (stickers.isEmpty) {
+      _showTip('所有表情包都已有关键词或描述，无需自动打标');
+      return;
+    }
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('AI 自动打标'),
+        content: Text(
+          '将使用当前视觉模型识别 ${stickers.length} 张表情包，'
+          '生成画面描述、检索关键词与情绪标签。这会消耗该模型的 API 次数，是否继续？',
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('继续'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final result = await showCupertinoDialog<_AutoTagResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _AutoTagProgressDialog(stickers: stickers, model: model),
+    );
+    if (!mounted || result == null) return;
+    final failedText = result.failed > 0 ? '，${result.failed} 张识别失败' : '';
+    _showTip('打标完成：成功 ${result.done} 张$failedText');
+  }
+
+  void _showTip(String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('提示'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _deleteSelected() async {
@@ -297,6 +368,10 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
   }
 
   Widget _buildUserSection(BuildContext context, List<UserSticker> stickers) {
+    final api = context.read<ApiProvider>();
+    final model =
+        api.getModelById(context.read<ChatSettingsProvider>().selectedModelId);
+    final canAutoTag = model != null && api.isVisionSupported(model.id) == true;
     return CupertinoListSection.insetGrouped(
       backgroundColor: context.scaffoldColor,
       header: Text('我的表情包（${stickers.length} 张）'),
@@ -308,6 +383,20 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
           trailing: Icon(CupertinoIcons.chevron_right,
               size: 16, color: context.textSecondaryColor),
           onTap: _showSearchTest,
+        ),
+        CupertinoListTile(
+          leading: Icon(CupertinoIcons.sparkles, color: context.accentColor),
+          title: const Text('AI 自动打标'),
+          subtitle: Text(
+            canAutoTag ? '使用视觉模型生成描述、关键词与情绪标签' : '需在「聊天设置」选择支持图片的模型',
+            style: TextStyle(
+              fontSize: 12,
+              color: context.textSecondaryColor,
+            ),
+          ),
+          trailing: Icon(CupertinoIcons.chevron_right,
+              size: 16, color: context.textSecondaryColor),
+          onTap: canAutoTag ? _runAutoTagging : null,
         ),
         if (stickers.isEmpty)
           const CupertinoListTile(title: Text('暂无自定义表情包'))
@@ -381,6 +470,82 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
         height: 48,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.photo),
+      ),
+    );
+  }
+}
+
+/// AI 自动打标的结果统计。
+class _AutoTagResult {
+  final int done;
+  final int failed;
+  const _AutoTagResult(this.done, this.failed);
+}
+
+/// 逐张调用视觉模型打标的进度弹窗：完成后自动关闭并返回统计结果。
+class _AutoTagProgressDialog extends StatefulWidget {
+  final List<UserSticker> stickers;
+  final ApiModel model;
+  const _AutoTagProgressDialog({
+    required this.stickers,
+    required this.model,
+  });
+
+  @override
+  State<_AutoTagProgressDialog> createState() => _AutoTagProgressDialogState();
+}
+
+class _AutoTagProgressDialogState extends State<_AutoTagProgressDialog> {
+  int _done = 0;
+  int _failed = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  Future<void> _run() async {
+    final provider = context.read<StickerProvider>();
+    for (final sticker in widget.stickers) {
+      try {
+        final tags = await LLMService.generateStickerAutoTags(
+            widget.model, sticker.imagePath);
+        if (tags != null && tags.description.isNotEmpty) {
+          await provider.updateUserStickerMetadata(
+            stickerId: sticker.id,
+            label: sticker.label,
+            description: tags.description,
+            keywords: [...sticker.keywords, ...tags.keywords],
+            emotionTags: [...sticker.emotionTags, ...tags.emotionTags],
+          );
+        } else {
+          _failed++;
+        }
+      } catch (_) {
+        _failed++;
+      }
+      if (mounted) setState(() => _done++);
+    }
+    if (mounted) {
+      Navigator.pop(context, _AutoTagResult(_done, _failed));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoAlertDialog(
+      title: const Text('AI 自动打标中'),
+      content: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CupertinoActivityIndicator(),
+            const SizedBox(height: 10),
+            Text('正在处理 $_done/${widget.stickers.length}'),
+          ],
+        ),
       ),
     );
   }

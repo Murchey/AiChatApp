@@ -27,8 +27,7 @@ class ChatSendButton extends StatelessWidget {
           decoration: BoxDecoration(
             color: isZmd ? const Color(0xFF272302) : context.accentColor,
             borderRadius: BorderRadius.circular(10),
-            border:
-                isZmd ? Border.all(color: const Color(0xFFD8BF00)) : null,
+            border: isZmd ? Border.all(color: const Color(0xFFD8BF00)) : null,
           ),
           child: const Text(
             '发送',

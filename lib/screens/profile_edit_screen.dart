@@ -359,8 +359,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   title: '个性签名',
                   initial: _signatureController.text,
                   hint: '一句话介绍自己',
-                  onSave: (v) =>
-                      setState(() => _signatureController.text = v),
+                  onSave: (v) => setState(() => _signatureController.text = v),
                 ),
               ),
             ],

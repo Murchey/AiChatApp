@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import '../models/sticker_pack.dart';
 import '../providers/api_provider.dart';
 
 /// 主动消息系统 - LLM 服务层
@@ -15,7 +16,8 @@ class LLMService {
   static const List<String> _fallbackMessages = ['（网络开小差了，等下再聊）'];
 
   /// 会话压缩的 System Prompt：将较早的聊天记录压缩为一段摘要
-  static const String kCompressSystemPrompt = '你是一个对话压缩助手。请将以下聊天记录压缩为一段简洁连贯的中文摘要，'
+  static const String kCompressSystemPrompt =
+      '你是一个对话压缩助手。请将以下聊天记录压缩为一段简洁连贯的中文摘要，'
       '保留关键信息：用户的身份与偏好、对方（角色）的人设特征、重要话题与结论、未完成的事项。'
       '摘要不超过 600 字，直接输出摘要内容，不要任何前缀或解释。';
 
@@ -93,6 +95,7 @@ class LLMService {
     required String systemPrompt,
     List<Map<String, Object>> historyMessages = const [],
     String outputInstruction = '',
+    bool roleplayMode = false,
   }) async {
     final completion = await _fetchWithKimiFallback(
       model: model,
@@ -106,7 +109,8 @@ class LLMService {
     );
     final raw = completion.content;
     debugPrint('[LLMService] 模型原始响应: $raw');
-    final result = parseMessages(raw);
+    final result =
+        roleplayMode ? parseRoleplayMessage(raw) : parseMessages(raw);
     debugPrint('[LLMService] 解析结果(${result.length}条): $result');
     return ProactiveResult(result, completion.usage);
   }
@@ -124,6 +128,7 @@ class LLMService {
     required List<Map<String, Object>> historyMessages,
     required String imagePath,
     required String outputInstruction,
+    bool roleplayMode = false,
   }) async {
     String base64;
     try {
@@ -154,7 +159,8 @@ class LLMService {
     );
     final raw = completion.content;
     debugPrint('[LLMService] 模型原始响应: $raw');
-    final result = parseMessages(raw);
+    final result =
+        roleplayMode ? parseRoleplayMessage(raw) : parseMessages(raw);
     debugPrint('[LLMService] 解析结果(${result.length}条): $result');
     return ProactiveResult(result, completion.usage);
   }
@@ -197,11 +203,11 @@ class LLMService {
     }
 
     // 拼接请求地址：baseUrl 留空使用官方地址，兼容结尾 /v1 或 /chat/completions
-    var base = model.baseUrl.trim().isNotEmpty
-        ? model.baseUrl.trim()
-        : defaultBaseUrl;
+    var base =
+        model.baseUrl.trim().isNotEmpty ? model.baseUrl.trim() : defaultBaseUrl;
     base = base.replaceAll(RegExp(r'/+$'), '');
-    final url = base.endsWith('/chat/completions') ? base : '$base/chat/completions';
+    final url =
+        base.endsWith('/chat/completions') ? base : '$base/chat/completions';
 
     // 部分模型（快速/推理模型）偶发返回 HTTP 200 但 content 为空，
     // 重发一次请求让模型重新生成，显著降低"API 返回内容为空"的出现频率。
@@ -235,8 +241,8 @@ class LLMService {
       final request = await client
           .postUrl(Uri.parse(url))
           .timeout(const Duration(seconds: 20));
-      request.headers
-          .set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
+      request.headers.set(
+          HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers
           .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
@@ -264,9 +270,8 @@ class LLMService {
         if (choices.isEmpty) {
           throw const LLMException('API 返回异常：未包含任何回复内容');
         }
-        final message =
-            (choices.first as Map<String, dynamic>)['message']
-                as Map<String, dynamic>?;
+        final message = (choices.first as Map<String, dynamic>)['message']
+            as Map<String, dynamic>?;
         return CompletionResult(
           message?['content'] as String? ?? '',
           _parseUsage(decoded),
@@ -307,9 +312,8 @@ class LLMService {
       throw const LLMException('所选模型未配置 API Key，请到「API 设置」中填写');
     }
 
-    var base = model.baseUrl.trim().isNotEmpty
-        ? model.baseUrl.trim()
-        : defaultBaseUrl;
+    var base =
+        model.baseUrl.trim().isNotEmpty ? model.baseUrl.trim() : defaultBaseUrl;
     base = base.replaceAll(RegExp(r'/+$'), '');
     final url =
         base.endsWith('/chat/completions') ? base : '$base/chat/completions';
@@ -326,8 +330,8 @@ class LLMService {
       final request = await client
           .postUrl(Uri.parse(url))
           .timeout(const Duration(seconds: 20));
-      request.headers
-          .set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
+      request.headers.set(
+          HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers
           .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
@@ -361,8 +365,7 @@ class LLMService {
 
       final response =
           await request.close().timeout(const Duration(seconds: 60));
-      final body =
-          await response.transform(utf8.decoder).join();
+      final body = await response.transform(utf8.decoder).join();
       debugPrint('[LLMService] 图片功能检测 HTTP ${response.statusCode}');
       if (response.statusCode != 200) return false;
 
@@ -372,6 +375,105 @@ class LLMService {
       return true;
     } finally {
       client.close(force: true);
+    }
+  }
+
+  /// 让视觉模型识别一张表情包的语义，生成检索可用的描述、关键词与情绪标签。
+  ///
+  /// 使用 OpenAI 兼容的视觉消息格式（与 [testImageSupport] 一致）发送图片，
+  /// 要求模型只输出 JSON。失败（网络/解析）时返回 null，不抛异常。
+  static Future<StickerAutoTags?> generateStickerAutoTags(
+    ApiModel model,
+    String imagePath,
+  ) async {
+    if (model.modelName.isEmpty || model.apiKey.isEmpty) return null;
+    final List<int> bytes;
+    try {
+      bytes = await File(imagePath).readAsBytes();
+    } catch (_) {
+      return null;
+    }
+    if (bytes.isEmpty) return null;
+
+    var base =
+        model.baseUrl.trim().isNotEmpty ? model.baseUrl.trim() : defaultBaseUrl;
+    base = base.replaceAll(RegExp(r'/+$'), '');
+    final url =
+        base.endsWith('/chat/completions') ? base : '$base/chat/completions';
+
+    final client = HttpClient();
+    try {
+      final request = await client
+          .postUrl(Uri.parse(url))
+          .timeout(const Duration(seconds: 20));
+      request.headers.set(
+          HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      request.headers
+          .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
+      request.add(utf8.encode(jsonEncode({
+        'model': model.modelName,
+        'messages': [
+          {
+            'role': 'user',
+            'content': [
+              {
+                'type': 'text',
+                'text': '这是一张表情包图片。请用中文给出它的画面描述（不超过40字）、'
+                    '3~5个可用于检索的关键词、2~4个情绪标签。'
+                    '只输出一个 JSON 对象，不要任何解释或 Markdown：'
+                    '{"description":"...","keywords":["..."],"emotion_tags":["..."]}',
+              },
+              {
+                'type': 'image_url',
+                'image_url': {
+                  'url':
+                      'data:${_imageMime(imagePath)};base64,${base64Encode(bytes)}',
+                },
+              },
+            ],
+          },
+        ],
+        'stream': false,
+        'max_tokens': 300,
+        'temperature': 0.3,
+      })));
+
+      final response =
+          await request.close().timeout(const Duration(seconds: 60));
+      if (response.statusCode != 200) return null;
+      final body = await response.transform(utf8.decoder).join();
+      return _parseStickerAutoTags(body);
+    } catch (_) {
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// 从模型回复中解析 [StickerAutoTags]；解析失败返回 null。
+  static StickerAutoTags? _parseStickerAutoTags(String body) {
+    final reply = _extractReplyText(body);
+    if (reply == null) return null;
+    final match = RegExp(r'\{.*\}', dotAll: true).firstMatch(reply);
+    if (match == null) return null;
+    try {
+      final json = jsonDecode(match.group(0)!) as Map<String, dynamic>;
+      List<String> toTags(dynamic raw) {
+        if (raw is! List) return const [];
+        return raw
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+
+      return StickerAutoTags(
+        description: (json['description'] as String? ?? '').trim(),
+        keywords: toTags(json['keywords']),
+        emotionTags: toTags(json['emotion_tags']),
+      );
+    } catch (_) {
+      return null;
     }
   }
 
@@ -399,9 +501,32 @@ class LLMService {
     final t = reply.trim().toLowerCase();
     // 颜色词是强肯定信号：检测图是纯红色，模型答出颜色即证明看到了图片
     const colorPatterns = [
-      '红', '橙', '黄', '绿', '蓝', '紫', '青', '粉', '白', '黑', '灰', '棕', '褐',
-      'red', 'orange', 'yellow', 'green', 'blue', 'purple',
-      'pink', 'white', 'black', 'gray', 'grey', 'brown', 'cyan',
+      '红',
+      '橙',
+      '黄',
+      '绿',
+      '蓝',
+      '紫',
+      '青',
+      '粉',
+      '白',
+      '黑',
+      '灰',
+      '棕',
+      '褐',
+      'red',
+      'orange',
+      'yellow',
+      'green',
+      'blue',
+      'purple',
+      'pink',
+      'white',
+      'black',
+      'gray',
+      'grey',
+      'brown',
+      'cyan',
     ];
     for (final p in colorPatterns) {
       if (t.contains(p)) return true;
@@ -457,9 +582,8 @@ class LLMService {
     if (local != null) return local;
 
     // 2. 请求 GET /models 探测（仅注册表未命中的模型）
-    var base = model.baseUrl.trim().isNotEmpty
-        ? model.baseUrl.trim()
-        : defaultBaseUrl;
+    var base =
+        model.baseUrl.trim().isNotEmpty ? model.baseUrl.trim() : defaultBaseUrl;
     base = base.replaceAll(RegExp(r'/+$'), '');
     if (base.endsWith('/chat/completions')) {
       base = base.substring(0, base.length - '/chat/completions'.length);
@@ -483,7 +607,8 @@ class LLMService {
         final found = _parseContextFromModelsResponse(body, model.modelName);
         if (found != null) return found;
       } else {
-        debugPrint('[LLMService] /models 返回 HTTP ${response.statusCode}，无法确定上下文长度');
+        debugPrint(
+            '[LLMService] /models 返回 HTTP ${response.statusCode}，无法确定上下文长度');
       }
     } catch (e) {
       debugPrint('[LLMService] 请求 /models 失败: $e，无法确定上下文长度');
@@ -716,14 +841,14 @@ class LLMService {
           .timeout(const Duration(seconds: 15));
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       if (apiKey.isNotEmpty) {
-        request.headers
-            .set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
       }
       final response =
           await request.close().timeout(const Duration(seconds: 30));
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode != 200) {
-        throw LLMException('获取模型列表失败（HTTP ${response.statusCode}），请检查请求地址与 API Key');
+        throw LLMException(
+            '获取模型列表失败（HTTP ${response.statusCode}），请检查请求地址与 API Key');
       }
       final ids = _parseModelList(body);
       if (ids.isEmpty) {
@@ -861,11 +986,20 @@ class LLMService {
     return List.of(_fallbackMessages);
   }
 
+  /// 语C模式保留完整括号动作流，不按句号拆分，不强制 JSON 数组。
+  static List<String> parseRoleplayMessage(String raw) {
+    var text = raw.trim();
+    text = text.replaceAll(
+        RegExp(r'^```(?:text|plain)?\s*', caseSensitive: false), '');
+    text = text.replaceAll(RegExp(r'\s*```$'), '').trim();
+    if (text.isEmpty) return List.of(_fallbackMessages);
+    return [text];
+  }
+
   /// 清洗单条文本消息：去掉 ```json 代码块包裹与首尾引号
   static String _cleanSingleMessage(String text) {
-    var t = text
-        .replaceAll(RegExp(r'```(json)?', caseSensitive: false), '')
-        .trim();
+    var t =
+        text.replaceAll(RegExp(r'```(json)?', caseSensitive: false), '').trim();
     if (t.startsWith('"') && t.endsWith('"') && t.length >= 2) {
       t = t.substring(1, t.length - 1);
     }
@@ -877,7 +1011,9 @@ class LLMService {
       final decoded = jsonDecode(text);
       final rawList = decoded is List
           ? decoded
-          : decoded is Map ? decoded['messages'] : null;
+          : decoded is Map
+              ? decoded['messages']
+              : null;
       if (rawList is List) {
         final list = rawList
             .whereType<String>()

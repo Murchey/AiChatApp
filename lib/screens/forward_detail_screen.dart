@@ -35,8 +35,8 @@ class ForwardDetailScreen extends StatelessWidget {
         itemBuilder: (context, index) {
           final item = items[index];
           // 与上一条发送者相同则视为连续消息，不再重复显示头像
-          final showAvatar = index == 0 ||
-              items[index - 1].senderName != item.senderName;
+          final showAvatar =
+              index == 0 || items[index - 1].senderName != item.senderName;
           return _buildItem(context, item, showAvatar);
         },
       ),
@@ -120,9 +120,8 @@ class ForwardDetailScreen extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: item.isUser
-              ? context.bubbleSelfColor
-              : context.bubbleOtherColor,
+          color:
+              item.isUser ? context.bubbleSelfColor : context.bubbleOtherColor,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: context.separatorColor,
@@ -157,9 +156,7 @@ class ForwardDetailScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: item.isUser
-            ? context.bubbleSelfColor
-            : context.bubbleOtherColor,
+        color: item.isUser ? context.bubbleSelfColor : context.bubbleOtherColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: context.separatorColor,

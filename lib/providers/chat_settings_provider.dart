@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// 角色回复格式：短信短消息 / 括号动作流语C。
+enum ChatMessageMode { sms, roleplay }
+
 /// 聊天设置：上下文条数、使用的模型、自动压缩、角色记忆池
 class ChatSettingsProvider extends ChangeNotifier {
   static const _contextKey = 'chat_context_count';
@@ -10,17 +13,22 @@ class ChatSettingsProvider extends ChangeNotifier {
   static const _compressThresholdKey = 'chat_compress_threshold';
   static const _momentMemoryKey = 'chat_moment_memory_count';
   static const _memoryPoolDisabledKey = 'chat_memory_pool_disabled_sections';
+  static const _messageModeKey = 'chat_message_mode';
 
   /// 携带上下文条数，0 表示无限制（携带全部记录）
   int _contextCount = 10;
   String? _selectedModelId;
+
   /// 自动压缩会话（无限制上下文时自动开启；达到模型上下文阈值触发压缩）
   bool _enableCompression = false;
+
   /// 压缩触发阈值（0.0~1.0，默认 0.7 即 70%）
   double _compressThreshold = 0.7;
+
   /// 记忆池中「朋友圈记忆」条数：每个角色最近 N 条朋友圈贴文（含全部回复），
   /// 0 表示记忆池不拼入朋友圈内容（默认 3 条）。
   int _momentMemoryCount = 3;
+  ChatMessageMode _messageMode = ChatMessageMode.sms;
 
   /// 记忆池按角色停用的来源（key=角色 id，value=停用的来源标题集合，
   /// 标题见 MemoryPoolBuilder 的 kPrivateSectionTitle 等常量）。
@@ -31,6 +39,8 @@ class ChatSettingsProvider extends ChangeNotifier {
   bool get enableCompression => _enableCompression;
   double get compressThreshold => _compressThreshold;
   int get momentMemoryCount => _momentMemoryCount;
+  ChatMessageMode get messageMode => _messageMode;
+  bool get isRoleplayMode => _messageMode == ChatMessageMode.roleplay;
 
   /// 该角色记忆池中已停用的来源标题集合（停用后不拼入提示词）
   Set<String> disabledPoolSectionsFor(String characterId) =>
@@ -46,9 +56,15 @@ class ChatSettingsProvider extends ChangeNotifier {
     _selectedModelId = prefs.getString(_modelKey);
     _enableCompression = prefs.getBool(_compressKey) ?? false;
     _compressThreshold = prefs.getDouble(_compressThresholdKey) ?? 0.7;
-    if (_compressThreshold <= 0 || _compressThreshold > 1) _compressThreshold = 0.7;
+    if (_compressThreshold <= 0 || _compressThreshold > 1) {
+      _compressThreshold = 0.7;
+    }
     _momentMemoryCount = prefs.getInt(_momentMemoryKey) ?? 3;
     if (_momentMemoryCount < 0) _momentMemoryCount = 0;
+    _messageMode = ChatMessageMode.values.firstWhere(
+      (mode) => mode.name == prefs.getString(_messageModeKey),
+      orElse: () => ChatMessageMode.sms,
+    );
     final raw = prefs.getString(_memoryPoolDisabledKey);
     _disabledPoolSections = {};
     if (raw != null && raw.isNotEmpty) {
@@ -110,6 +126,13 @@ class ChatSettingsProvider extends ChangeNotifier {
     await prefs.setInt(_momentMemoryKey, _momentMemoryCount);
   }
 
+  Future<void> setMessageMode(ChatMessageMode mode) async {
+    _messageMode = mode;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_messageModeKey, mode.name);
+  }
+
   /// 设置角色记忆池某来源（标题见 MemoryPoolBuilder 常量）的启停。
   /// [enabled] 为 false 时该角色拼接提示词时将跳过该来源。
   Future<void> setPoolSectionEnabled(
@@ -132,6 +155,7 @@ class ChatSettingsProvider extends ChangeNotifier {
     }
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_memoryPoolDisabledKey, jsonEncode(_disabledPoolSections));
+    await prefs.setString(
+        _memoryPoolDisabledKey, jsonEncode(_disabledPoolSections));
   }
 }

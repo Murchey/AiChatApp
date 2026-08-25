@@ -210,9 +210,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             isDestructiveAction: true,
             onPressed: () {
               Navigator.pop(ctx);
-              context
-                  .read<ChatProvider>()
-                  .clearMessages(widget.conversationId);
+              context.read<ChatProvider>().clearMessages(widget.conversationId);
               Navigator.pop(context); // 返回聊天页，显示空状态
             },
             child: const Text('清空'),
@@ -268,7 +266,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           return Container(
             decoration: BoxDecoration(
               color: context.listBgColor,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: SafeArea(
               top: false,
@@ -277,7 +276,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
                     child: Row(
                       children: [
                         const SizedBox(width: 16),
@@ -313,12 +313,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       setState(() {});
                     },
                   ),
-                  Container(height: 0.5, margin: const EdgeInsets.only(left: 16), color: context.separatorColor),
+                  Container(
+                      height: 0.5,
+                      margin: const EdgeInsets.only(left: 16),
+                      color: context.separatorColor),
                   // 移除背景
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.trash,
-                      color: info.hasImage ? CupertinoColors.systemRed : CupertinoColors.systemGrey,
+                      color: info.hasImage
+                          ? CupertinoColors.systemRed
+                          : CupertinoColors.systemGrey,
                     ),
                     title: Text(
                       '移除背景',
@@ -333,7 +338,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                           }
                         : null,
                   ),
-                  Container(height: 0.5, margin: const EdgeInsets.only(left: 16), color: context.separatorColor),
+                  Container(
+                      height: 0.5,
+                      margin: const EdgeInsets.only(left: 16),
+                      color: context.separatorColor),
                   // 高斯模糊度
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -342,7 +350,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       children: [
                         Text(
                           '高斯模糊度',
-                          style: TextStyle(fontSize: 14, color: context.textSecondaryColor),
+                          style: TextStyle(
+                              fontSize: 14, color: context.textSecondaryColor),
                         ),
                         const SizedBox(height: 8),
                         CupertinoSlider(
@@ -364,7 +373,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         ),
                         Text(
                           '当前：${info.blur.round()}',
-                          style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+                          style: TextStyle(
+                              fontSize: 12, color: context.textSecondaryColor),
                         ),
                       ],
                     ),
@@ -379,7 +389,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   /// 从相册选图并设置为聊天背景（先进入编辑页缩放裁剪）
-  Future<void> _pickAndSetBackground(BuildContext ctx, String chatId, ChatBackgroundProvider provider) async {
+  Future<void> _pickAndSetBackground(
+      BuildContext ctx, String chatId, ChatBackgroundProvider provider) async {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
@@ -387,7 +398,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     try {
       final cropped = await Navigator.push<String>(
         ctx,
-        CupertinoPageRoute(builder: (_) => ImageCropScreen(imagePath: file.path)),
+        CupertinoPageRoute(
+            builder: (_) => ImageCropScreen(imagePath: file.path)),
       );
       if (cropped == null || !mounted) return;
       await provider.setImage(chatId, cropped);
@@ -1129,8 +1141,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   initialCount: config.count,
                   onPeriodChanged: (h) =>
                       autoProvider.setPeriod(_characterId, h),
-                  onCountChanged: (c) =>
-                      autoProvider.setCount(_characterId, c),
+                  onCountChanged: (c) => autoProvider.setCount(_characterId, c),
                 ),
                 Container(
                   height: 0.5,
@@ -1233,10 +1244,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   String _describeGreetingConfig(ProactiveGreetingConfig config) {
-    final idx =
-        ProactiveGreetingProvider.idleOptions.indexOf(config.idleHours);
-    final label =
-        ProactiveGreetingProvider.idleLabels[idx < 0 ? 3 : idx];
+    final idx = ProactiveGreetingProvider.idleOptions.indexOf(config.idleHours);
+    final label = ProactiveGreetingProvider.idleLabels[idx < 0 ? 3 : idx];
     return '$label后，角色会主动发消息问候你';
   }
 
@@ -1567,8 +1576,8 @@ class _AutoMomentPickerSectionState extends State<_AutoMomentPickerSection> {
 
   @override
   Widget build(BuildContext context) {
-    final label =
-        AutoMomentProvider.periodLabels[_periodIndex(widget.initialPeriodHours)];
+    final label = AutoMomentProvider
+        .periodLabels[_periodIndex(widget.initialPeriodHours)];
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1847,8 +1856,8 @@ class _ProactiveGreetingPickerSectionState
                   child: CupertinoPicker(
                     scrollController: _controller,
                     itemExtent: 32,
-                    onSelectedItemChanged: (i) =>
-                        widget.onChanged(ProactiveGreetingProvider.idleOptions[i]),
+                    onSelectedItemChanged: (i) => widget
+                        .onChanged(ProactiveGreetingProvider.idleOptions[i]),
                     children: ProactiveGreetingProvider.idleLabels
                         .map((l) => Center(
                               child: Text(

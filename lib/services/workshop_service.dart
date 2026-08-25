@@ -82,9 +82,9 @@ class WorkshopService {
     final apiUrl = isGitee
         ? 'https://gitee.com/api/v5/repos/$owner/$repo/releases?per_page=100'
         : 'https://api.github.com/repos/$owner/$repo/releases?per_page=100';
-    final resp = await http
-        .get(Uri.parse(apiUrl), headers: {'Accept': 'application/json'})
-        .timeout(const Duration(seconds: 15));
+    final resp = await http.get(Uri.parse(apiUrl), headers: {
+      'Accept': 'application/json'
+    }).timeout(const Duration(seconds: 15));
     if (resp.statusCode != 200) {
       throw HttpException('仓库请求失败（HTTP ${resp.statusCode}）');
     }
@@ -139,7 +139,8 @@ class WorkshopService {
       // 已存在完整文件则跳过下载
       if (file.existsSync() && file.lengthSync() > 0) return file.path;
 
-      final finalUrl = proxyUrl.isNotEmpty ? '$proxyUrl$downloadUrl' : downloadUrl;
+      final finalUrl =
+          proxyUrl.isNotEmpty ? '$proxyUrl$downloadUrl' : downloadUrl;
       final request = http.Request('GET', Uri.parse(finalUrl));
       final resp = await http.Client().send(request);
       if (resp.statusCode != 200) return null;
@@ -220,9 +221,9 @@ class WorkshopService {
         ? 'https://gitee.com/api/v5/repos/${parsed.owner}/${parsed.repo}/releases'
         : 'https://api.github.com/repos/${parsed.owner}/${parsed.repo}/releases';
 
-    final resp = await http
-        .get(Uri.parse(apiUrl), headers: {'Accept': 'application/json'})
-        .timeout(const Duration(seconds: 15));
+    final resp = await http.get(Uri.parse(apiUrl), headers: {
+      'Accept': 'application/json'
+    }).timeout(const Duration(seconds: 15));
 
     if (resp.statusCode != 200) return null;
 

@@ -38,7 +38,10 @@ const List<ProviderPreset> providerPresets = [
     models: [
       (displayName: 'Gemini 2.5 Pro', modelName: 'gemini-2.5-pro'),
       (displayName: 'Gemini 2.5 Flash', modelName: 'gemini-2.5-flash'),
-      (displayName: 'Gemini 2.5 Flash-Lite', modelName: 'gemini-2.5-flash-lite'),
+      (
+        displayName: 'Gemini 2.5 Flash-Lite',
+        modelName: 'gemini-2.5-flash-lite'
+      ),
       (displayName: 'Gemini 2.0 Flash', modelName: 'gemini-2.0-flash'),
     ],
   ),
@@ -77,7 +80,10 @@ const List<ProviderPreset> providerPresets = [
     models: [
       (displayName: 'Grok 4.5', modelName: 'grok-4.5'),
       (displayName: 'Grok 4.20 Reasoning', modelName: 'grok-4.20-reasoning'),
-      (displayName: 'Grok 4.1 Fast Reasoning', modelName: 'grok-4-1-fast-reasoning'),
+      (
+        displayName: 'Grok 4.1 Fast Reasoning',
+        modelName: 'grok-4-1-fast-reasoning'
+      ),
     ],
   ),
   ProviderPreset(
@@ -121,7 +127,10 @@ const List<ProviderPreset> providerPresets = [
     baseUrl: 'https://api.minimaxi.com/v1',
     models: [
       (displayName: 'MiniMax M2.7', modelName: 'MiniMax-M2.7'),
-      (displayName: 'MiniMax M2.7 HighSpeed', modelName: 'MiniMax-M2.7-highspeed'),
+      (
+        displayName: 'MiniMax M2.7 HighSpeed',
+        modelName: 'MiniMax-M2.7-highspeed'
+      ),
       (displayName: 'MiniMax M2.5', modelName: 'MiniMax-M2.5'),
       (displayName: 'MiniMax M2.1', modelName: 'MiniMax-M2.1'),
     ],

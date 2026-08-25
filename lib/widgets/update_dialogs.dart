@@ -47,7 +47,7 @@ class _UpdateAvailableDialog extends StatefulWidget {
 class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
   late UpdateSource _source;
   bool _useProxy = true; // 是否使用内置代理加速下载（仅 GitHub 源生效）
-  
+
   // ABI 选择相关
   String _selectedAbi = 'arm64-v8a';
   final Map<String, String> _abiOptions = const {
@@ -110,16 +110,19 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
                     : _info.releaseNotes,
                 styleSheet: MarkdownStyleSheet(
                   p: const TextStyle(fontSize: 13, height: 1.4),
-                  h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  h3: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  h1: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold),
+                  h2: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
+                  h3: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.bold),
                   listBullet: const TextStyle(fontSize: 13),
                 ),
               ),
             ),
           ),
           const SizedBox(height: 12),
-          
+
           // ABI 选择区域
           Container(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
@@ -132,7 +135,8 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
               children: [
                 const Text(
                   '安装包类型：',
-                  style: TextStyle(fontSize: 13, color: CupertinoColors.systemGrey),
+                  style: TextStyle(
+                      fontSize: 13, color: CupertinoColors.systemGrey),
                 ),
                 GestureDetector(
                   onTap: () => _showAbiPicker(context),
@@ -159,7 +163,7 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
               ],
             ),
           ),
-          
+
           const SizedBox(height: 12),
           Text(
             '下载源',
@@ -294,15 +298,16 @@ class _DownloadDialogState extends State<_DownloadDialog> {
         ? widget.info.giteeDownloadUrl
         : widget.info.githubDownloadUrl;
     // 替换为选定的 ABI
-    return _replaceAbiInUrl(rawUrl, widget.info.latestVersion, widget.selectedAbi);
+    return _replaceAbiInUrl(
+        rawUrl, widget.info.latestVersion, widget.selectedAbi);
   }
 
   /// 仅 GitHub 源且勾选"使用内置代理"时才叠加代理前缀，
   /// 否则（Gitee 源 / 不勾选代理）直连源头下载
-  String get _proxyForSource => widget.source == UpdateSource.gitee ||
-          !widget.useProxy
-      ? ''
-      : widget.proxyUrl;
+  String get _proxyForSource =>
+      widget.source == UpdateSource.gitee || !widget.useProxy
+          ? ''
+          : widget.proxyUrl;
 
   @override
   void initState() {
@@ -341,9 +346,7 @@ class _DownloadDialogState extends State<_DownloadDialog> {
     final percent = (_progress * 100).round();
     return CupertinoAlertDialog(
       title: Text(
-        _failed
-            ? '下载失败'
-            : '正在从 $_sourceLabel 下载 V${widget.info.latestVersion}',
+        _failed ? '下载失败' : '正在从 $_sourceLabel 下载 V${widget.info.latestVersion}',
       ),
       content: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),

@@ -91,9 +91,9 @@ class AutoMomentService {
         // 高频（一周≥7条，子间隔≤24h）：错过多条时不补发积压，
         // 把排期后延到下一个子间隔，保持密度但不刷屏；只错过 1 条时正常补发。
         if (subInterval <= 24 && missed >= 2) {
-          DevLogService.instance.log(
-              '「${latest.displayName}」自动朋友圈积压 $missed 条（高频），'
-              '不补发，排期后延');
+          DevLogService.instance
+              .log('「${latest.displayName}」自动朋友圈积压 $missed 条（高频），'
+                  '不补发，排期后延');
           await _advanceNextDue(
             autoMomentProvider,
             character.id,
@@ -107,8 +107,9 @@ class AutoMomentService {
         // - 高频（子间隔≤24h）：最多补发当前这条（积压≥2 已在上方后延）；
         // - 低频（子间隔>24h）：允许补发积压，但上限 maxCatchupCount 条，
         //   防止长时间未打开时一次刷出过多动态。
-        final catchupCount =
-            subInterval <= 24 ? 1 : min(missed, AutoMomentService.maxCatchupCount);
+        final catchupCount = subInterval <= 24
+            ? 1
+            : min(missed, AutoMomentService.maxCatchupCount);
 
         for (var i = 0; i < catchupCount; i++) {
           try {
@@ -134,8 +135,8 @@ class AutoMomentService {
               final createdAt = i == catchupCount - 1
                   ? now
                   : now.subtract(Duration(
-                      minutes: ((catchupCount - 1 - i) * subInterval * 60)
-                          .round()));
+                      minutes:
+                          ((catchupCount - 1 - i) * subInterval * 60).round()));
               final moment = await _publishMoment(
                 characterProvider: characterProvider,
                 character: latest,
@@ -151,8 +152,7 @@ class AutoMomentService {
                   .log('「${latest.displayName}」自动朋友圈文案为空，跳过本次');
             }
           } catch (e) {
-            DevLogService.instance.log(
-                '「${character.displayName}」自动朋友圈生成失败：'
+            DevLogService.instance.log('「${character.displayName}」自动朋友圈生成失败：'
                 '${LLMService.describeException(e)}');
           }
         }
@@ -167,10 +167,10 @@ class AutoMomentService {
 
       // 第二阶段：串行触发其他角色的点赞/评论互动（按动态可见范围，排除发布者本人）
       for (final (owner, moment) in toPublish) {
-        final visible =
-            MomentAiService.visibleCharacters(characterProvider, moment.visibility)
-                .where((c) => c.id != owner.id)
-                .toList();
+        final visible = MomentAiService.visibleCharacters(
+                characterProvider, moment.visibility)
+            .where((c) => c.id != owner.id)
+            .toList();
         if (visible.isEmpty) continue;
         await MomentAiService.run(
           characterProvider: characterProvider,
@@ -288,8 +288,10 @@ class AutoMomentService {
         // 获取聊天记录上下文
         final chatHistory =
             chatProvider.getRecentHistoryForCharacter(character.id, 5);
-        final memoryPoints =
-            memoryPointProvider.pointsFor(character.id).map((p) => p.content).toList();
+        final memoryPoints = memoryPointProvider
+            .pointsFor(character.id)
+            .map((p) => p.content)
+            .toList();
 
         // 生成问候内容
         final content = await _generateGreeting(
@@ -380,9 +382,8 @@ class AutoMomentService {
       fallback: '你是「${character.displayName}」。',
     );
 
-    final idleDesc = idleHours >= 24
-        ? '${(idleHours / 24).round()}天'
-        : '$idleHours小时';
+    final idleDesc =
+        idleHours >= 24 ? '${(idleHours / 24).round()}天' : '$idleHours小时';
 
     final messages = <Map<String, Object>>[
       {'role': 'system', 'content': system},
@@ -440,7 +441,8 @@ class AutoMomentService {
       maxTokens: 200,
     );
     // 累计该次自动发帖消耗
-    TokenUsageProvider.instance.addUsage(TokenUsageProvider.kMomentUsageId, result.usage);
+    TokenUsageProvider.instance
+        .addUsage(TokenUsageProvider.kMomentUsageId, result.usage);
     final content = result.content.trim();
     return content.isEmpty ? null : content;
   }
@@ -488,10 +490,8 @@ class AutoMomentService {
 
   /// 组装「长期记忆」段落（无记忆点时返回空串）。
   static String _memoryPointsSection(List<String> memoryPoints) {
-    final memory = memoryPoints
-        .map((m) => m.trim())
-        .where((m) => m.isNotEmpty)
-        .toList();
+    final memory =
+        memoryPoints.map((m) => m.trim()).where((m) => m.isNotEmpty).toList();
     if (memory.isEmpty) return '';
     return '## 你的长期记忆\n'
         '这些是用户主动保存的、关于你们之间重要约定与经历的长期记忆，'

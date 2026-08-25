@@ -460,9 +460,8 @@ _CharacterDecoded _decodeCharacterStore(_CharacterRawStore raw) {
     } catch (_) {}
   }
 
-  final defaults = _defaultCharacters()
-      .where((c) => !deletedIds.contains(c.id))
-      .toList();
+  final defaults =
+      _defaultCharacters().where((c) => !deletedIds.contains(c.id)).toList();
   final defaultIds = defaults.map((c) => c.id).toSet();
   final self = _buildSelfCharacter(
     customMap[CharacterProvider.selfCharacterId] as Map<String, dynamic>?,

@@ -46,14 +46,13 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   void initState() {
     super.initState();
     // 优先取编辑模型的值，其次取快捷预设的预填值（添加模式）
-    _displayController =
-        TextEditingController(text: widget.model?.displayName ?? widget.preset?.displayName ?? '');
-    _modelNameController =
-        TextEditingController(text: widget.model?.modelName ?? widget.preset?.modelName ?? '');
-    _baseUrlController =
-        TextEditingController(text: widget.model?.baseUrl ?? widget.preset?.baseUrl ?? '');
-    _apiKeyController =
-        TextEditingController(text: widget.model?.apiKey ?? '');
+    _displayController = TextEditingController(
+        text: widget.model?.displayName ?? widget.preset?.displayName ?? '');
+    _modelNameController = TextEditingController(
+        text: widget.model?.modelName ?? widget.preset?.modelName ?? '');
+    _baseUrlController = TextEditingController(
+        text: widget.model?.baseUrl ?? widget.preset?.baseUrl ?? '');
+    _apiKeyController = TextEditingController(text: widget.model?.apiKey ?? '');
     _contextController = TextEditingController(
       text: (widget.model?.contextLength ?? 8000).toString(),
     );
@@ -259,7 +258,8 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
               _buildField(
                 controller: _apiKeyController,
                 label: 'API Key',
-                placeholder: '输入你的 API Key（DeepSeek 在 platform.deepseek.com 申请）',
+                placeholder:
+                    '输入你的 API Key（DeepSeek 在 platform.deepseek.com 申请）',
                 obscureText: true,
               ),
             ],

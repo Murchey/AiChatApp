@@ -98,7 +98,8 @@ class AuthProvider extends ChangeNotifier {
     await prefs.remove('user_signature');
     await prefs.remove('user_gender');
     if (_user != null) {
-      _user = _user!.copyWith(avatar: '', region: '', signature: '', gender: '');
+      _user =
+          _user!.copyWith(avatar: '', region: '', signature: '', gender: '');
     }
     notifyListeners();
   }

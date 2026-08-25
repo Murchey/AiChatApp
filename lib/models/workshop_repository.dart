@@ -37,6 +37,9 @@ class WorkshopRepository {
   /// 是否可用「游戏分类」（V1.0.0）
   bool get hasGame => availableTags.contains(kGamePackTag);
 
+  /// 是否可用「表情包分类」（V1.3.0）
+  bool get hasSticker => availableTags.contains(kStickerPackTag);
+
   /// 是否有「更新通知」tag（V1.2.0）
   bool get hasUpdateNotify => availableTags.contains(kUpdateNotifyTag);
 

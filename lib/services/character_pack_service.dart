@@ -124,7 +124,8 @@ class CharacterPackService {
     }
     if (avatar.isEmpty) {
       for (final f in files) {
-        if (f.name.startsWith('$dir/') && !f.name.substring(dir.length + 1).contains('/') &&
+        if (f.name.startsWith('$dir/') &&
+            !f.name.substring(dir.length + 1).contains('/') &&
             isImage(f.name.split('/').last.toLowerCase())) {
           avatar = base64Encode(f.content as List<int>);
           break;
@@ -188,7 +189,9 @@ class CharacterPackService {
       activeEnd: str('active_end'),
       modelId: str('model_id'),
       defaultModelId: str('default_model_id'),
-      tags: (data['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      tags:
+          (data['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+              [],
       moments: moments,
     );
     return (character: character, memoryPoints: memoryPoints);
@@ -253,8 +256,8 @@ class CharacterPackService {
       }
       final localImages = <String>[];
       for (final rel in (map['images'] as List<dynamic>?)
-          ?.map((e) => e.toString())
-          .toList() ??
+              ?.map((e) => e.toString())
+              .toList() ??
           <String>[]) {
         final norm = rel.replaceAll('\\', '/');
         final entry = fileMap['$baseDir/$norm'] ?? fileMap[norm];
@@ -413,7 +416,8 @@ class CharacterPackService {
         const JsonEncoder.withIndent('    ').convert(data),
       ));
       if (c.systemPrompt.trim().isNotEmpty) {
-        archive.addFile(ArchiveFile.string('$folder/Prompt.txt', c.systemPrompt));
+        archive
+            .addFile(ArchiveFile.string('$folder/Prompt.txt', c.systemPrompt));
       }
       if (c.avatar.isNotEmpty) {
         archive.addFile(ArchiveFile.bytes(
@@ -474,7 +478,8 @@ class CharacterPackService {
     final dir = saveDirectory ?? await _defaultSaveDirectory();
     final now = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
-    final fileName = '角色包_${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
+    final fileName =
+        '角色包_${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
     final file = File('$dir/$fileName');
     await file.writeAsBytes(zipBytes);
     return file.path;
@@ -536,7 +541,8 @@ class CharacterPackService {
     final dir = saveDirectory ?? await _defaultSaveDirectory();
     final now = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
-    final fileName = '朋友圈_${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
+    final fileName =
+        '朋友圈_${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
     final file = File('$dir/$fileName');
     await file.writeAsBytes(zipBytes);
     return file.path;
@@ -553,6 +559,7 @@ class CharacterPackService {
     } catch (_) {}
     return Directory.systemTemp.path;
   }
+
   /// 解码文本内容：优先严格 UTF-8，失败尝试 GBK（Windows 中文系统常见），最后按原始字节
   static String _decodeUtf8(List<int>? bytes) {
     if (bytes == null) return '';

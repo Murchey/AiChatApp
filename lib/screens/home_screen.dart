@@ -220,8 +220,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     // 朋友圈互动通知未读 → 底部「朋友圈」tab 显示红点
-    final momentsUnread =
-        context.watch<MomentNotificationProvider>().hasUnread;
+    final momentsUnread = context.watch<MomentNotificationProvider>().hasUnread;
     // 只监听未读数总和：聊天消息内容/排序变化不重建整个首页（4 个 tab + 底部栏），
     // 仅未读数字变化时才重建角标；会话列表自身由 _buildChatList 内的 Consumer 独立刷新。
     return Selector2<ChatProvider, GroupChatProvider, int>(
@@ -360,9 +359,8 @@ class _HomeScreenState extends State<HomeScreen>
                       vertical: 10,
                     ),
                     // 置顶会话背景变灰，区分普通会话
-                    backgroundColor: entry.pinned
-                        ? context.pinnedChatColor
-                        : null,
+                    backgroundColor:
+                        entry.pinned ? context.pinnedChatColor : null,
                     // CupertinoListTile 默认把 leading 约束在 28×28，
                     // 必须显式指定与头像一致的尺寸，否则头像被压缩
                     leadingSize: 45,
@@ -821,8 +819,7 @@ class _HomeScreenState extends State<HomeScreen>
   ) {
     _dismissChatMenu();
     final overlay = Overlay.of(context);
-    final overlayBox =
-        overlay.context.findRenderObject() as RenderBox?;
+    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
     if (overlayBox == null) return;
 
     const panelWidth = 160.0;

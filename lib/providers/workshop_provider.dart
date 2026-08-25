@@ -26,8 +26,7 @@ class WorkshopProvider extends ChangeNotifier {
   /// 上一次获取的通知内容（用于去重）
   String? _lastNotifyBody;
 
-  List<WorkshopRepository> get repositories =>
-      List.unmodifiable(_repositories);
+  List<WorkshopRepository> get repositories => List.unmodifiable(_repositories);
 
   bool get notifyEnabled => _notifyEnabled;
   String? get notifyRepoId => _notifyRepoId;
@@ -118,7 +117,8 @@ class WorkshopProvider extends ChangeNotifier {
       url: path.trim(),
       proxyUrl: parsed.isGitee ? '' : proxyUrl,
       availableTags: tags,
-      error: tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 / V1.2.0 资产 tag' : null,
+      error:
+          tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 / V1.2.0 / V1.3.0 资产 tag' : null,
     );
     _repositories.insert(0, repo);
     notifyListeners();
@@ -136,7 +136,9 @@ class WorkshopProvider extends ChangeNotifier {
       final tags = await WorkshopService.checkTags(repo.url);
       _repositories[index] = repo.copyWith(
         availableTags: tags,
-        error: tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 / V1.2.0 资产 tag' : null,
+        error: tags.isEmpty
+            ? '未检测到 V1.1.0 / V1.0.0 / V1.2.0 / V1.3.0 资产 tag'
+            : null,
       );
       // 清空该仓库的资产缓存，重新拉取
       _assetsCache.remove(repo.id);
@@ -166,7 +168,8 @@ class WorkshopProvider extends ChangeNotifier {
       url: path.trim(),
       proxyUrl: parsed.isGitee ? '' : proxyUrl,
       availableTags: tags,
-      error: tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 / V1.2.0 资产 tag' : null,
+      error:
+          tags.isEmpty ? '未检测到 V1.1.0 / V1.0.0 / V1.2.0 / V1.3.0 资产 tag' : null,
     );
     final index = _repositories.indexWhere((r) => r.id == repo.id);
     if (index != -1) _repositories[index] = updated;

@@ -172,3 +172,16 @@ class StickerEntry {
     this.source,
   });
 }
+
+/// 视觉模型自动打标结果：画面描述 + 检索关键词 + 情绪标签。
+class StickerAutoTags {
+  final String description;
+  final List<String> keywords;
+  final List<String> emotionTags;
+
+  const StickerAutoTags({
+    this.description = '',
+    this.keywords = const [],
+    this.emotionTags = const [],
+  });
+}

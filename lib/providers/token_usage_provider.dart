@@ -88,7 +88,7 @@ class TokenUsageProvider extends ChangeNotifier {
     _syncToWidget();
     return next;
   }
-  
+
   /// 同步数据到小组件
   void _syncToWidget() {
     // 异步同步，不阻塞主流程
@@ -105,7 +105,7 @@ class TokenUsageProvider extends ChangeNotifier {
             privateChat += usage.totalTokens;
           }
         });
-        
+
         await WidgetSyncService.syncTokenUsage(
           total: total,
           sent: sentTotal,

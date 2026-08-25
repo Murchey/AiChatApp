@@ -74,7 +74,9 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
         .toSet();
 
     for (final entry in widget.entries) {
-      if (!_selected.contains(entry.folderName) || entry.error != null) continue;
+      if (!_selected.contains(entry.folderName) || entry.error != null) {
+        continue;
+      }
 
       var name = entry.character.name.trim();
       // 与已有角色重名：弹出「覆盖 / 改名」选择，取消则跳过该角色
@@ -236,9 +238,11 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
                   subtitle: Padding(
                     padding: const EdgeInsets.only(top: 3),
                     child: Text(
-                      hasError ? entry.error! : (entry.character.signature.isEmpty
-                          ? entry.character.name
-                          : entry.character.signature),
+                      hasError
+                          ? entry.error!
+                          : (entry.character.signature.isEmpty
+                              ? entry.character.name
+                              : entry.character.signature),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

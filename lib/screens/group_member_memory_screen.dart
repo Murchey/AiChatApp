@@ -18,7 +18,8 @@ class GroupMemberMemoryScreen extends StatefulWidget {
   const GroupMemberMemoryScreen({super.key, required this.groupId});
 
   @override
-  State<GroupMemberMemoryScreen> createState() => _GroupMemberMemoryScreenState();
+  State<GroupMemberMemoryScreen> createState() =>
+      _GroupMemberMemoryScreenState();
 }
 
 class _GroupMemberMemoryScreenState extends State<GroupMemberMemoryScreen> {

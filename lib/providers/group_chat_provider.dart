@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,7 @@ import '../services/llm_service.dart';
 import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
 import '../services/sticker_query_protocol.dart';
+import '../services/sticker_search_service.dart';
 import 'api_provider.dart';
 import 'token_usage_provider.dart';
 
@@ -556,8 +558,11 @@ class GroupChatProvider extends ChangeNotifier {
     required List<GroupMemberReply> members,
     required String userNickname,
     int contextCount = 10,
+    bool roleplayMode = false,
     // @ 提及的角色：优先发言且必定回复（跳过插话判定）
     List<String> mentionedCharacterIds = const [],
+    // 表情包检索器：角色可按需发送用户保存的表情包（null=关闭该能力）
+    StickerMatch? Function(String query)? findSticker,
   }) async {
     final generation = ++_replyGeneration;
     _replyingGroupId = groupId;
@@ -591,8 +596,8 @@ class GroupChatProvider extends ChangeNotifier {
     for (final member in speakers) {
       if (generation != _replyGeneration) break; // 被打断
       try {
-        final systemPrompt =
-            _buildGroupSystemPrompt(groupId, member, userNickname);
+        final systemPrompt = _buildGroupSystemPrompt(
+            groupId, member, userNickname, roleplayMode);
         final history = _buildGroupHistory(groupId, contextCount);
 
         final isMentioned = mentionedSet.contains(member.characterId);
@@ -611,6 +616,7 @@ class GroupChatProvider extends ChangeNotifier {
           characterName: member.name,
           replyToUser: true,
           currentTime: DateTime.now(),
+          roleplayMode: roleplayMode,
         );
         // 群聊中只允许输出自己的新内容：防止模型复述/转述其他成员的发言
         outputInstruction =
@@ -628,23 +634,45 @@ class GroupChatProvider extends ChangeNotifier {
           systemPrompt: systemPrompt,
           historyMessages: history,
           outputInstruction: outputInstruction,
+          roleplayMode: roleplayMode,
         );
         if (generation != _replyGeneration) break;
         // 累计该群真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens）
         TokenUsageProvider.instance.addUsage(groupId, result.usage);
 
         var visibleMessageIndex = 0;
+        var stickerSent = false;
         for (var i = 0; i < result.messages.length; i++) {
           if (generation != _replyGeneration) break;
-          // 群聊暂未支持角色发送图片表情：剥离内部查询标记，纯标记直接忽略。
-          final content = StickerQueryProtocol.visibleText(result.messages[i]);
+          final raw = result.messages[i];
+          final query = StickerQueryProtocol.extractQuery(raw);
+          final content = StickerQueryProtocol.visibleText(raw);
+          if (query != null) {
+            // 每个成员每轮最多发送一张；只有本地真实存在的图片才会发送。
+            final sticker = !stickerSent ? findSticker?.call(query) : null;
+            if (sticker != null && File(sticker.imagePath).existsSync()) {
+              _addGroupMessage(
+                groupId,
+                member.characterId,
+                member.name,
+                sticker.imagePath,
+                type: MessageType.sticker,
+                stickerLabel: sticker.label,
+                avatarBase64: member.avatarBase64,
+                // 回复轮内不逐条落盘，整轮结束后统一写一次
+                persist: false,
+              );
+              stickerSent = true;
+            }
+            if (content.isEmpty) continue;
+          }
           if (content.isEmpty) continue;
           _addGroupMessage(
             groupId,
             member.characterId,
             member.name,
             content,
-            // 仅首条消息带引用块，避免连续多条都带引用显得累赘
+            // 仅首条文本消息带引用块，避免连续多条都带引用显得累赘
             quoteContent:
                 visibleMessageIndex == 0 ? (quote?.content ?? '') : '',
             quoteSender: visibleMessageIndex == 0 ? (quote?.name ?? '') : '',
@@ -714,6 +742,8 @@ class GroupChatProvider extends ChangeNotifier {
     String characterId,
     String name,
     String content, {
+    MessageType type = MessageType.text,
+    String stickerLabel = '',
     String quoteContent = '',
     String quoteSender = '',
     String avatarBase64 = '',
@@ -721,17 +751,25 @@ class GroupChatProvider extends ChangeNotifier {
   }) {
     if (content.trim().isEmpty) return;
     _messages[groupId] ??= [];
-    _messages[groupId]!.add(Message(
+    final message = Message(
       id: const Uuid().v4(),
       conversationId: groupId,
       content: content,
+      type: type,
       sender: MessageSender.character,
       senderCharacterId: characterId,
       senderName: name,
       quoteContent: quoteContent,
       quoteSender: quoteSender,
-    ));
-    _updateLastMessage(groupId, content);
+      stickerLabel:
+          type == MessageType.sticker && stickerLabel.trim().isNotEmpty
+              ? stickerLabel.trim()
+              : null,
+    );
+    _messages[groupId]!.add(message);
+    // 会话列表与通知统一使用预览文案（表情包显示占位，不暴露文件路径）。
+    final preview = _lastMessagePreview(message);
+    _updateLastMessage(groupId, preview);
     // 用户不在该群页面时记未读并发送系统通知
     if (_activeGroupId != groupId) {
       final unreadCount = _increaseGroupUnread(groupId);
@@ -743,7 +781,7 @@ class GroupChatProvider extends ChangeNotifier {
       NotificationService.instance.showCharacterNotification(
         conversationId: groupId,
         characterName: group.name,
-        content: '$name: $content',
+        content: '$name: $preview',
         unreadCount: unreadCount,
         avatarBase64: avatarBase64,
       );
@@ -768,6 +806,7 @@ class GroupChatProvider extends ChangeNotifier {
     String groupId,
     GroupMemberReply m,
     String userNickname,
+    bool roleplayMode,
   ) {
     final group = getGroupById(groupId);
     final groupName =
@@ -804,7 +843,7 @@ ${memory.map((e) => '- $e').join('\n')}'''}
 ${extra.isEmpty ? '' : '\n$extra\n'}
 ## 群聊回复要求
 1. 消息必须极度口语化，像真实微信群聊，允许语气词、表情包文字（如[捂脸]）或不规范大小写。
-2. 针对群聊中的最新内容，把想说的话拆分为 1~3 条短消息，每条 5~15 个字，最多不超过 20 个字。
+2. ${roleplayMode ? '使用括号动作流语C格式：用（动作/神态/环境描写）描写动作，后接自然台词；不要输出 JSON。' : '针对群聊中的最新内容，把想说的话拆分为 1~3 条短消息，每条 5~15 个字，最多不超过 20 个字。'}
 3. 只输出你自己想说的话：严禁复述、转述、总结或引用其他成员的发言内容，也不要出现"XX说……"之类的句式。
 4. $activeLine'''
         .trim();
@@ -849,6 +888,15 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
           case MessageType.system:
             result.add({'role': 'user', 'content': m.content});
         }
+      } else if (m.type == MessageType.sticker) {
+        // 角色发送的表情包：给模型语义描述，绝不暴露文件路径。
+        final name = m.senderName.isEmpty ? '角色' : m.senderName;
+        final label = m.stickerLabel?.trim() ?? '';
+        result.add({
+          'role': 'assistant',
+          'content':
+              label.isEmpty ? '[$name发送了一张表情包]' : '[$name发送了一张表情包（备注：$label）]',
+        });
       } else {
         final name = m.senderName.isEmpty ? '角色' : m.senderName;
         result.add({'role': 'assistant', 'content': '$name：${m.content}'});

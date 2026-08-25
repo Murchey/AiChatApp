@@ -51,7 +51,8 @@ class UpdateInfo {
 /// 2. 下载新版 APK 到应用外部文件目录（[downloadApk]，带进度回调）
 /// 3. 通过原生 FileProvider 触发系统安装（[installApk]）
 class UpdateService {
-  static const MethodChannel _channel = MethodChannel('com.aichat.ai_chat/files');
+  static const MethodChannel _channel =
+      MethodChannel('com.aichat.ai_chat/files');
   static const _ignoredVersionKey = 'update_ignored_version_v1';
 
   /// 记住忽略的版本号（用户点「不再提醒」后，该版本不再弹更新提示）
@@ -77,12 +78,14 @@ class UpdateService {
 
       // 1. Gitee 最新 Release（无需代理）
       final gitee = await _fetchRelease(
-        apiUrl: 'https://gitee.com/api/v5/repos/$kGiteeOwner/$kGiteeRepo/releases/latest',
+        apiUrl:
+            'https://gitee.com/api/v5/repos/$kGiteeOwner/$kGiteeRepo/releases/latest',
         downloadPrefix: '$kGiteeRepoUrl/releases/download',
       );
       // 2. GitHub 最新 Release（版本检测直连 API，代理仅用于后续 APK 下载加速）
       final github = await _fetchRelease(
-        apiUrl: 'https://api.github.com/repos/$kGitHubOwner/$kGitHubRepo/releases/latest',
+        apiUrl:
+            'https://api.github.com/repos/$kGitHubOwner/$kGitHubRepo/releases/latest',
         downloadPrefix: '$kGitHubRepoUrl/releases/download',
       );
 
@@ -90,8 +93,9 @@ class UpdateService {
 
       final latestVersion = gitee?.version ?? github!.version;
       // 更新说明优先抓取 GitHub 仓库 Release 的说明内容
-      final releaseNotes =
-          (github?.notes.isNotEmpty ?? false) ? github!.notes : (gitee?.notes ?? '');
+      final releaseNotes = (github?.notes.isNotEmpty ?? false)
+          ? github!.notes
+          : (gitee?.notes ?? '');
 
       if (!_isNewerVersion(latestVersion, currentVersion)) return null;
       // 用户点过「不再提醒」的版本不再弹出
@@ -110,14 +114,15 @@ class UpdateService {
   /// 请求单个源的最新 Release，解析出版本号、更新说明与 APK 直链。
   /// 通过官方 API 直连（代理仅用于 APK 下载，不用于版本检测）。
   /// 失败（网络/非 200/无 tag）返回 null。
-  static Future<({String version, String notes, String downloadUrl})?> _fetchRelease({
+  static Future<({String version, String notes, String downloadUrl})?>
+      _fetchRelease({
     required String apiUrl,
     required String downloadPrefix,
   }) async {
     try {
-      final resp = await http
-          .get(Uri.parse(apiUrl), headers: {'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 10));
+      final resp = await http.get(Uri.parse(apiUrl), headers: {
+        'Accept': 'application/json'
+      }).timeout(const Duration(seconds: 10));
       if (resp.statusCode != 200) return null;
 
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -176,7 +181,8 @@ class UpdateService {
       // 已存在完整文件则跳过下载
       if (file.existsSync() && file.lengthSync() > 0) return file.path;
 
-      final finalUrl = proxyUrl.isNotEmpty ? '$proxyUrl$downloadUrl' : downloadUrl;
+      final finalUrl =
+          proxyUrl.isNotEmpty ? '$proxyUrl$downloadUrl' : downloadUrl;
       final request = http.Request('GET', Uri.parse(finalUrl));
       final resp = await http.Client().send(request);
       if (resp.statusCode != 200) return null;

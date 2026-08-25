@@ -58,8 +58,7 @@ class ChatTitleBar extends StatelessWidget {
         PromptBuilder.inActivePeriod(DateTime.now(), activeStart, activeEnd);
     // 副标题：群聊取群简介（完整展示，超长省略），私聊取个性签名（前 15 字）
     final subtitle = (isGroup ? groupIntro : signature).trim();
-    final subtitleText =
-        isGroup ? subtitle : truncateSignature(subtitle);
+    final subtitleText = isGroup ? subtitle : truncateSignature(subtitle);
     return Column(
       mainAxisSize: MainAxisSize.min,
       // 终末地样式：名称与状态同行靠左排列，副标题小字位于下方

@@ -20,8 +20,7 @@ class MomentVisibilityScreen extends StatefulWidget {
   });
 
   @override
-  State<MomentVisibilityScreen> createState() =>
-      _MomentVisibilityScreenState();
+  State<MomentVisibilityScreen> createState() => _MomentVisibilityScreenState();
 }
 
 class _MomentVisibilityScreenState extends State<MomentVisibilityScreen> {
@@ -200,14 +199,14 @@ class _MomentVisibilityScreenState extends State<MomentVisibilityScreen> {
                               ),
                             ),
                           ),
-                            Icon(
-                              CupertinoIcons.chevron_right,
-                              size: 16,
-                              color: context.textSecondaryColor,
-                            ),
-                          ],
-                        ),
-                      );
+                          Icon(
+                            CupertinoIcons.chevron_right,
+                            size: 16,
+                            color: context.textSecondaryColor,
+                          ),
+                        ],
+                      ),
+                    );
                   }),
                 ],
               ],
@@ -220,7 +219,8 @@ class _MomentVisibilityScreenState extends State<MomentVisibilityScreen> {
               padding: const EdgeInsets.all(16),
               child: CupertinoButton.filled(
                 onPressed: _addGroup,
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
                 child: const Text(
                   '添加分组',
                   style: TextStyle(
@@ -267,9 +267,8 @@ class _MomentVisibilityScreenState extends State<MomentVisibilityScreen> {
                   ? CupertinoIcons.checkmark_circle_fill
                   : CupertinoIcons.circle,
               size: 24,
-              color: isSelected
-                  ? context.accentColor
-                  : CupertinoColors.systemGrey,
+              color:
+                  isSelected ? context.accentColor : CupertinoColors.systemGrey,
             ),
           ],
         ),

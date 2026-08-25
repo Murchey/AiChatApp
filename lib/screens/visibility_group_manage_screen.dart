@@ -19,7 +19,8 @@ class VisibilityGroupManageScreen extends StatefulWidget {
       _VisibilityGroupManageScreenState();
 }
 
-class _VisibilityGroupManageScreenState extends State<VisibilityGroupManageScreen> {
+class _VisibilityGroupManageScreenState
+    extends State<VisibilityGroupManageScreen> {
   late final Set<String> _selected = widget.group.memberIds.toSet();
 
   Future<void> _save() async {

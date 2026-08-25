@@ -73,7 +73,8 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
 
   bool get _canSave =>
       !_saving &&
-      (_contentController.text.trim().isNotEmpty || _picked.isNotEmpty ||
+      (_contentController.text.trim().isNotEmpty ||
+          _picked.isNotEmpty ||
           _existingPaths.isNotEmpty);
 
   Future<void> _pickImages() async {
@@ -138,8 +139,7 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
         }
         final characterProvider = context.read<CharacterProvider>();
         final api = context.read<ApiProvider>();
-        final notificationProvider =
-            context.read<MomentNotificationProvider>();
+        final notificationProvider = context.read<MomentNotificationProvider>();
         final chatProvider = context.read<ChatProvider>();
         final chatSettings = context.read<ChatSettingsProvider>();
         final edited = Moment(
@@ -166,8 +166,7 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
       } else {
         final characterProvider = context.read<CharacterProvider>();
         final api = context.read<ApiProvider>();
-        final notificationProvider =
-            context.read<MomentNotificationProvider>();
+        final notificationProvider = context.read<MomentNotificationProvider>();
         final chatProvider = context.read<ChatProvider>();
         final chatSettings = context.read<ChatSettingsProvider>();
         final moment = await characterProvider.publishSelfMoment(
@@ -377,13 +376,9 @@ class _PublishMomentScreenState extends State<PublishMomentScreen> {
           padding: EdgeInsets.zero,
           onPressed: canSave ? _save : null,
           child: Text(
-            _saving
-                ? (_isEdit ? '保存中...' : '发表中...')
-                : (_isEdit ? '保存' : '发表'),
+            _saving ? (_isEdit ? '保存中...' : '发表中...') : (_isEdit ? '保存' : '发表'),
             style: TextStyle(
-              color: canSave
-                  ? context.accentColor
-                  : context.textSecondaryColor,
+              color: canSave ? context.accentColor : context.textSecondaryColor,
               fontWeight: FontWeight.w600,
             ),
           ),

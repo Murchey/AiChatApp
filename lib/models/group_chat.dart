@@ -61,12 +61,10 @@ class GroupChat {
       contextCount: json['context_count'] as int?,
       silenceProbability:
           (json['silence_probability'] as num?)?.toDouble() ?? 0.2,
-      quoteProbability:
-          (json['quote_probability'] as num?)?.toDouble() ?? 0.2,
-      memberCharacterIds:
-          (json['member_character_ids'] as List<dynamic>? ?? [])
-              .map((e) => e.toString())
-              .toList(),
+      quoteProbability: (json['quote_probability'] as num?)?.toDouble() ?? 0.2,
+      memberCharacterIds: (json['member_character_ids'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
       lastMessage: json['last_message'] as String? ?? '',
       lastMessageTime: json['last_message_time'] != null
           ? DateTime.parse(json['last_message_time'] as String)

@@ -7,8 +7,15 @@ const String kGamePackTag = 'V1.0.0';
 /// 更新通知 Release tag（用于接收仓库更新通知）
 const String kUpdateNotifyTag = 'V1.2.0';
 
+/// 表情包分类 Release tag（zip 内含图片与可选同名 .txt 备注）
+const String kStickerPackTag = 'V1.3.0';
+
 /// 创意工坊支持的全部 Release tag
-const List<String> kWorkshopPackTags = [kCharacterPackTag, kGamePackTag];
+const List<String> kWorkshopPackTags = [
+  kCharacterPackTag,
+  kGamePackTag,
+  kStickerPackTag,
+];
 
 /// 创意工坊仓库 Release 中的资产（zip 下载项）
 class WorkshopAsset {
@@ -47,4 +54,5 @@ class WorkshopAsset {
 
   bool get isCharacter => tag == kCharacterPackTag;
   bool get isGame => tag == kGamePackTag;
+  bool get isSticker => tag == kStickerPackTag;
 }

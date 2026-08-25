@@ -340,9 +340,8 @@ class _MomentCardState extends State<MomentCard> {
           comments: comments ?? moment.comments,
           createdAt: moment.createdAt,
         );
-    final newMoments = character.moments
-        .map((m) => m.id == moment.id ? target : m)
-        .toList();
+    final newMoments =
+        character.moments.map((m) => m.id == moment.id ? target : m).toList();
     await context.read<CharacterProvider>().updateMoments(
           character.id,
           newMoments,
@@ -381,14 +380,15 @@ class _MomentCardState extends State<MomentCard> {
             right: 0,
             bottom: 0,
             child: _CommentInputBar(
-              initialText:
-                  editIndex != null && editIndex >= 0 && editIndex < moment.comments.length
-                      ? moment.comments[editIndex].content
-                      : null,
+              initialText: editIndex != null &&
+                      editIndex >= 0 &&
+                      editIndex < moment.comments.length
+                  ? moment.comments[editIndex].content
+                  : null,
               replyToName: replyToName,
               onClose: _closeCommentInput,
-              onSend: (text) =>
-                  _submitComment(text, editIndex: editIndex, replyTo: replyToName),
+              onSend: (text) => _submitComment(text,
+                  editIndex: editIndex, replyTo: replyToName),
             ),
           ),
         ],
@@ -647,8 +647,8 @@ class _MomentCardState extends State<MomentCard> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final needFold = !_expanded &&
-            _textExceeds(context, moment.content, style, maxLines,
-                constraints.maxWidth);
+            _textExceeds(
+                context, moment.content, style, maxLines, constraints.maxWidth);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -722,8 +722,7 @@ class _MomentCardState extends State<MomentCard> {
   /// 解码尺寸按实际展示区域指定（cacheWidth/Height），避免原图全分辨率解码
   /// 造成大内存占用与滚动卡顿。
   Widget _images(BuildContext context) {
-    final shown =
-        moment.images.where(_imageExists).take(9).toList();
+    final shown = moment.images.where(_imageExists).take(9).toList();
     if (shown.isEmpty) {
       return Text(
         '图片加载失败',
@@ -760,7 +759,7 @@ class _MomentCardState extends State<MomentCard> {
               child: Image.file(
                 File(p),
                 fit: BoxFit.cover,
-                alignment: Alignment.center,  // 确保从中心裁剪
+                alignment: Alignment.center, // 确保从中心裁剪
                 gaplessPlayback: true,
                 cacheWidth: cellPx,
                 cacheHeight: cellPx,
@@ -857,8 +856,7 @@ class _MomentCardState extends State<MomentCard> {
                             const TextSpan(text: ' 回复了 '),
                             TextSpan(
                               text: c.replyTo,
-                              style: const TextStyle(
-                                  color: Color(0xFF8FB8E8)),
+                              style: const TextStyle(color: Color(0xFF8FB8E8)),
                             ),
                           ],
                           const TextSpan(text: '：'),
@@ -1008,10 +1006,9 @@ class _CommentInputBarState extends State<_CommentInputBar> {
                     : (widget.replyToName != null
                         ? '回复 ${widget.replyToName}'
                         : '说点什么...'),
-                placeholderStyle:
-                    TextStyle(color: context.textSecondaryColor),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 10),
+                placeholderStyle: TextStyle(color: context.textSecondaryColor),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 onChanged: (_) => setState(() {}),
               ),
             ),
@@ -1023,9 +1020,7 @@ class _CommentInputBarState extends State<_CommentInputBar> {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: canSend
-                      ? context.accentColor
-                      : context.separatorColor,
+                  color: canSend ? context.accentColor : context.separatorColor,
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,

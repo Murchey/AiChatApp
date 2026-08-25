@@ -11,8 +11,8 @@ import '../services/llm_service.dart';
 import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
 import '../services/widget_sync_service.dart';
-import '../models/sticker_pack.dart';
 import '../services/sticker_query_protocol.dart';
+import '../services/sticker_search_service.dart';
 import 'api_provider.dart';
 import 'token_usage_provider.dart';
 
@@ -372,6 +372,7 @@ class ChatProvider extends ChangeNotifier {
     required String userRelationship,
     required String userNickname,
     bool replyToUser = false,
+    bool roleplayMode = false,
     List<Map<String, Object>>? historyMessages,
     int contextCount = 10,
     ApiModel? compressModel,
@@ -396,11 +397,13 @@ class ChatProvider extends ChangeNotifier {
       activeEnd: activeEnd,
       memoryPoints: memoryPoints,
       extraContext: extraSystemContext,
+      roleplayMode: roleplayMode,
     );
     final outputInstruction = PromptBuilder.buildOutputInstruction(
       characterName: characterName,
       replyToUser: replyToUser,
       currentTime: now,
+      roleplayMode: roleplayMode,
     );
     // 记录本会话的系统提示词 + 输出指令 token，供发送消息时乐观更新进度条
     _systemTokens[conversationId] = _estimateTextTokens(prompt) +
@@ -431,6 +434,7 @@ class ChatProvider extends ChangeNotifier {
           historyMessages: history,
           imagePath: imagePath,
           outputInstruction: outputInstruction,
+          roleplayMode: roleplayMode,
         );
       }
       return await LLMService.generateMessages(
@@ -438,6 +442,7 @@ class ChatProvider extends ChangeNotifier {
         systemPrompt: prompt,
         historyMessages: history,
         outputInstruction: outputInstruction,
+        roleplayMode: roleplayMode,
       );
     } on LLMException catch (e) {
       _lastError = e.message;
@@ -463,6 +468,7 @@ class ChatProvider extends ChangeNotifier {
     required String userRelationship,
     required String userNickname,
     bool replyToUser = false,
+    bool roleplayMode = false,
     int contextCount = 10,
     ApiModel? compressModel,
     bool enableCompression = false,
@@ -474,7 +480,8 @@ class ChatProvider extends ChangeNotifier {
     List<String> memoryPoints = const [],
     String extraSystemContext =
         '', // 角色记忆池等额外记忆上下文，透传给 generateProactiveMessages
-    UserSticker? Function(String query)? findSticker,
+    // 角色可按需发送本地表情包（自定义 + 创意工坊 Pack）；null 表示关闭该能力。
+    StickerMatch? Function(String query)? findSticker,
   }) {
     debugPrint(
         '[ChatProvider] runProactiveReply 被调用: $conversationId replyToUser=$replyToUser');
@@ -493,6 +500,7 @@ class ChatProvider extends ChangeNotifier {
       userRelationship: userRelationship,
       userNickname: userNickname,
       replyToUser: replyToUser,
+      roleplayMode: roleplayMode,
       contextCount: contextCount,
       compressModel: compressModel,
       enableCompression: enableCompression,
@@ -517,6 +525,7 @@ class ChatProvider extends ChangeNotifier {
     required String userRelationship,
     required String userNickname,
     bool replyToUser = false,
+    bool roleplayMode = false,
     int contextCount = 10,
     ApiModel? compressModel,
     bool enableCompression = false,
@@ -527,7 +536,7 @@ class ChatProvider extends ChangeNotifier {
     String activeEnd = '',
     List<String> memoryPoints = const [],
     String extraSystemContext = '',
-    UserSticker? Function(String query)? findSticker,
+    StickerMatch? Function(String query)? findSticker,
   }) async {
     debugPrint('[ChatProvider] _doRunProactiveReply 开始: $conversationId');
     try {
@@ -539,6 +548,7 @@ class ChatProvider extends ChangeNotifier {
         userRelationship: userRelationship,
         userNickname: userNickname,
         replyToUser: replyToUser,
+        roleplayMode: roleplayMode,
         contextCount: contextCount,
         compressModel: compressModel,
         enableCompression: enableCompression,
@@ -649,7 +659,8 @@ class ChatProvider extends ChangeNotifier {
     final history = toCompress
         .map((m) => {
               'role': m.isFromUser ? 'user' : 'assistant',
-              'content': m.content,
+              // 表情包/图片/文件绝不让文件路径进入压缩模型的上下文。
+              'content': _describeMessageForModel(m),
             })
         .toList();
 
@@ -803,10 +814,9 @@ class ChatProvider extends ChangeNotifier {
     for (int i = start; i < history.length; i++) {
       final m = history[i];
       if (m.type == MessageType.sticker) {
-        final label = m.stickerLabel?.trim() ?? '';
         result.add({
           'role': m.isFromUser ? 'user' : 'assistant',
-          'content': label.isEmpty ? '[用户发送了一个表情包]' : '[用户发送了一个表情包（备注：$label）]',
+          'content': _describeMessageForModel(m),
         });
         continue;
       }
@@ -830,6 +840,28 @@ class ChatProvider extends ChangeNotifier {
     return result;
   }
 
+  /// 把消息转换为模型可读的上下文描述：
+  /// - 表情包绝不暴露本地文件路径；
+  /// - 角色自己发送的表情包用「你」而不是「用户」，避免后续把
+  ///   角色发的表情错记成用户发的；
+  /// - 图片/文件以占位说明进入上下文。
+  String _describeMessageForModel(Message m) {
+    switch (m.type) {
+      case MessageType.sticker:
+        final label = m.stickerLabel?.trim() ?? '';
+        final who = m.isFromUser ? '用户' : '你';
+        return label.isEmpty ? '[$who发送了一个表情包]' : '[$who发送了一个表情包（备注：$label）]';
+      case MessageType.image:
+        return m.isFromUser ? '[用户发送了一张图片]' : '[你发送了一张图片]';
+      case MessageType.file:
+        final fileName = m.content.split(RegExp(r'[/\\]')).last;
+        return m.isFromUser ? '[用户发送了一个文件：$fileName]' : '[你发送了一个文件：$fileName]';
+      case MessageType.text:
+      case MessageType.system:
+        return m.content;
+    }
+  }
+
   /// 将一条角色主动消息加入会话并持久化（渲染阶段逐条调用）
   void addProactiveMessage(String conversationId, String content) {
     if (content.trim().isEmpty) return;
@@ -842,23 +874,27 @@ class ChatProvider extends ChangeNotifier {
       sender: MessageSender.character,
     ));
     _updateConversationLastMessage(conversationId, content);
-    // 不在该会话页面时记未读并发送系统通知
-    if (_activeConversationId != conversationId) {
-      final unreadCount = _increaseUnread(conversationId);
-      final index = _conversations.indexWhere((c) => c.id == conversationId);
-      if (index != -1) {
-        final conv = _conversations[index];
-        NotificationService.instance.showCharacterNotification(
-          conversationId: conversationId,
-          characterName: conv.characterName,
-          content: content,
-          unreadCount: unreadCount,
-          avatarBase64: conv.characterAvatar,
-        );
-      }
-    }
+    _notifyCharacterMessage(conversationId, content);
     notifyListeners();
     _persist();
+  }
+
+  /// 用户不在会话页面时：未读 +1 并发送系统通知（文本与表情消息共用）。
+  void _notifyCharacterMessage(
+      String conversationId, String notificationContent) {
+    if (_activeConversationId == conversationId) return;
+    final unreadCount = _increaseUnread(conversationId);
+    final index = _conversations.indexWhere((c) => c.id == conversationId);
+    if (index != -1) {
+      final conv = _conversations[index];
+      NotificationService.instance.showCharacterNotification(
+        conversationId: conversationId,
+        characterName: conv.characterName,
+        content: notificationContent,
+        unreadCount: unreadCount,
+        avatarBase64: conv.characterAvatar,
+      );
+    }
   }
 
   /// 角色表情只允许由本地检索得到的真实文件创建，避免模型伪造路径或编号。
@@ -884,6 +920,10 @@ class ChatProvider extends ChangeNotifier {
     _updateConversationLastMessage(
       conversationId,
       label?.trim().isNotEmpty == true ? '[表情包: ${label!.trim()}]' : '[表情包]',
+    );
+    _notifyCharacterMessage(
+      conversationId,
+      label?.trim().isNotEmpty == true ? '[表情包：${label!.trim()}]' : '[表情包]',
     );
     notifyListeners();
     _persist();

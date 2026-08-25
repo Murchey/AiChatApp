@@ -6,37 +6,52 @@ import '../providers/settings_provider.dart';
 class SrBubbleColors {
   /// 我方气泡：暖棕/驼色（明暗模式一致）
   static const selfColor = Color(0xFFD2BC95);
+
   /// 对方气泡：浅色模式浅灰
   static const otherColor = Color(0xFFE7E7E7);
+
   /// 对方气泡：深色模式深灰
   static const otherColorDark = Color(0xFF2C2C2C);
+
   /// 我方气泡文字：白色（明暗模式一致）
   static const selfTextColor = Color.fromARGB(255, 0, 0, 0);
+
   /// 对方气泡文字：浅色模式深灰
   static const otherTextColor = Color(0xFF4A4A4A);
+
   /// 对方气泡文字：深色模式浅灰
   static const otherTextColorDark = Color(0xFFE0E0E0);
+
   /// 柔和底部阴影
   static const shadowColor = Color(0x1A000000); // alpha ≈ 0.1
 }
+
 /// ww 鸣潮气泡配色（浅色/深色模式分开配置）
 class WwBubbleColors {
   /// 我方气泡：浅色模式（深灰蓝）
   static const selfColorLight = Color(0xFF20252E);
+
   /// 我方气泡：深色模式
   static const selfColorDark = Color.fromARGB(255, 95, 110, 129);
+
   /// 对方气泡：浅色模式
   static const otherColorLight = Color(0xFFE7E7E7);
+
   /// 对方气泡：深色模式
   static const otherColorDark = Color(0xFF2C2C2C);
+
   /// 我方气泡文字：黑色
   static const selfTextColor = Color(0xFFFFFFFF);
+
   /// 对方气泡文字：浅色模式黑色
   static const otherTextColorLight = Color(0xFF000000);
+
   /// 对方气泡文字：深色模式白色
   static const otherTextColorDark = Color(0xFFFFFFFF);
+
   /// 柔和底部阴影：深色模式 alpha 0.05
   static const shadowColorDark = Color(0x0D000000);
+
   /// 柔和底部阴影：浅色模式再减半 alpha ≈ 0.025
   static const shadowColorLight = Color(0x06000000);
 }
@@ -45,20 +60,28 @@ class WwBubbleColors {
 class ZmdBubbleColors {
   /// 我方气泡：白色（浅深一致）
   static const selfColor = Color(0xFFEDEDED);
+
   /// 我方气泡文字：黑色（浅深一致）
   static const selfTextColor = Color(0xFF000000);
+
   /// 我方气泡黑色轮廓描边（浅深一致）
   static const selfBorderColor = Color(0xFF000000);
+
   /// 对方气泡：浅色模式浅灰（与 ww/sr/默认样式统一）
   static const otherColorLight = Color(0xFFE7E7E7);
+
   /// 对方气泡：深色模式深灰（与 ww/sr/默认样式统一）
   static const otherColorDark = Color(0xFF2C2C2C);
+
   /// 对方气泡文字：浅色模式黑色
   static const otherTextColorLight = Color(0xFF000000);
+
   /// 对方气泡文字：深色模式白色
   static const otherTextColorDark = Color(0xFFFFFFFF);
+
   /// 柔和底部阴影（与鸣潮一致：深色 alpha 0.05）
   static const shadowColorDark = Color(0x0D000000);
+
   /// 柔和底部阴影（与鸣潮一致：浅色 alpha ≈ 0.025）
   static const shadowColorLight = Color(0x06000000);
 }
@@ -132,16 +155,14 @@ class AppTheme {
         // 不指定 fontFamily：直接使用各手机平台的系统字体
         textStyle: TextStyle(
           fontSize: 16,
-          color: isDark
-              ? AppColors.textPrimaryDark
-              : AppColors.textPrimaryLight,
+          color:
+              isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
         ),
         navTitleTextStyle: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w600,
-          color: isDark
-              ? AppColors.textPrimaryDark
-              : AppColors.textPrimaryLight,
+          color:
+              isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
         ),
         navActionTextStyle: TextStyle(fontSize: 16, color: accent),
       ),
@@ -158,11 +179,14 @@ extension AppThemeX on BuildContext {
   Color get scaffoldColor =>
       isDark ? AppColors.scaffoldDark : AppColors.scaffoldLight;
 
-  Color get navBarColor => isDark ? AppColors.navBarDark : AppColors.navBarLight;
+  Color get navBarColor =>
+      isDark ? AppColors.navBarDark : AppColors.navBarLight;
 
-  Color get listBgColor => isDark ? AppColors.listBgDark : AppColors.listBgLight;
+  Color get listBgColor =>
+      isDark ? AppColors.listBgDark : AppColors.listBgLight;
 
-  Color get chatBgColor => isDark ? AppColors.chatBgDark : AppColors.chatBgLight;
+  Color get chatBgColor =>
+      isDark ? AppColors.chatBgDark : AppColors.chatBgLight;
 
   /// 置顶会话条目背景色
   Color get pinnedChatColor =>
@@ -202,10 +226,12 @@ extension AppThemeX on BuildContext {
   Color get textSecondaryColor =>
       isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
-  Color get fieldBgColor => isDark ? AppColors.fieldBgDark : AppColors.fieldBgLight;
+  Color get fieldBgColor =>
+      isDark ? AppColors.fieldBgDark : AppColors.fieldBgLight;
 
-  Color get separatorColor =>
-      isDark ? CupertinoColors.white.withValues(alpha: 0.1) : CupertinoColors.systemGrey5;
+  Color get separatorColor => isDark
+      ? CupertinoColors.white.withValues(alpha: 0.1)
+      : CupertinoColors.systemGrey5;
 
   /// 朋友圈页面/面板背景
   Color get momentsBgColor =>
@@ -254,9 +280,7 @@ extension AppThemeX on BuildContext {
   Color bubbleBgColor(bool isUser) {
     if (bubbleStyle == BubbleStyle.sr) {
       if (isUser) return SrBubbleColors.selfColor;
-      return isDark
-          ? SrBubbleColors.otherColorDark
-          : SrBubbleColors.otherColor;
+      return isDark ? SrBubbleColors.otherColorDark : SrBubbleColors.otherColor;
     }
     if (bubbleStyle == BubbleStyle.ww) {
       if (isUser) {

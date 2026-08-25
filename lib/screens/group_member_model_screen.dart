@@ -130,7 +130,8 @@ class _GroupMemberModelScreenState extends State<GroupMemberModelScreen> {
                           Navigator.pop(ctx);
                           final provider = context.read<CharacterProvider>();
                           provider.updateCharacterModel(character.id, m.id);
-                          provider.updateCharacterDefaultModel(character.id, '');
+                          provider.updateCharacterDefaultModel(
+                              character.id, '');
                         },
                       ),
                   ],
