@@ -11,11 +11,17 @@ void main() {
       'ARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAdSURBVDhPY'
       '/jPwPCfEsyALkAqHjVg1IBRAwaLAQAwxP4Q7zYsrwAAAABJRU5ErkJggg==';
 
-  test('parses zip images and matching txt labels', () async {
+  test('parses nested gif webp png and jpg images with filename labels',
+      () async {
     final archive = Archive()
-      ..addFile(ArchiveFile.bytes('1.png', base64Decode(pngBase64)))
-      ..addFile(ArchiveFile.bytes('1.txt', utf8.encode('熊猫头无语\n第二行忽略')))
-      ..addFile(ArchiveFile.bytes('2.jpg', base64Decode(pngBase64)));
+      ..addFile(
+          ArchiveFile.bytes('大肥鱼表情包/大肥鱼_烦恼醉酒中.gif', base64Decode(pngBase64)))
+      ..addFile(
+          ArchiveFile.bytes('大肥鱼表情包/大肥鱼_要饭.webp', base64Decode(pngBase64)))
+      ..addFile(
+          ArchiveFile.bytes('大肥鱼表情包/大肥鱼_顶盆子.png', base64Decode(pngBase64)))
+      ..addFile(
+          ArchiveFile.bytes('大肥鱼表情包/大肥鱼_发呆.jpg', base64Decode(pngBase64)));
     final zipBytes = ZipEncoder().encode(archive);
     expect(zipBytes, isNotNull);
 
@@ -36,8 +42,11 @@ void main() {
     );
 
     expect(pack, isNotNull);
-    expect(pack!.imagePaths.length, 2);
-    expect(pack.labels[0], '熊猫头无语'); // 同名 txt 首行作为备注
+    expect(pack!.imagePaths.length, 4);
+    expect(pack.labels.values,
+        containsAll(['大肥鱼_烦恼醉酒中', '大肥鱼_要饭', '大肥鱼_顶盆子', '大肥鱼_发呆']));
+    expect(pack.imagePaths.map((path) => path.split('.').last),
+        containsAll(['gif', 'webp', 'png', 'jpg']));
     expect(pack.coverImagePath, contains('out'));
     expect(File(pack.imagePaths.first).existsSync(), isTrue);
   });

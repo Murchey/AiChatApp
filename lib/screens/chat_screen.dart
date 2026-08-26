@@ -1413,19 +1413,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
       return;
     }
-    final sticker = await context.read<StickerProvider>().addUserSticker(
-          imagePath: selection.imagePath,
+    await context.read<ChatProvider>().sendStickerMessage(
+          conversationId: widget.conversationId,
+          stickerPath: selection.imagePath,
           label: label,
         );
     if (!mounted) return;
-    await context.read<ChatProvider>().sendStickerMessage(
-          conversationId: widget.conversationId,
-          stickerPath: sticker.imagePath,
-          label: sticker.label,
-        );
-    if (!mounted) return;
-    _pendingStickerPath = sticker.imagePath;
-    _pendingStickerLabel = sticker.label;
+    _pendingStickerPath = selection.imagePath;
+    _pendingStickerLabel = label;
     _scrollToBottom();
   }
 

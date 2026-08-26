@@ -384,7 +384,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     }
 
     try {
-      // 尝试表情包解析（V1.3.0 zip：图片 + 可选同名 .txt 备注）
+      // 尝试表情包解析（ZIP 内图片文件名即表情包备注，支持 gif/webp/png/jpg/jpeg）
       final pack = await StickerPackService.parseStickerPackZip(
         path,
         name: item.asset.displayName,

@@ -48,9 +48,11 @@ class _StickerPickerScreenState extends State<StickerPickerScreen> {
   Future<void> _addFromGallery() async {
     final file = await _picker.pickImage(source: ImageSource.gallery);
     if (file == null || !mounted) return;
+    final label = await _askImportLabel();
+    if (label == null || !mounted) return;
     final sticker = await context.read<StickerProvider>().addUserSticker(
           imagePath: file.path,
-          label: '',
+          label: label,
         );
     if (!mounted) return;
     setState(() {
@@ -59,8 +61,42 @@ class _StickerPickerScreenState extends State<StickerPickerScreen> {
         label: sticker.label,
         stickerId: sticker.id,
       );
-      _labelController.clear();
+      _labelController.text = sticker.label;
     });
+  }
+
+  /// 相册导入时先收集备注，再一次性持久化。
+  /// 取消输入不会把图片以空备注写入表情包库，也不会触发发送。
+  Future<String?> _askImportLabel() async {
+    final controller = TextEditingController();
+    final label = await showCupertinoDialog<String>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('添加表情包'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(
+            controller: controller,
+            autofocus: true,
+            placeholder: '备注（用于检索和非视觉模型理解）',
+            maxLines: 2,
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return label;
   }
 
   void _select(StickerEntry sticker) {
