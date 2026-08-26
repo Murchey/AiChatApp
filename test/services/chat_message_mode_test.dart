@@ -1,5 +1,6 @@
 import 'package:ai_chat/services/llm_service.dart';
 import 'package:ai_chat/services/prompt_builder.dart';
+import 'package:ai_chat/models/message.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -61,5 +62,34 @@ void main() {
     const raw = '```text\n（抬眼）你来了。\n```';
 
     expect(LLMService.parseRoleplayMessage(raw), ['（抬眼）你来了。']);
+  });
+
+  test('roleplay prompt allows user-authored actions without taking user control', () {
+    final prompt = PromptBuilder.buildSystemPrompt(
+      characterName: '角色',
+      userNickname: '用户',
+      userRelationship: '同伴',
+      currentTime: DateTime(2026, 8, 26),
+      roleplayMode: true,
+    );
+
+    expect(prompt, contains('用户可以通过普通消息或“剧情行动”推进自己的角色与故事'));
+    expect(prompt, contains('尊重用户已经明确写出的行动、台词和剧情结果'));
+    expect(prompt, contains('不要擅自替用户追加未写出的行动、台词或决定'));
+  });
+
+  test('roleplay narration has its own message type', () {
+    final message = Message(
+      id: 'narration-1',
+      conversationId: 'conversation-1',
+      content: '（我推开门，走进客栈）',
+      type: MessageType.narration,
+      sender: MessageSender.user,
+    );
+
+    final restored = Message.fromJson(message.toJson());
+
+    expect(restored.type, MessageType.narration);
+    expect(restored.isFromUser, isTrue);
   });
 }

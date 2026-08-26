@@ -93,6 +93,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       case MessageType.file:
         return 90;
       case MessageType.system:
+      case MessageType.narration:
         return 60;
       case MessageType.text:
         final lines = (m.content.length / perLineChars).ceil();
@@ -517,7 +518,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           },
         ),
       );
+      if (message.type == MessageType.narration) {
+        items.add(
+          _menuItem(
+            icon: CupertinoIcons.pencil,
+            label: '编辑剧情',
+            onTap: () {
+              _closeMenu();
+              _editMessage(message);
+            },
+          ),
+        );
+      }
     } else {
+      items.add(
+        _menuItem(
+          icon: CupertinoIcons.pencil,
+          label: '修改本条',
+          onTap: () {
+            _closeMenu();
+            _editMessage(message);
+          },
+        ),
+      );
       items.add(
         _menuItem(
           icon: CupertinoIcons.refresh,
@@ -595,6 +618,81 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  Future<void> _editMessage(Message message) async {
+    final controller = TextEditingController(text: message.content);
+    final content = await showCupertinoDialog<String>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(message.type == MessageType.narration ? '编辑剧情行动' : '修改角色回复'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 8,
+            minLines: 3,
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || content == null || content.trim().isEmpty) return;
+    await context.read<ChatProvider>().editMessage(
+          conversationId: widget.conversationId,
+          messageId: message.id,
+          content: content,
+        );
+  }
+
+  Future<void> _addRoleplayNarration() async {
+    final controller = TextEditingController();
+    final content = await showCupertinoDialog<String>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('添加剧情行动'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 8,
+            minLines: 3,
+            placeholder: '描述你的行动或故事发展，例如：\n（我推开门，走进客栈）',
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('添加'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || content == null || content.trim().isEmpty) return;
+    await context.read<ChatProvider>().addRoleplayNarration(
+          conversationId: widget.conversationId,
+          content: content,
+        );
+    if (mounted) _scrollToBottom();
   }
 
   Widget _buildMenuPanel(Message message, List<Widget> items) {
@@ -1831,6 +1929,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               onSend: _handleSend,
                               onPickImage: _handlePickImage,
                               onStickerSelected: _handleStickerSelection,
+                              onRoleplayNarration: context
+                                      .read<ChatSettingsProvider>()
+                                      .isRoleplayMode
+                                  ? _addRoleplayNarration
+                                  : null,
                               onPickFile: _handlePickFile,
                               onSettings: _openChatSettings,
                               onExport: _exportChat,

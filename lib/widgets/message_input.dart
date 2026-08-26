@@ -14,6 +14,7 @@ class MessageInput extends StatefulWidget {
   final VoidCallback? onImport; // 导入聊天记录（zip）
   final Future<bool> Function()? onFeatureDetect; // 功能检测：测试当前模型是否支持图片（返回是否通过）
   final Future<void> Function(StickerSelection selection)? onStickerSelected;
+  final VoidCallback? onRoleplayNarration;
   final VoidCallback? onRequestReply; // 请求角色回复（对号按钮触发）
   final bool replyEnabled; // 对号按钮是否可点：上一条消息是用户发送时才可点
   /// 外部可通过此 key 调用 setText / focus
@@ -30,6 +31,7 @@ class MessageInput extends StatefulWidget {
     this.onImport,
     this.onFeatureDetect,
     this.onStickerSelected,
+    this.onRoleplayNarration,
     this.onRequestReply,
     this.replyEnabled = true,
   });
@@ -310,6 +312,15 @@ class MessageInputState extends State<MessageInput> {
           widget.onFeatureDetect?.call();
         },
       ),
+      if (widget.onRoleplayNarration != null)
+        _GridItem(
+          icon: CupertinoIcons.book,
+          label: '剧情行动',
+          onTap: () {
+            setState(() => _showGrid = false);
+            widget.onRoleplayNarration!.call();
+          },
+        ),
     ];
 
     return Container(

@@ -1,4 +1,4 @@
-enum MessageType { text, image, file, sticker, system }
+enum MessageType { text, image, file, sticker, system, narration }
 
 enum MessageSender { user, character }
 
@@ -86,6 +86,36 @@ class Message {
     this.forwardedItems = const [],
     this.isCompressionSummary = false,
   }) : createdAt = createdAt ?? DateTime.now();
+
+  Message copyWith({
+    String? content,
+    MessageType? type,
+    bool? isRead,
+    String? quoteContent,
+    String? quoteSender,
+    String? stickerLabel,
+    String? stickerSource,
+    List<ForwardItem>? forwardedItems,
+    bool? isCompressionSummary,
+  }) {
+    return Message(
+      id: id,
+      conversationId: conversationId,
+      content: content ?? this.content,
+      type: type ?? this.type,
+      sender: sender,
+      senderCharacterId: senderCharacterId,
+      senderName: senderName,
+      createdAt: createdAt,
+      isRead: isRead ?? this.isRead,
+      quoteContent: quoteContent ?? this.quoteContent,
+      quoteSender: quoteSender ?? this.quoteSender,
+      stickerLabel: stickerLabel ?? this.stickerLabel,
+      stickerSource: stickerSource ?? this.stickerSource,
+      forwardedItems: forwardedItems ?? this.forwardedItems,
+      isCompressionSummary: isCompressionSummary ?? this.isCompressionSummary,
+    );
+  }
 
   bool get isFromUser => sender == MessageSender.user;
 

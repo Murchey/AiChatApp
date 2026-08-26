@@ -533,6 +533,7 @@ class GroupChatProvider extends ChangeNotifier {
             : '[表情包]';
       case MessageType.text:
       case MessageType.system:
+      case MessageType.narration:
         return m.content;
     }
   }
@@ -897,6 +898,7 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
             });
           case MessageType.text:
           case MessageType.system:
+          case MessageType.narration:
             result.add({'role': 'user', 'content': m.content});
         }
       } else if (m.type == MessageType.sticker) {

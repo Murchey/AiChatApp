@@ -202,7 +202,7 @@ class _ChatBubbleState extends State<ChatBubble> {
     }
 
     // 系统事件消息（如群成员加入/移除）：居中灰色小气泡，无头像/引用/长按菜单
-    if (message.type == MessageType.system) {
+    if (message.type == MessageType.system || message.type == MessageType.narration) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
         child: Center(
@@ -213,7 +213,9 @@ class _ChatBubbleState extends State<ChatBubble> {
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
-              message.content,
+              message.type == MessageType.narration
+                  ? '剧情行动\n${message.content}'
+                  : message.content,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,

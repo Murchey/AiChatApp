@@ -330,6 +330,32 @@ class ChatProvider extends ChangeNotifier {
     await _persist();
   }
 
+  /// 添加用户主导的语C剧情行动/旁白，不自动触发角色回复。
+  Future<void> addRoleplayNarration({
+    required String conversationId,
+    required String content,
+  }) async {
+    final text = content.trim();
+    if (text.isEmpty) return;
+    final message = Message(
+      id: const Uuid().v4(),
+      conversationId: conversationId,
+      content: text,
+      type: MessageType.narration,
+      sender: MessageSender.user,
+    );
+    _messagesMap[conversationId] ??= [];
+    _messagesMap[conversationId]!.add(message);
+    _updateConversationLastMessage(conversationId, '［剧情行动］$text');
+    _contextTokens[conversationId] = _estimateSendInputBudget(
+      conversationId,
+      extra: [text],
+    );
+    _lastError = null;
+    notifyListeners();
+    await _persist();
+  }
+
   /// 发送主动问候消息：以角色身份发送一条消息到聊天中。
   Future<void> sendGreetingMessage({
     required String conversationId,
@@ -820,6 +846,13 @@ class ChatProvider extends ChangeNotifier {
         });
         continue;
       }
+      if (m.type == MessageType.narration) {
+        result.add({
+          'role': 'user',
+          'content': '【用户剧情行动/旁白】\n${m.content}',
+        });
+        continue;
+      }
       if (m.type != MessageType.text) continue; // 图片/文件消息不入上下文
       // 合并转发卡片：展开为原始对话消息，参与上下文
       if (m.isForwardCard) {
@@ -858,6 +891,7 @@ class ChatProvider extends ChangeNotifier {
         return m.isFromUser ? '[用户发送了一个文件：$fileName]' : '[你发送了一个文件：$fileName]';
       case MessageType.text:
       case MessageType.system:
+      case MessageType.narration:
         return m.content;
     }
   }
@@ -1006,6 +1040,25 @@ class ChatProvider extends ChangeNotifier {
     }
     notifyListeners();
     _persist();
+  }
+
+  /// 修改消息内容，供语C用户编辑剧情行动或模型上一轮回复。
+  Future<void> editMessage({
+    required String conversationId,
+    required String messageId,
+    required String content,
+  }) async {
+    final text = content.trim();
+    if (text.isEmpty) return;
+    final messages = _messagesMap[conversationId];
+    if (messages == null) return;
+    final index = messages.indexWhere((m) => m.id == messageId);
+    if (index == -1) return;
+    messages[index] = messages[index].copyWith(content: text);
+    _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
+    _updateConversationLastMessage(conversationId, text);
+    notifyListeners();
+    await _persist();
   }
 
   /// 撤回我方消息：删除消息
