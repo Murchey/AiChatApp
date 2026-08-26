@@ -6,7 +6,7 @@ import '../models/workshop_asset.dart';
 
 /// 创意工坊仓库服务：检查仓库 Release tag 可用性、拉取资产 zip、下载 zip。
 ///
-/// 角色卡仓库约定（[kCharacterPackTag] / [kGamePackTag]）：
+/// 创意工坊仓库约定（[kCharacterPackTag] / [kGamePackTag] / [kStickerPackTag]）：
 ///   V1.1.0 = 角色分类角色包（zip 内含 Profile.json 的角色文件夹）
 ///   V1.0.0 = 游戏分类角色包（zip 内含 moments.json 的朋友圈数据包）
 /// 支持 GitHub 与 Gitee 仓库；检测与资产拉取直连官方 API，
@@ -36,7 +36,7 @@ class WorkshopService {
     );
   }
 
-  /// 检查仓库可用的 Release tag：返回仓库中存在的支持 tag（V1.1.0 / V1.0.0 / V1.2.0）。
+  /// 检查仓库可用的 Release tag：返回仓库中存在的支持 tag（含 V1.3.0 表情包）。
   /// 仓库路径不合法时抛出 [FormatException]，请求失败抛出网络异常。
   ///
   /// 检测通过官方 API 直连（代理仅用于下载，不用于检测）。
@@ -55,7 +55,7 @@ class WorkshopService {
     return allTags.where(releases.containsKey).toList();
   }
 
-  /// 列出仓库某 tag 下的 zip 资产（仅支持角色/游戏两个分类 tag）。
+  /// 列出仓库某 tag 下的 zip 资产（角色/游戏/表情包分类）。
   /// 资产列表通过官方 API 直连拉取（代理仅用于下载，不用于拉取）。
   static Future<List<WorkshopAsset>> listAssets(
     String path,

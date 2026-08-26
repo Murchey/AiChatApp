@@ -33,7 +33,6 @@ class _AiChatAppState extends State<AiChatApp> {
   @override
   void initState() {
     super.initState();
-    context.read<SettingsProvider>().init();
     context.read<ApiProvider>().init();
     context.read<ChatSettingsProvider>().init();
     context.read<GroupChatProvider>().init();

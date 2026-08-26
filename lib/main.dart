@@ -17,11 +17,16 @@ import 'providers/settings_provider.dart';
 import 'providers/token_usage_provider.dart';
 import 'providers/workshop_provider.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 自定义开屏依赖本地图片路径。必须在首帧前完成读取，避免先绘制默认
+  // Logo、随后异步切换成自定义图片而产生闪现。
+  final settingsProvider = SettingsProvider();
+  await settingsProvider.init();
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider.value(value: settingsProvider),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => CharacterProvider()),

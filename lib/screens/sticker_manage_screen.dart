@@ -354,8 +354,7 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
                 CupertinoListTile(
                   leading: _buildThumbnail(pack.coverImagePath),
                   title: Text(pack.name),
-                  subtitle:
-                      Text('${pack.imagePaths.length} 张 · ${pack.author}'),
+                  subtitle: Text('${pack.imagePaths.length} 张'),
                   trailing: CupertinoButton(
                     padding: EdgeInsets.zero,
                     onPressed: () => _deletePack(pack),

@@ -54,6 +54,8 @@ flutter {
 }
 
 dependencies {
+    // Android 12+ 启动屏兼容层：避免系统默认图标在 Flutter 自定义开屏前闪现。
+    implementation("androidx.core:core-splashscreen:1.0.1")
     // core library desugaring（flutter_local_notifications 依赖 java.time 等 API）
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     

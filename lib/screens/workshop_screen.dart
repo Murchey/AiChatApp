@@ -270,7 +270,9 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     String? error;
     try {
       for (final repo in provider.repositories) {
-        if (!repo.availableTags.contains(tag)) continue;
+        // availableTags 是仓库添加/上次刷新时持久化的检测快照。旧版本保存
+        // 的仓库没有 V1.3.0 时不能用它阻断请求，否则远端新上传的表情包资产
+        // 永远不会被拉取。loadAssets 自带内存缓存，直接请求即可兼容旧数据。
         final assets = await provider.loadAssets(repo, tag);
         items.addAll(assets.map(
           (a) => _ZipItem(asset: a, repoName: repo.name, repoId: repo.id),
@@ -397,7 +399,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
           builder: (ctx) => CupertinoAlertDialog(
             title: const Text('导入表情包'),
             content: Text(
-              '将导入表情包「${pack.name}」（${pack.imagePaths.length} 张，作者：${pack.author}），'
+              '将导入表情包「${pack.name}」（${pack.imagePaths.length} 张），'
               '可在「设置 → 管理表情包」中管理或删除。',
               textAlign: TextAlign.center,
             ),

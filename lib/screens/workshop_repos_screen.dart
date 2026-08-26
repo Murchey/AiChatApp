@@ -51,6 +51,7 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
     final parts = <String>[
       if (repo.hasCharacter) '角色分类(V1.1.0)',
       if (repo.hasGame) '游戏分类(V1.0.0)',
+      if (repo.hasSticker) '表情包分类(V1.3.0)',
       if (repo.hasUpdateNotify) '更新通知(V1.2.0)',
     ];
     return parts.isEmpty ? '无' : parts.join('、');
@@ -456,6 +457,13 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
                         const _TagChip(
                           text: '游戏分类 V1.0.0',
                           color: Color(0xFF3B82F6),
+                        ),
+                      ],
+                      if (repo.hasSticker) ...[
+                        const SizedBox(width: 6),
+                        const _TagChip(
+                          text: '表情包分类 V1.3.0',
+                          color: Color(0xFFEC4899),
                         ),
                       ],
                     ],
