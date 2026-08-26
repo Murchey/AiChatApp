@@ -201,26 +201,35 @@ class _ChatBubbleState extends State<ChatBubble> {
       return _buildForwardCard(context);
     }
 
-    // 系统事件消息（如群成员加入/移除）：居中灰色小气泡，无头像/引用/长按菜单
+    // 系统事件消息（如群成员加入/移除）：居中灰色小气泡。
+    // 语C剧情行动虽然使用相同的视觉样式，但仍需支持用户长按后的编辑/撤回菜单。
     if (message.type == MessageType.system || message.type == MessageType.narration) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-        child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: context.textSecondaryColor.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              message.type == MessageType.narration
-                  ? '剧情行动\n${message.content}'
-                  : message.content,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: context.textSecondaryColor,
+      final narration = message.type == MessageType.narration;
+      return GestureDetector(
+        onLongPress: narration && !widget.selectMode && widget.onLongPress != null
+            ? () => widget.onLongPress!(message, _bubbleKey)
+            : null,
+        onTap: narration && widget.selectMode ? widget.onTap : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+          child: Center(
+            child: Container(
+              key: _bubbleKey,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: context.textSecondaryColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                narration
+                    ? '剧情行动\n${message.content}'
+                    : message.content,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: context.textSecondaryColor,
+                ),
               ),
             ),
           ),
