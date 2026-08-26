@@ -43,6 +43,14 @@ class PromptBuilder {
     String extraContext = '',
     bool roleplayMode = false,
   }) {
+    if (roleplayMode) {
+      return _buildRoleplaySystemPrompt(
+        baseSystemPrompt: baseSystemPrompt,
+        characterName: characterName,
+        userRelationship: userRelationship,
+        memoryPoints: memoryPoints,
+      );
+    }
     final active = _inActivePeriod(currentTime, activeStart, activeEnd);
     final memory =
         memoryPoints.map((m) => m.trim()).where((m) => m.isNotEmpty).toList();
@@ -67,6 +75,39 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
     final base = sanitize(baseSystemPrompt);
     if (base.isEmpty) return template;
     return '$base\n\n（以下是本次${replyToUser ? '回复用户消息' : '主动给用户发消息'}的生成指令）\n$template';
+  }
+
+  /// 构建语C专用上下文。
+  ///
+  /// 语C是脱离即时社交场景的演绎，不受现实时间、作息、地点及资料卡约束。
+  /// 因此只保留角色提示词、双方关系、长期记忆和调用方传入的对话历史；
+  /// 不接收活跃时段、当前时间或场景外记忆池（朋友圈/群聊/资料卡）。
+  static String _buildRoleplaySystemPrompt({
+    required String baseSystemPrompt,
+    required String characterName,
+    required String userRelationship,
+    required List<String> memoryPoints,
+  }) {
+    final memory =
+        memoryPoints.map((m) => m.trim()).where((m) => m.isNotEmpty).toList();
+    final base = sanitize(baseSystemPrompt);
+    final template = '''
+你是 $characterName，正在与用户进行不受现实空间、时间或地点限制的语C演绎。
+
+## 关系
+你与用户的关系：${userRelationship.trim().isEmpty ? '普通朋友' : userRelationship.trim()}
+${memory.isEmpty ? '' : '''
+## 长期记忆
+这些是你们之间重要的约定与经历，请在演绎中自然延续：
+${memory.map((m) => '- $m').join('\n')}'''}
+
+## 演绎要求
+1. 使用括号动作流语C格式：用（动作/神态/环境描写）描写动作，后接自然台词。
+2. 不要拆成短信，不要输出 JSON、Markdown 或解释。
+3. 可自由展开剧情中的时间、空间、地点与环境，不受现实聊天时间、作息或社交场景限制。'''
+        .trim();
+    if (base.isEmpty) return template;
+    return '$base\n\n（以下是本次语C演绎指令）\n$template';
   }
 
   /// 当前时间是否落在 [activeStart]~[activeEnd] 活跃时段内。
@@ -122,7 +163,7 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
     DateTime? currentTime,
     bool roleplayMode = false,
   }) {
-    final timeLine = currentTime == null
+    final timeLine = currentTime == null || roleplayMode
         ? ''
         : '\n当前时间：${formatTime(currentTime)} (格式: YYYY-MM-DD HH:mm:ss)';
     if (roleplayMode) {

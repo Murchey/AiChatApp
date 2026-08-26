@@ -393,16 +393,16 @@ class ChatProvider extends ChangeNotifier {
       userRelationship: userRelationship,
       currentTime: now,
       replyToUser: replyToUser,
-      activeStart: activeStart,
-      activeEnd: activeEnd,
+      activeStart: roleplayMode ? '' : activeStart,
+      activeEnd: roleplayMode ? '' : activeEnd,
       memoryPoints: memoryPoints,
-      extraContext: extraSystemContext,
+      extraContext: roleplayMode ? '' : extraSystemContext,
       roleplayMode: roleplayMode,
     );
     final outputInstruction = PromptBuilder.buildOutputInstruction(
       characterName: characterName,
       replyToUser: replyToUser,
-      currentTime: now,
+      currentTime: roleplayMode ? null : now,
       roleplayMode: roleplayMode,
     );
     // 记录本会话的系统提示词 + 输出指令 token，供发送消息时乐观更新进度条

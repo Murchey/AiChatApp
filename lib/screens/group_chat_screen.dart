@@ -772,7 +772,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       }
       members.add(GroupMemberReply(
         characterId: c.id,
-        name: c.displayName,
+        // 语C不带联系人备注；短信模式仍使用备注优先的显示名。
+        name: chatSettings.isRoleplayMode ? c.name : c.displayName,
         systemPrompt: c.systemPrompt,
         userRelationship: c.userRelationship,
         activeStart: c.activeStart,
@@ -784,15 +785,17 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         // 角色记忆池：朋友圈 / 近期私聊 / 其他群内容 / 资料卡。
         // 群聊场景排除当前群（当前群历史已作为对话上下文传入），
         // 保留各角色近期的私聊内容与朋友圈动态，保持跨场景记忆连贯
-        memoryPool: MemoryPoolBuilder.build(
-          character: c,
-          chatProvider: chatProvider,
-          groupChatProvider: groupProvider,
-          chatSettings: chatSettings,
-          user: context.read<AuthProvider>().user,
-          includePrivateHistory: true,
-          excludeGroupId: widget.groupId,
-        ),
+        memoryPool: chatSettings.isRoleplayMode
+            ? ''
+            : MemoryPoolBuilder.build(
+                character: c,
+                chatProvider: chatProvider,
+                groupChatProvider: groupProvider,
+                chatSettings: chatSettings,
+                user: context.read<AuthProvider>().user,
+                includePrivateHistory: true,
+                excludeGroupId: widget.groupId,
+              ),
       ));
     }
 

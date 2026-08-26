@@ -615,7 +615,7 @@ class GroupChatProvider extends ChangeNotifier {
         var outputInstruction = PromptBuilder.buildOutputInstruction(
           characterName: member.name,
           replyToUser: true,
-          currentTime: DateTime.now(),
+          currentTime: roleplayMode ? null : DateTime.now(),
           roleplayMode: roleplayMode,
         );
         // 群聊中只允许输出自己的新内容：防止模型复述/转述其他成员的发言
@@ -814,6 +814,17 @@ class GroupChatProvider extends ChangeNotifier {
     final groupDescription = group?.description.trim() ?? '';
     final memory =
         m.memoryPoints.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (roleplayMode) {
+      return PromptBuilder.buildSystemPrompt(
+        baseSystemPrompt: m.systemPrompt,
+        characterName: m.name,
+        userNickname: userNickname,
+        userRelationship: m.userRelationship,
+        currentTime: DateTime.now(),
+        memoryPoints: m.memoryPoints,
+        roleplayMode: true,
+      );
+    }
     final now = DateTime.now();
     // 角色人设（角色系统提示词）：必须拼入，否则回复不贴人设
     final persona = m.systemPrompt.trim();

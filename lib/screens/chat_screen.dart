@@ -1280,7 +1280,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             .read<CharacterProvider>()
             .getCharacterById(conversation.characterId)
         : null;
-    final characterName = character?.displayName ?? widget.characterName;
+    final isRoleplayMode = chatSettings.isRoleplayMode;
+    // 语C不携带联系人备注；使用角色原始昵称，避免把资料卡信息带入演绎上下文。
+    final characterName = isRoleplayMode
+        ? (character?.name.trim().isNotEmpty == true
+            ? character!.name.trim()
+            : widget.characterName)
+        : character?.displayName ?? widget.characterName;
 
     // 用户持久化记忆点：拼入系统提示词，让角色在本次回复中记住这些长期信息
     final memoryPoints = conversation != null
@@ -1294,7 +1300,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // 角色记忆池：聚合朋友圈 / 近期群聊 / 资料卡等场景外记忆，拼入系统提示词，
     // 让角色在私聊中保持跨场景的记忆连贯。私聊历史已作为对话上下文传入，
     // 因此 includePrivateHistory 传 false，避免重复拼接
-    final memoryPool = character != null
+    final memoryPool = !isRoleplayMode && character != null
         ? MemoryPoolBuilder.build(
             character: character,
             chatProvider: chatProvider,
@@ -1330,7 +1336,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       activeEnd: character?.activeEnd ?? '',
       memoryPoints: memoryPoints,
       extraSystemContext: memoryPool,
-      roleplayMode: chatSettings.isRoleplayMode,
+      roleplayMode: isRoleplayMode,
       // 关闭「允许角色发送表情包」时不注入检索器，查询标记会被静默忽略。
       findSticker: context.read<SettingsProvider>().allowStickerSend
           ? (query) => context.read<StickerProvider>().pickStickerForRole(query)
