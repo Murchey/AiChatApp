@@ -185,6 +185,7 @@ ${_roleplayProgressionRules(progressionStyle)}'''
     bool replyToUser = false,
     DateTime? currentTime,
     bool roleplayMode = false,
+    bool includeRoleplayChoices = true,
   }) {
     final timeLine = currentTime == null || roleplayMode
         ? ''
@@ -200,7 +201,8 @@ ${_roleplayProgressionRules(progressionStyle)}'''
           '不要把动作和台词放进方括号或 JSON。'
           '如确实需要发送用户已有的表情包，可在动作流中单独加入至多一条'
           '[[查询表情包:情绪或场景关键词]]，应用会自动替换为真实表情包。'
-          '不要猜测表情包路径或编号。$timeLine';
+          '不要猜测表情包路径或编号。'
+          '${includeRoleplayChoices ? '在正文结束后，必须额外输出 <<<CHOICES>>>["候选1","候选2","候选3","候选4"]<<<END_CHOICES>>>。候选项必须恰好 4 条、可作为用户下一步行动或台词，且不得替用户决定结果。该标记由应用内部读取，不属于正文。' : ''}$timeLine';
     }
     return '【系统指令】现在请以 $characterName 的身份，'
         '${replyToUser ? '回复用户最近发来的消息' : '主动给用户发几条消息'}。'

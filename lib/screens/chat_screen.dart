@@ -1515,6 +1515,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             memoryPoints: memoryPoints,
             contextCount: chatSettings.contextCount,
             progressionStyle: chatSettings.roleplayProgressionStyle.name,
+            includeChoices: chatSettings.enableRoleplayChoices,
           )
         : await chatProvider.runProactiveReply(
             conversationId: widget.conversationId,
@@ -1545,7 +1546,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     debugPrint(
         '[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');
     if (!mounted) return;
-    if (isRoleplayMode && messages.isNotEmpty && conversation != null) {
+    // 流式语C在同一次正文回复中携带候选项；非流式接口保留二次请求作为兼容兜底。
+    if (isRoleplayMode &&
+        chatSettings.enableRoleplayChoices &&
+        !chatSettings.enableRoleplayStream &&
+        messages.isNotEmpty &&
+        conversation != null) {
       try {
         final choicePrompt = PromptBuilder.buildSystemPrompt(
           baseSystemPrompt: character?.systemPrompt ?? '',
@@ -2067,9 +2073,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               isRoleplayMode: context
                                   .watch<ChatSettingsProvider>()
                                   .isRoleplayMode,
-                              roleplayChoices: chatProvider.roleplayChoicesFor(
-                                widget.conversationId,
-                              ),
+                              roleplayChoices: context
+                                      .watch<ChatSettingsProvider>()
+                                      .enableRoleplayChoices
+                                  ? chatProvider.roleplayChoicesFor(
+                                      widget.conversationId,
+                                    )
+                                  : const [],
                               onRoleplayChoice: (text) =>
                                   _inputKey.currentState?.setText(text),
                               onPickFile: _handlePickFile,

@@ -430,6 +430,7 @@ class ChatProvider extends ChangeNotifier {
     required List<String> memoryPoints,
     required int contextCount,
     String progressionStyle = 'free',
+    bool includeChoices = true,
   }) {
     if (_runningReply != null && _replyingConversationId == conversationId) {
       return _runningReply!;
@@ -446,6 +447,7 @@ class ChatProvider extends ChangeNotifier {
       memoryPoints: memoryPoints,
       contextCount: contextCount,
       progressionStyle: progressionStyle,
+      includeChoices: includeChoices,
     );
     _runningReply = future;
     return future;
@@ -461,6 +463,7 @@ class ChatProvider extends ChangeNotifier {
     required List<String> memoryPoints,
     required int contextCount,
     required String progressionStyle,
+    required bool includeChoices,
   }) async {
     final prompt = PromptBuilder.buildSystemPrompt(
       baseSystemPrompt: characterSystemPrompt,
@@ -477,6 +480,7 @@ class ChatProvider extends ChangeNotifier {
       characterName: characterName,
       replyToUser: true,
       roleplayMode: true,
+      includeRoleplayChoices: includeChoices,
     );
     final history = _buildHistory(conversationId, contextCount);
     final message = Message(
@@ -507,7 +511,11 @@ class ChatProvider extends ChangeNotifier {
           notifyListeners();
         }
       }
-      content = LLMService.parseRoleplayMessage(content).first;
+      final reply = LLMService.parseRoleplayReply(content);
+      content = reply.content;
+      if (reply.choices.isNotEmpty) {
+        await setRoleplayChoices(conversationId, reply.choices);
+      }
       final index = _messagesMap[conversationId]!
           .indexWhere((item) => item.id == message.id);
       if (index >= 0) {

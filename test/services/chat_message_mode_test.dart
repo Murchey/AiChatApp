@@ -4,6 +4,16 @@ import 'package:ai_chat/models/message.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('roleplay reply separates persisted choices from visible narration', () {
+    const raw = '（抬眼看向你）雨还没停。\n'
+        '<<<CHOICES>>>["撑伞靠近","继续沉默","提起旧约","转身离开"]<<<END_CHOICES>>>';
+
+    final reply = LLMService.parseRoleplayReply(raw);
+
+    expect(reply.content, '（抬眼看向你）雨还没停。');
+    expect(reply.choices, ['撑伞靠近', '继续沉默', '提起旧约', '转身离开']);
+  });
+
   test(
       'companionship roleplay prompt keeps user choice while avoiding forced drama',
       () {

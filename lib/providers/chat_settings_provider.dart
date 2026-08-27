@@ -28,6 +28,7 @@ class ChatSettingsProvider extends ChangeNotifier {
   static const _stickerButtonKey = 'chat_sticker_button_enabled';
   static const _roleplayStreamKey = 'chat_roleplay_stream_enabled';
   static const _roleplayProgressionKey = 'chat_roleplay_progression_style';
+  static const _roleplayChoicesKey = 'chat_roleplay_choices_enabled';
 
   /// 携带上下文条数，0 表示无限制（携带全部记录）
   int _contextCount = 10;
@@ -47,6 +48,7 @@ class ChatSettingsProvider extends ChangeNotifier {
   bool _enableRoleplayStream = true;
   RoleplayProgressionStyle _roleplayProgressionStyle =
       RoleplayProgressionStyle.free;
+  bool _enableRoleplayChoices = true;
 
   /// 记忆池按角色停用的来源（key=角色 id，value=停用的来源标题集合，
   /// 标题见 MemoryPoolBuilder 的 kPrivateSectionTitle 等常量）。
@@ -63,6 +65,7 @@ class ChatSettingsProvider extends ChangeNotifier {
   bool get enableRoleplayStream => _enableRoleplayStream;
   RoleplayProgressionStyle get roleplayProgressionStyle =>
       _roleplayProgressionStyle;
+  bool get enableRoleplayChoices => _enableRoleplayChoices;
 
   /// 该角色记忆池中已停用的来源标题集合（停用后不拼入提示词）
   Set<String> disabledPoolSectionsFor(String characterId) =>
@@ -93,6 +96,7 @@ class ChatSettingsProvider extends ChangeNotifier {
       (style) => style.name == prefs.getString(_roleplayProgressionKey),
       orElse: () => RoleplayProgressionStyle.free,
     );
+    _enableRoleplayChoices = prefs.getBool(_roleplayChoicesKey) ?? true;
     final raw = prefs.getString(_memoryPoolDisabledKey);
     _disabledPoolSections = {};
     if (raw != null && raw.isNotEmpty) {
@@ -183,6 +187,13 @@ class ChatSettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_roleplayProgressionKey, style.name);
+  }
+
+  Future<void> setEnableRoleplayChoices(bool value) async {
+    _enableRoleplayChoices = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_roleplayChoicesKey, value);
   }
 
   /// 设置角色记忆池某来源（标题见 MemoryPoolBuilder 常量）的启停。

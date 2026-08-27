@@ -604,6 +604,24 @@ class ChatSettingsScreen extends StatelessWidget {
             header: const Text('输入框'),
             children: [
               CupertinoListTile(
+                title: const Text('生成语C候选行动'),
+                subtitle: Text(
+                  settings.enableRoleplayChoices
+                      ? '每次语C回复提供 4 个可填入输入框的行动候选'
+                      : '关闭后不再生成或显示候选行动',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSwitch(
+                  value: settings.enableRoleplayChoices,
+                  onChanged: settings.isRoleplayMode
+                      ? settings.setEnableRoleplayChoices
+                      : null,
+                ),
+              ),
+              CupertinoListTile(
                 title: const Text('语C流式回复'),
                 subtitle: Text(
                   settings.enableRoleplayStream

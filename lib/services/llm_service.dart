@@ -1075,9 +1075,29 @@ class LLMService {
     return List.of(_fallbackMessages);
   }
 
+  /// 拆分语C正文与同一次模型回复携带的 4 个候选行动。
+  static ({String content, List<String> choices}) parseRoleplayReply(
+      String raw) {
+    final match = RegExp(
+      r'<<<CHOICES>>>\s*(.*?)\s*<<<END_CHOICES>>>',
+      dotAll: true,
+    ).firstMatch(raw);
+    final body =
+        match == null ? raw : raw.replaceRange(match.start, match.end, '');
+    final choices =
+        match == null ? const <String>[] : parseMessages(match.group(1)!);
+    return (
+      content: parseRoleplayMessage(body).first,
+      choices: choices.take(4).toList(),
+    );
+  }
+
   /// 语C模式保留完整括号动作流，不按句号拆分，不强制 JSON 数组。
   static List<String> parseRoleplayMessage(String raw) {
-    var text = raw.trim();
+    var text = raw
+        .replaceAll(
+            RegExp(r'<<<CHOICES>>>.*?<<<END_CHOICES>>>', dotAll: true), '')
+        .trim();
     text = text.replaceAll(
         RegExp(r'^```(?:text|plain)?\s*', caseSensitive: false), '');
     text = text.replaceAll(RegExp(r'\s*```$'), '').trim();
