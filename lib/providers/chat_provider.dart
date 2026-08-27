@@ -78,6 +78,11 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
+  Future<void> _clearRoleplayChoicesForNextTurn(String conversationId) async {
+    if (!_roleplayChoices.containsKey(conversationId)) return;
+    await setRoleplayChoices(conversationId, const []);
+  }
+
   /// 设置/取消会话置顶（置顶后移到会话列表最前）
   void setPinned(String conversationId, bool pinned) {
     final index = _conversations.indexWhere((c) => c.id == conversationId);
@@ -349,6 +354,7 @@ class ChatProvider extends ChangeNotifier {
     String quoteContent = '',
     String quoteSender = '',
   }) async {
+    await _clearRoleplayChoicesForNextTurn(conversationId);
     final userMessage = Message(
       id: const Uuid().v4(),
       conversationId: conversationId,
@@ -377,6 +383,7 @@ class ChatProvider extends ChangeNotifier {
   }) async {
     final text = content.trim();
     if (text.isEmpty) return;
+    await _clearRoleplayChoicesForNextTurn(conversationId);
     final message = Message(
       id: const Uuid().v4(),
       conversationId: conversationId,
@@ -1278,6 +1285,7 @@ class ChatProvider extends ChangeNotifier {
     String modelName = '',
     int contextCount = 10,
   }) async {
+    await _clearRoleplayChoicesForNextTurn(conversationId);
     final userMessage = Message(
       id: const Uuid().v4(),
       conversationId: conversationId,
@@ -1301,6 +1309,7 @@ class ChatProvider extends ChangeNotifier {
     String? stickerSource,
   }) async {
     final normalizedLabel = label?.trim();
+    await _clearRoleplayChoicesForNextTurn(conversationId);
     final userMessage = Message(
       id: const Uuid().v4(),
       conversationId: conversationId,
@@ -1328,6 +1337,7 @@ class ChatProvider extends ChangeNotifier {
     required String filePath,
     required String fileName,
   }) async {
+    await _clearRoleplayChoicesForNextTurn(conversationId);
     final userMessage = Message(
       id: const Uuid().v4(),
       conversationId: conversationId,
