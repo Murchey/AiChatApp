@@ -1247,7 +1247,8 @@ class _GroupMessageInput extends StatefulWidget {
   State<_GroupMessageInput> createState() => _GroupMessageInputState();
 }
 
-class _GroupMessageInputState extends State<_GroupMessageInput> {
+class _GroupMessageInputState extends State<_GroupMessageInput>
+    with WidgetsBindingObserver {
   // 原生系统文件选择（MainActivity 中实现，Android 专用）
   static const MethodChannel _fileChannel =
       MethodChannel('com.aichat.ai_chat/files');
@@ -1257,6 +1258,8 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
   final FocusNode _inputFocusNode = FocusNode();
   bool _hasText = false;
   bool _showGrid = false;
+  bool _pendingGrid = false;
+  double? _lastKeyboardHeight;
   bool _prevEndsAt = false; // @ 边沿检测：上一次文本是否以 @ 结尾
 
   /// 外部（撤回消息）可回填输入框内容
@@ -1293,13 +1296,34 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller.addListener(() {
       setState(() => _hasText = _controller.text.trim().isNotEmpty);
     });
     // 点击（聚焦）输入框时自动折叠面板
     _inputFocusNode.addListener(() {
+      if (_inputFocusNode.hasFocus) _pendingGrid = false;
       if (_inputFocusNode.hasFocus && _showGrid) {
         setState(() => _showGrid = false);
+      }
+    });
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!_pendingGrid) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pendingGrid) return;
+      if (MediaQuery.viewInsetsOf(context).bottom == 0) {
+        Future<void>.delayed(const Duration(milliseconds: 120), () {
+          if (!mounted || !_pendingGrid) return;
+          if (MediaQuery.viewInsetsOf(context).bottom == 0) {
+            setState(() {
+              _showGrid = true;
+              _pendingGrid = false;
+            });
+          }
+        });
       }
     });
   }
@@ -1318,6 +1342,7 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     _inputFocusNode.dispose();
     super.dispose();
@@ -1336,14 +1361,21 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
       FocusScope.of(context).requestFocus(_inputFocusNode);
       setState(() => _showGrid = false);
     } else {
-      // 面板未打开：点击加号，收起软键盘，只展示面板
-      FocusManager.instance.primaryFocus?.unfocus();
-      setState(() => _showGrid = true);
+      // 键盘仍在收起动画期间不能插入面板，否则两者会叠加把输入栏顶过高。
+      if (MediaQuery.viewInsetsOf(context).bottom == 0) {
+        setState(() => _showGrid = true);
+      } else {
+        _pendingGrid = true;
+        FocusManager.instance.primaryFocus?.unfocus();
+        SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    if (keyboardInset > 0) _lastKeyboardHeight = keyboardInset;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1356,6 +1388,9 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
           ),
           child: SafeArea(
             top: false,
+            // 面板位于下方时，输入栏不重复保留导航栏安全区；
+            // 与键盘展开时一致，避免两种状态的输入栏顶端产生高度差。
+            bottom: !_showGrid,
             child: Row(
               children: [
                 // 左侧加号：展开功能面板（相册/拍照/文件/功能检测）
@@ -1496,18 +1531,28 @@ class _GroupMessageInputState extends State<_GroupMessageInput> {
       ),
     ];
 
-    return Container(
-      color: context.navBarColor,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: SafeArea(
-        top: false,
-        child: GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 4,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 16,
-          children: items.map((item) => _buildGridTile(context, item)).toList(),
+    final keyboardHeight = _lastKeyboardHeight;
+    final panelHeight = keyboardHeight == null
+        ? (MediaQuery.sizeOf(context).height * 0.4).clamp(280.0, 420.0)
+        : (keyboardHeight - MediaQuery.viewPaddingOf(context).bottom)
+            .clamp(0.0, keyboardHeight);
+
+    return SizedBox(
+      height: panelHeight,
+      child: Container(
+        color: context.navBarColor,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: SafeArea(
+          top: false,
+          child: GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 4,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 16,
+            children:
+                items.map((item) => _buildGridTile(context, item)).toList(),
+          ),
         ),
       ),
     );

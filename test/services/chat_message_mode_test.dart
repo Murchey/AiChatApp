@@ -4,6 +4,30 @@ import 'package:ai_chat/models/message.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+      'companionship roleplay prompt keeps user choice while avoiding forced drama',
+      () {
+    final prompt = PromptBuilder.buildSystemPrompt(
+      characterName: '角色',
+      userNickname: '用户',
+      userRelationship: '恋人',
+      currentTime: DateTime(2026, 8, 26),
+      roleplayMode: true,
+      roleplayProgressionStyle: 'companionship',
+    );
+
+    expect(prompt, contains('剧情推进风格：情感陪伴'));
+    expect(prompt, contains('不主动引入高强度冲突'));
+    expect(prompt, contains('必须由用户自己决定'));
+  });
+
+  test('memory compression prompt preserves dialogue context and stays concise',
+      () {
+    expect(LLMService.kCompressSystemPrompt, contains('说话人'));
+    expect(LLMService.kCompressSystemPrompt, contains('不超过 600 字'));
+    expect(LLMService.kCompressSystemPrompt, contains('直接输出摘要内容'));
+  });
+
   test('roleplay output instruction describes bracket action flow', () {
     final instruction = PromptBuilder.buildOutputInstruction(
       characterName: '角色',
@@ -64,7 +88,9 @@ void main() {
     expect(LLMService.parseRoleplayMessage(raw), ['（抬眼）你来了。']);
   });
 
-  test('roleplay prompt allows user-authored actions without taking user control', () {
+  test(
+      'roleplay prompt allows user-authored actions without taking user control',
+      () {
     final prompt = PromptBuilder.buildSystemPrompt(
       characterName: '角色',
       userNickname: '用户',

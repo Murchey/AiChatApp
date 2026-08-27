@@ -540,6 +540,27 @@ class ChatSettingsScreen extends StatelessWidget {
             header: const Text('回复格式'),
             children: [
               CupertinoListTile(
+                title: const Text('语C推进风格'),
+                subtitle: const Text('只决定世界与关系如何回应，用户仍决定自己的行动与结果'),
+                trailing:
+                    CupertinoSlidingSegmentedControl<RoleplayProgressionStyle>(
+                  groupValue: settings.roleplayProgressionStyle,
+                  backgroundColor: context.fieldBgColor,
+                  thumbColor: context.accentColor,
+                  padding: const EdgeInsets.all(3),
+                  children: {
+                    for (final style in RoleplayProgressionStyle.values)
+                      style: Text(style.displayName,
+                          style: TextStyle(color: segmentedTextColor)),
+                  },
+                  onValueChanged: (style) {
+                    if (settings.isRoleplayMode && style != null) {
+                      settings.setRoleplayProgressionStyle(style);
+                    }
+                  },
+                ),
+              ),
+              CupertinoListTile(
                 title: const Text('语C/短信模式'),
                 subtitle: Text(
                   settings.isRoleplayMode
@@ -569,6 +590,49 @@ class ChatSettingsScreen extends StatelessWidget {
                   onValueChanged: (mode) {
                     if (mode != null) settings.setMessageMode(mode);
                   },
+                ),
+              ),
+            ],
+          ),
+          // 输入框显示选项
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('输入框'),
+            children: [
+              CupertinoListTile(
+                title: const Text('语C流式回复'),
+                subtitle: Text(
+                  settings.enableRoleplayStream
+                      ? '语C模式下实时显示角色回复'
+                      : '关闭后使用普通请求，兼容不支持流式的接口',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSwitch(
+                  value: settings.enableRoleplayStream,
+                  onChanged: settings.isRoleplayMode
+                      ? settings.setEnableRoleplayStream
+                      : null,
+                ),
+              ),
+              CupertinoListTile(
+                title: const Text('显示表情按钮'),
+                subtitle: Text(
+                  settings.showStickerButton ? '在输入框左侧显示表情按钮' : '已隐藏',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSwitch(
+                  value: settings.showStickerButton,
+                  onChanged: settings.setShowStickerButton,
                 ),
               ),
             ],

@@ -22,6 +22,7 @@ import '../providers/sticker_provider.dart';
 import 'sticker_picker_screen.dart';
 import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
+import '../services/prompt_builder.dart';
 import '../services/memory_pool_builder.dart';
 import '../utils/file_picker_helper.dart';
 import '../widgets/chat_bubble.dart';
@@ -32,6 +33,8 @@ import 'chat_detail_screen.dart';
 import 'chat_settings_screen.dart';
 import 'character_detail_screen.dart';
 import 'forward_detail_screen.dart';
+
+enum _MemorySaveMode { direct, compress }
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -625,7 +628,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final content = await showCupertinoDialog<String>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
-        title: Text(message.type == MessageType.narration ? '编辑剧情行动' : '修改角色回复'),
+        title:
+            Text(message.type == MessageType.narration ? '编辑剧情行动' : '修改角色回复'),
         content: Padding(
           padding: const EdgeInsets.only(top: 12),
           child: CupertinoTextField(
@@ -885,8 +889,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final mergedContent = texts.join('\n');
 
     final memoryProvider = context.read<MemoryPointProvider>();
-    // 弹窗确认要保存的内容
-    final confirm = await showCupertinoDialog<bool>(
+    // 弹窗确认要保存的内容，并允许在保存前交给模型总结压缩。
+    final saveMode = await showCupertinoDialog<_MemorySaveMode>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text('保存为记忆点'),
@@ -920,20 +924,104 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ),
         actions: [
           CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
           CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, _MemorySaveMode.direct),
+            child: const Text('直接保存'),
+          ),
+          CupertinoDialogAction(
             isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('保存'),
+            onPressed: () => Navigator.pop(ctx, _MemorySaveMode.compress),
+            child: const Text('总结压缩后保存'),
           ),
         ],
       ),
     );
-    if (confirm != true || !mounted) return;
+    if (saveMode == null || !mounted) return;
 
-    await memoryProvider.addPoints(conversation.characterId, [mergedContent]);
+    var memoryContent = mergedContent;
+    if (saveMode == _MemorySaveMode.compress) {
+      final chatSettings = context.read<ChatSettingsProvider>();
+      final model = context
+          .read<ApiProvider>()
+          .getModelById(chatSettings.selectedModelId);
+      if (model == null) {
+        showCupertinoDialog(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('无法总结'),
+            content: const Text('尚未配置当前聊天模型，请先到「API 设置」中选择可用模型。'),
+            actions: [
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('确定'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      final compressionHistory = messages
+          .where(
+              (m) => m.type == MessageType.text && m.content.trim().isNotEmpty)
+          .map((m) => <String, String>{
+                'role': m.isFromUser ? 'user' : 'assistant',
+                'content':
+                    '${m.isFromUser ? userName : characterName}：${m.content.trim()}',
+              })
+          .toList();
+
+      showCupertinoDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const CupertinoAlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CupertinoActivityIndicator(),
+              SizedBox(height: 12),
+              Text('正在总结记忆，请稍候……'),
+            ],
+          ),
+        ),
+      );
+      try {
+        final summary = await LLMService.compressHistory(
+          model: model,
+          historyMessages: compressionHistory,
+        );
+        if (summary.trim().isEmpty) {
+          throw const LLMException('模型没有返回有效的总结内容');
+        }
+        memoryContent = summary.trim();
+      } catch (e) {
+        if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        if (!mounted) return;
+        showCupertinoDialog(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('总结失败'),
+            content: Text(LLMService.describeException(e)),
+            actions: [
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('确定'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (!mounted) return;
+    }
+
+    await memoryProvider.addPoints(conversation.characterId, [memoryContent]);
     if (!mounted) return;
     _exitSelectMode();
     showCupertinoDialog(
@@ -1416,32 +1504,74 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final isVisionSupported = api.isVisionSupported(model.id) == true;
     final modelImagePath =
         stickerLabel == null || isVisionSupported ? imagePath : null;
-    final messages = await chatProvider.runProactiveReply(
-      conversationId: widget.conversationId,
-      model: model,
-      characterName: characterName,
-      characterSystemPrompt: character?.systemPrompt ?? '',
-      userRelationship: character?.userRelationship ?? '',
-      userNickname: context.read<AuthProvider>().user?.nickname ?? '用户',
-      replyToUser: replyToUser,
-      contextCount: chatSettings.contextCount,
-      enableCompression: chatSettings.enableCompression,
-      compressModel: compressModel,
-      contextLength: model.contextLength,
-      compressThreshold: chatSettings.compressThreshold,
-      imagePath: modelImagePath,
-      activeStart: character?.activeStart ?? '',
-      activeEnd: character?.activeEnd ?? '',
-      memoryPoints: memoryPoints,
-      extraSystemContext: memoryPool,
-      roleplayMode: isRoleplayMode,
-      // 关闭「允许角色发送表情包」时不注入检索器，查询标记会被静默忽略。
-      findSticker: context.read<SettingsProvider>().allowStickerSend
-          ? (query) => context.read<StickerProvider>().pickStickerForRole(query)
-          : null,
-    );
+    final messages = isRoleplayMode && chatSettings.enableRoleplayStream
+        ? await chatProvider.runRoleplayStream(
+            conversationId: widget.conversationId,
+            model: model,
+            characterName: characterName,
+            characterSystemPrompt: character?.systemPrompt ?? '',
+            userRelationship: character?.userRelationship ?? '',
+            userNickname: context.read<AuthProvider>().user?.nickname ?? '用户',
+            memoryPoints: memoryPoints,
+            contextCount: chatSettings.contextCount,
+            progressionStyle: chatSettings.roleplayProgressionStyle.name,
+          )
+        : await chatProvider.runProactiveReply(
+            conversationId: widget.conversationId,
+            model: model,
+            characterName: characterName,
+            characterSystemPrompt: character?.systemPrompt ?? '',
+            userRelationship: character?.userRelationship ?? '',
+            userNickname: context.read<AuthProvider>().user?.nickname ?? '用户',
+            replyToUser: replyToUser,
+            contextCount: chatSettings.contextCount,
+            enableCompression: chatSettings.enableCompression,
+            compressModel: compressModel,
+            contextLength: model.contextLength,
+            compressThreshold: chatSettings.compressThreshold,
+            imagePath: modelImagePath,
+            activeStart: character?.activeStart ?? '',
+            activeEnd: character?.activeEnd ?? '',
+            memoryPoints: memoryPoints,
+            extraSystemContext: memoryPool,
+            roleplayMode: isRoleplayMode,
+            roleplayProgressionStyle:
+                chatSettings.roleplayProgressionStyle.name,
+            findSticker: context.read<SettingsProvider>().allowStickerSend
+                ? (query) =>
+                    context.read<StickerProvider>().pickStickerForRole(query)
+                : null,
+          );
     debugPrint(
         '[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');
+    if (!mounted) return;
+    if (isRoleplayMode && messages.isNotEmpty && conversation != null) {
+      try {
+        final choicePrompt = PromptBuilder.buildSystemPrompt(
+          baseSystemPrompt: character?.systemPrompt ?? '',
+          characterName: characterName,
+          userNickname: context.read<AuthProvider>().user?.nickname ?? '用户',
+          userRelationship: character?.userRelationship ?? '',
+          currentTime: DateTime.now(),
+          memoryPoints: memoryPoints,
+          roleplayProgressionStyle: chatSettings.roleplayProgressionStyle.name,
+          roleplayMode: true,
+        );
+        final choices = await LLMService.generateRoleplayChoices(
+          model: model,
+          systemPrompt: choicePrompt,
+          historyMessages: chatProvider.getRecentHistoryForCharacter(
+            conversation.characterId,
+            chatSettings.contextCount,
+          ),
+        );
+        if (mounted) {
+          await chatProvider.setRoleplayChoices(widget.conversationId, choices);
+        }
+      } catch (e) {
+        debugPrint('[ChatScreen] 语C候选行动生成失败: $e');
+      }
+    }
     if (!mounted) return;
     if (messages.isEmpty && chatProvider.lastError == null) {
       // 模型主动返回空数组（如时间不合理）时给出轻提示
@@ -1934,11 +2064,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       .isRoleplayMode
                                   ? _addRoleplayNarration
                                   : null,
+                              isRoleplayMode: context
+                                  .watch<ChatSettingsProvider>()
+                                  .isRoleplayMode,
+                              roleplayChoices: chatProvider.roleplayChoicesFor(
+                                widget.conversationId,
+                              ),
+                              onRoleplayChoice: (text) =>
+                                  _inputKey.currentState?.setText(text),
                               onPickFile: _handlePickFile,
                               onSettings: _openChatSettings,
                               onExport: _exportChat,
                               onImport: _importChat,
                               onFeatureDetect: _runFeatureDetect,
+                              showStickerButton: context
+                                  .watch<ChatSettingsProvider>()
+                                  .showStickerButton,
                               onRequestReply: () {
                                 // 对号按钮：触发角色回复。若最近发送的是图片，把该图片随回复传给模型
                                 final imagePath =

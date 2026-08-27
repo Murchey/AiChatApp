@@ -22,6 +22,7 @@ class ChatProvider extends ChangeNotifier {
   static const _contextTokensKey = 'chat_context_tokens_v1'; // 各会话上下文 token 累计值
   static const _systemTokensKey =
       'chat_system_tokens_v1'; // 各会话系统提示词 + 输出指令 token（持久化，重启恢复）
+  static const _roleplayChoicesKey = 'chat_roleplay_choices_v1';
 
   // 会话压缩参数
   static const int kKeepRecentMessages = 20; // 压缩时保留的最近消息条数
@@ -39,6 +40,7 @@ class ChatProvider extends ChangeNotifier {
       {}; // 会话 → 上下文 token 用量（输入侧，API usage 优先）
   final Map<String, int> _systemTokens =
       {}; // 会话 → 系统提示词 + 输出指令 token（内存态，供乐观更新）
+  final Map<String, List<String>> _roleplayChoices = {};
 
   /// 会话列表：置顶会话排最前，其余按最近消息时间倒序
   List<Conversation> get conversations {
@@ -51,6 +53,30 @@ class ChatProvider extends ChangeNotifier {
   }
 
   String? get lastError => _lastError;
+
+  /// 语C候选行动按会话保存，重新进入聊天时可继续使用。
+  List<String> roleplayChoicesFor(String conversationId) =>
+      List.unmodifiable(_roleplayChoices[conversationId] ?? const []);
+
+  Future<void> setRoleplayChoices(
+      String conversationId, List<String> choices) async {
+    final clean = choices
+        .map((choice) => choice.trim())
+        .where((choice) => choice.isNotEmpty)
+        .take(4)
+        .toList();
+    if (clean.isEmpty) {
+      _roleplayChoices.remove(conversationId);
+    } else {
+      _roleplayChoices[conversationId] = clean;
+    }
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _roleplayChoicesKey,
+      jsonEncode(_roleplayChoices),
+    );
+  }
 
   /// 设置/取消会话置顶（置顶后移到会话列表最前）
   void setPinned(String conversationId, bool pinned) {
@@ -202,6 +228,20 @@ class ChatProvider extends ChangeNotifier {
       _systemTokens
         ..clear()
         ..addAll(decoded.systemTokens);
+    }
+    try {
+      final rawChoices = prefs.getString(_roleplayChoicesKey);
+      if (rawChoices != null && rawChoices.isNotEmpty) {
+        final decodedChoices = jsonDecode(rawChoices) as Map<String, dynamic>;
+        _roleplayChoices
+          ..clear()
+          ..addAll(decodedChoices.map(
+            (id, values) => MapEntry(id, List<String>.from(values as List)),
+          ));
+      }
+    } catch (e) {
+      debugPrint('[ChatProvider] 语C候选行动加载失败: $e');
+      _roleplayChoices.clear();
     }
     // 加载完成后通知监听者重建界面：
     // 否则首页在 init 完成前先渲染一次（会话为空 → 显示"暂无会话"），
@@ -378,6 +418,122 @@ class ChatProvider extends ChangeNotifier {
     await _persist();
   }
 
+  /// 语C正文走 SSE 流式输出：先插入一条角色消息，再随着片段到达更新内容。
+  /// 语C不解析 JSON，因此可安全逐段渲染同一条纯文本气泡。
+  Future<List<String>> runRoleplayStream({
+    required String conversationId,
+    required ApiModel model,
+    required String characterName,
+    required String characterSystemPrompt,
+    required String userRelationship,
+    required String userNickname,
+    required List<String> memoryPoints,
+    required int contextCount,
+    String progressionStyle = 'free',
+  }) {
+    if (_runningReply != null && _replyingConversationId == conversationId) {
+      return _runningReply!;
+    }
+    _replyingConversationId = conversationId;
+    notifyListeners();
+    final future = _doRunRoleplayStream(
+      conversationId: conversationId,
+      model: model,
+      characterName: characterName,
+      characterSystemPrompt: characterSystemPrompt,
+      userRelationship: userRelationship,
+      userNickname: userNickname,
+      memoryPoints: memoryPoints,
+      contextCount: contextCount,
+      progressionStyle: progressionStyle,
+    );
+    _runningReply = future;
+    return future;
+  }
+
+  Future<List<String>> _doRunRoleplayStream({
+    required String conversationId,
+    required ApiModel model,
+    required String characterName,
+    required String characterSystemPrompt,
+    required String userRelationship,
+    required String userNickname,
+    required List<String> memoryPoints,
+    required int contextCount,
+    required String progressionStyle,
+  }) async {
+    final prompt = PromptBuilder.buildSystemPrompt(
+      baseSystemPrompt: characterSystemPrompt,
+      characterName: characterName,
+      userNickname: userNickname,
+      userRelationship: userRelationship,
+      currentTime: DateTime.now(),
+      replyToUser: true,
+      memoryPoints: memoryPoints,
+      roleplayProgressionStyle: progressionStyle,
+      roleplayMode: true,
+    );
+    final instruction = PromptBuilder.buildOutputInstruction(
+      characterName: characterName,
+      replyToUser: true,
+      roleplayMode: true,
+    );
+    final history = _buildHistory(conversationId, contextCount);
+    final message = Message(
+      id: const Uuid().v4(),
+      conversationId: conversationId,
+      content: '',
+      sender: MessageSender.character,
+    );
+    _messagesMap[conversationId] ??= [];
+    _messagesMap[conversationId]!.add(message);
+    notifyListeners();
+    var content = '';
+    try {
+      await for (final delta in LLMService.streamCompletion(
+        model: model,
+        messages: [
+          {'role': 'system', 'content': prompt},
+          ...history,
+          {'role': 'user', 'content': instruction},
+        ],
+      )) {
+        content += delta;
+        final index = _messagesMap[conversationId]!
+            .indexWhere((item) => item.id == message.id);
+        if (index >= 0) {
+          _messagesMap[conversationId]![index] =
+              message.copyWith(content: content);
+          notifyListeners();
+        }
+      }
+      content = LLMService.parseRoleplayMessage(content).first;
+      final index = _messagesMap[conversationId]!
+          .indexWhere((item) => item.id == message.id);
+      if (index >= 0) {
+        _messagesMap[conversationId]![index] =
+            message.copyWith(content: content);
+      }
+      _updateConversationLastMessage(conversationId, content);
+      await _persist();
+      return content.isEmpty ? const [] : [content];
+    } on LLMException catch (e) {
+      _lastError = e.message;
+      _messagesMap[conversationId]
+          ?.removeWhere((item) => item.id == message.id);
+      return const [];
+    } catch (e) {
+      _lastError = LLMService.describeException(e);
+      _messagesMap[conversationId]
+          ?.removeWhere((item) => item.id == message.id);
+      return const [];
+    } finally {
+      _replyingConversationId = null;
+      _runningReply = null;
+      notifyListeners();
+    }
+  }
+
   /// 生成"角色主动发消息/回复"的消息列表。
   ///
   /// 组装阶段：调用 [PromptBuilder] 拼接 System Prompt（含人设/用户资料/时间/输出规则），
@@ -399,6 +555,7 @@ class ChatProvider extends ChangeNotifier {
     required String userNickname,
     bool replyToUser = false,
     bool roleplayMode = false,
+    String roleplayProgressionStyle = 'free',
     List<Map<String, Object>>? historyMessages,
     int contextCount = 10,
     ApiModel? compressModel,
@@ -422,6 +579,7 @@ class ChatProvider extends ChangeNotifier {
       activeStart: roleplayMode ? '' : activeStart,
       activeEnd: roleplayMode ? '' : activeEnd,
       memoryPoints: memoryPoints,
+      roleplayProgressionStyle: roleplayProgressionStyle,
       extraContext: roleplayMode ? '' : extraSystemContext,
       roleplayMode: roleplayMode,
     );
@@ -495,6 +653,7 @@ class ChatProvider extends ChangeNotifier {
     required String userNickname,
     bool replyToUser = false,
     bool roleplayMode = false,
+    String roleplayProgressionStyle = 'free',
     int contextCount = 10,
     ApiModel? compressModel,
     bool enableCompression = false,
@@ -527,6 +686,7 @@ class ChatProvider extends ChangeNotifier {
       userNickname: userNickname,
       replyToUser: replyToUser,
       roleplayMode: roleplayMode,
+      roleplayProgressionStyle: roleplayProgressionStyle,
       contextCount: contextCount,
       compressModel: compressModel,
       enableCompression: enableCompression,
@@ -552,6 +712,7 @@ class ChatProvider extends ChangeNotifier {
     required String userNickname,
     bool replyToUser = false,
     bool roleplayMode = false,
+    String roleplayProgressionStyle = 'free',
     int contextCount = 10,
     ApiModel? compressModel,
     bool enableCompression = false,
@@ -575,6 +736,7 @@ class ChatProvider extends ChangeNotifier {
         userNickname: userNickname,
         replyToUser: replyToUser,
         roleplayMode: roleplayMode,
+        roleplayProgressionStyle: roleplayProgressionStyle,
         contextCount: contextCount,
         compressModel: compressModel,
         enableCompression: enableCompression,
@@ -1189,6 +1351,7 @@ class ChatProvider extends ChangeNotifier {
     _conversations.removeWhere((c) => c.id == conversationId);
     _messagesMap.remove(conversationId);
     _contextTokens.remove(conversationId);
+    setRoleplayChoices(conversationId, const []);
     notifyListeners();
     _persist();
   }
@@ -1200,6 +1363,7 @@ class ChatProvider extends ChangeNotifier {
     _messagesMap.clear();
     _contextTokens.clear();
     _systemTokens.clear();
+    _roleplayChoices.clear();
     _activeConversationId = null;
     _replyingConversationId = null;
     _runningReply = null;
@@ -1209,6 +1373,7 @@ class ChatProvider extends ChangeNotifier {
     await prefs.remove(_messagesKey);
     await prefs.remove(_contextTokensKey);
     await prefs.remove(_systemTokensKey);
+    await prefs.remove(_roleplayChoicesKey);
     notifyListeners();
   }
 
@@ -1218,6 +1383,7 @@ class ChatProvider extends ChangeNotifier {
   void clearMessages(String conversationId) {
     _messagesMap.remove(conversationId);
     _contextTokens.remove(conversationId);
+    setRoleplayChoices(conversationId, const []);
     final index = _conversations.indexWhere((c) => c.id == conversationId);
     if (index != -1) {
       _conversations[index] = _conversations[index].copyWith(

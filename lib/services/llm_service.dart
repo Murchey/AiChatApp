@@ -19,6 +19,7 @@ class LLMService {
   static const String kCompressSystemPrompt =
       '你是一个对话压缩助手。请将以下聊天记录压缩为一段简洁连贯的中文摘要，'
       '保留关键信息：用户的身份与偏好、对方（角色）的人设特征、重要话题与结论、未完成的事项。'
+      '聊天记录中的每条消息可能带有说话人标记，请结合双方发言理解上下文。'
       '摘要不超过 600 字，直接输出摘要内容，不要任何前缀或解释。';
 
   /// 会话压缩：将较早的历史消息交给压缩模型生成一段摘要文本。
@@ -115,6 +116,29 @@ class LLMService {
     return ProactiveResult(result, completion.usage);
   }
 
+  /// 为语C正文回复提供 4 个可继续推进剧情的候选行动。
+  /// 候选项仅用于填入输入框，不会写入聊天记录。
+  static Future<List<String>> generateRoleplayChoices({
+    required ApiModel model,
+    required String systemPrompt,
+    required List<Map<String, String>> historyMessages,
+  }) async {
+    const instruction = '【系统指令】基于当前语C剧情，给用户提供恰好 4 个可选的下一步行动或台词。'
+        '每项简洁具体，保持当前角色、场景与剧情连续；不要替用户决定结果。'
+        '只输出 JSON 字符串数组，例如：["选项1","选项2","选项3","选项4"]，不要输出其他内容。';
+    final completion = await _fetchWithKimiFallback(
+      model: model,
+      messages: [
+        {'role': 'system', 'content': systemPrompt},
+        ...historyMessages,
+        {'role': 'user', 'content': instruction},
+      ],
+      maxTokens: 400,
+      initialTemperature: 0.7,
+    );
+    return parseMessages(completion.content).take(4).toList();
+  }
+
   /// 发送图片消息：以 OpenAI 兼容的视觉消息格式，把用户选择的图片
   /// （转 base64 data URL）连同输出指令作为最后一条 user 消息发给模型，
   /// 让角色"看到"图片后按 JSON 数组格式回复。
@@ -177,6 +201,71 @@ class LLMService {
         return 'image/gif';
       default:
         return 'image/jpeg';
+    }
+  }
+
+  /// OpenAI 兼容 SSE 流式补全，仅语C正文使用；每次 yield 新增文本片段。
+  static Stream<String> streamCompletion({
+    required ApiModel model,
+    required List<Map<String, Object>> messages,
+    int maxTokens = 1024,
+    double temperature = 0.9,
+  }) async* {
+    if (model.modelName.isEmpty) {
+      throw const LLMException('所选模型未填写模型名称，请到「API 设置」中检查');
+    }
+    if (model.apiKey.isEmpty) {
+      throw const LLMException('所选模型未配置 API Key，请到「API 设置」中填写');
+    }
+    var base =
+        model.baseUrl.trim().isNotEmpty ? model.baseUrl.trim() : defaultBaseUrl;
+    base = base.replaceAll(RegExp(r'/+$'), '');
+    final url =
+        base.endsWith('/chat/completions') ? base : '$base/chat/completions';
+    final client = HttpClient();
+    try {
+      final request = await client
+          .postUrl(Uri.parse(url))
+          .timeout(const Duration(seconds: 20));
+      request.headers.set(
+          HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
+      request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
+      request.headers
+          .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
+      request.add(utf8.encode(jsonEncode({
+        'model': model.modelName,
+        'messages': messages,
+        'stream': true,
+        'max_tokens': maxTokens,
+        'temperature': temperature,
+      })));
+      final response =
+          await request.close().timeout(const Duration(seconds: 60));
+      if (response.statusCode != 200) {
+        final body = await response.transform(utf8.decoder).join();
+        throw LLMException(
+            'API 请求失败：HTTP ${response.statusCode} ${body.trim()}');
+      }
+      await for (final line
+          in response.transform(utf8.decoder).transform(const LineSplitter())) {
+        if (!line.startsWith('data:')) continue;
+        final data = line.substring(5).trim();
+        if (data == '[DONE]') break;
+        try {
+          final decoded = jsonDecode(data) as Map<String, dynamic>;
+          final choices = decoded['choices'] as List<dynamic>? ?? const [];
+          final delta = choices.isEmpty
+              ? null
+              : (choices.first as Map<String, dynamic>)['delta']
+                  as Map<String, dynamic>?;
+          final content = delta?['content'] as String? ?? '';
+          if (content.isNotEmpty) yield content;
+        } catch (_) {
+          // SSE 保活行或非标准事件忽略，继续读取下一片段。
+        }
+      }
+    } finally {
+      client.close(force: true);
     }
   }
 

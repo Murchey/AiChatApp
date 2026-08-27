@@ -5,6 +5,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 角色回复格式：短信短消息 / 括号动作流语C。
 enum ChatMessageMode { sms, roleplay }
 
+/// 语C的世界推进风格：不影响用户角色的决定权。
+enum RoleplayProgressionStyle { free, story, companionship }
+
+extension RoleplayProgressionStyleX on RoleplayProgressionStyle {
+  String get displayName => switch (this) {
+        RoleplayProgressionStyle.free => '自由',
+        RoleplayProgressionStyle.story => '剧情',
+        RoleplayProgressionStyle.companionship => '陪伴',
+      };
+}
+
 /// 聊天设置：上下文条数、使用的模型、自动压缩、角色记忆池
 class ChatSettingsProvider extends ChangeNotifier {
   static const _contextKey = 'chat_context_count';
@@ -14,6 +25,9 @@ class ChatSettingsProvider extends ChangeNotifier {
   static const _momentMemoryKey = 'chat_moment_memory_count';
   static const _memoryPoolDisabledKey = 'chat_memory_pool_disabled_sections';
   static const _messageModeKey = 'chat_message_mode';
+  static const _stickerButtonKey = 'chat_sticker_button_enabled';
+  static const _roleplayStreamKey = 'chat_roleplay_stream_enabled';
+  static const _roleplayProgressionKey = 'chat_roleplay_progression_style';
 
   /// 携带上下文条数，0 表示无限制（携带全部记录）
   int _contextCount = 10;
@@ -29,6 +43,10 @@ class ChatSettingsProvider extends ChangeNotifier {
   /// 0 表示记忆池不拼入朋友圈内容（默认 3 条）。
   int _momentMemoryCount = 3;
   ChatMessageMode _messageMode = ChatMessageMode.sms;
+  bool _showStickerButton = true;
+  bool _enableRoleplayStream = true;
+  RoleplayProgressionStyle _roleplayProgressionStyle =
+      RoleplayProgressionStyle.free;
 
   /// 记忆池按角色停用的来源（key=角色 id，value=停用的来源标题集合，
   /// 标题见 MemoryPoolBuilder 的 kPrivateSectionTitle 等常量）。
@@ -41,6 +59,10 @@ class ChatSettingsProvider extends ChangeNotifier {
   int get momentMemoryCount => _momentMemoryCount;
   ChatMessageMode get messageMode => _messageMode;
   bool get isRoleplayMode => _messageMode == ChatMessageMode.roleplay;
+  bool get showStickerButton => _showStickerButton;
+  bool get enableRoleplayStream => _enableRoleplayStream;
+  RoleplayProgressionStyle get roleplayProgressionStyle =>
+      _roleplayProgressionStyle;
 
   /// 该角色记忆池中已停用的来源标题集合（停用后不拼入提示词）
   Set<String> disabledPoolSectionsFor(String characterId) =>
@@ -64,6 +86,12 @@ class ChatSettingsProvider extends ChangeNotifier {
     _messageMode = ChatMessageMode.values.firstWhere(
       (mode) => mode.name == prefs.getString(_messageModeKey),
       orElse: () => ChatMessageMode.sms,
+    );
+    _showStickerButton = prefs.getBool(_stickerButtonKey) ?? true;
+    _enableRoleplayStream = prefs.getBool(_roleplayStreamKey) ?? true;
+    _roleplayProgressionStyle = RoleplayProgressionStyle.values.firstWhere(
+      (style) => style.name == prefs.getString(_roleplayProgressionKey),
+      orElse: () => RoleplayProgressionStyle.free,
     );
     final raw = prefs.getString(_memoryPoolDisabledKey);
     _disabledPoolSections = {};
@@ -131,6 +159,30 @@ class ChatSettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_messageModeKey, mode.name);
+  }
+
+  /// 设置是否在聊天输入框旁显示表情按钮。
+  Future<void> setShowStickerButton(bool value) async {
+    _showStickerButton = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_stickerButtonKey, value);
+  }
+
+  /// 语C回复是否使用 SSE 流式输出；关闭时回退为普通一次性纯文本请求。
+  Future<void> setEnableRoleplayStream(bool value) async {
+    _enableRoleplayStream = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_roleplayStreamKey, value);
+  }
+
+  Future<void> setRoleplayProgressionStyle(
+      RoleplayProgressionStyle style) async {
+    _roleplayProgressionStyle = style;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_roleplayProgressionKey, style.name);
   }
 
   /// 设置角色记忆池某来源（标题见 MemoryPoolBuilder 常量）的启停。

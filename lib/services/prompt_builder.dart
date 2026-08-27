@@ -40,6 +40,7 @@ class PromptBuilder {
     String activeStart = '',
     String activeEnd = '',
     List<String> memoryPoints = const [],
+    String roleplayProgressionStyle = 'free',
     String extraContext = '',
     bool roleplayMode = false,
   }) {
@@ -49,6 +50,7 @@ class PromptBuilder {
         characterName: characterName,
         userRelationship: userRelationship,
         memoryPoints: memoryPoints,
+        progressionStyle: roleplayProgressionStyle,
       );
     }
     final active = _inActivePeriod(currentTime, activeStart, activeEnd);
@@ -87,6 +89,7 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
     required String characterName,
     required String userRelationship,
     required List<String> memoryPoints,
+    required String progressionStyle,
   }) {
     final memory =
         memoryPoints.map((m) => m.trim()).where((m) => m.isNotEmpty).toList();
@@ -106,10 +109,28 @@ ${memory.map((m) => '- $m').join('\n')}'''}
 2. 不要拆成短信，不要输出 JSON、Markdown 或解释。
 3. 可自由展开剧情中的时间、空间、地点与环境，不受现实聊天时间、作息或社交场景限制。
 4. 用户可以通过普通消息或“剧情行动”推进自己的角色与故事；尊重用户已经明确写出的行动、台词和剧情结果。
-5. 不要擅自替用户追加未写出的行动、台词或决定；只描写你的角色、其他角色和环境的反应。'''
+5. 不要擅自替用户追加未写出的行动、台词或决定；只描写你的角色、其他角色和环境的反应。
+${_roleplayProgressionRules(progressionStyle)}'''
         .trim();
     if (base.isEmpty) return template;
     return '$base\n\n（以下是本次语C演绎指令）\n$template';
+  }
+
+  static String _roleplayProgressionRules(String style) {
+    switch (style) {
+      case 'story':
+        return '''
+## 剧情推进风格：剧情
+你可以通过环境变化、NPC 行动、线索、阻力和合理后果推进世界；每次尽量留下一个可回应的互动切口。关键行动、关键决定、用户的心理和最终结果必须留给用户确认，不得替用户书写。''';
+      case 'companionship':
+        return '''
+## 剧情推进风格：情感陪伴
+以陪伴、关系互动和情绪体验为主。通过日常细节、克制的关心、共同经历和温和邀请推进关系；不主动引入高强度冲突、危险、狗血误会或强制转折。用户是否靠近、回应、接受、拒绝及其内心感受必须由用户自己决定。''';
+      default:
+        return '''
+## 剧情推进风格：自由演绎
+自然延续当前场景与关系；可以描写世界和其他角色的反应，但始终保留用户角色的行动、台词、心理和结果的决定权。''';
+    }
   }
 
   /// 当前时间是否落在 [activeStart]~[activeEnd] 活跃时段内。
