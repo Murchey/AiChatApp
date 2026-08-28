@@ -6,6 +6,7 @@ import '../models/character.dart';
 import '../providers/character_provider.dart';
 import '../widgets/alphabet_index_bar.dart';
 import '../widgets/character_avatar.dart';
+import 'contacts_search_screen.dart';
 
 class CharacterListScreen extends StatefulWidget {
   const CharacterListScreen({super.key});
@@ -66,7 +67,14 @@ class _CharacterListScreenState extends State<CharacterListScreen> {
         middle: const Text('通讯录'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: () {},
+          onPressed: () {
+            Navigator.push(
+              context,
+              CupertinoPageRoute(
+                builder: (_) => const ContactsSearchScreen(),
+              ),
+            );
+          },
           child: const Icon(CupertinoIcons.search),
         ),
       ),

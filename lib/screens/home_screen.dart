@@ -66,20 +66,26 @@ class _HomeScreenState extends State<HomeScreen>
     final memoryPointProvider = context.read<MemoryPointProvider>();
     final groupChatProvider = context.read<GroupChatProvider>();
     final user = context.read<AuthProvider>().user;
-    characterProvider.loadCharacters().then((_) {
-      MomentAiService.resumePending(
-        characterProvider: characterProvider,
-        apiProvider: apiProvider,
-        notificationProvider: notificationProvider,
-        chatProvider: chatProvider,
-        chatSettings: chatSettings,
-        groupChatProvider: groupChatProvider,
-        memoryPointProvider: memoryPointProvider,
-        user: user,
-      );
-      _checkAutoMoments();
-    }).catchError((Object e) {
-      DevLogService.instance.log('朋友圈互动断点恢复失败: $e');
+    // loadCharacters 会同步更新加载状态并通知监听者。延迟到首帧绘制后执行，
+    // 避免首帧构建期间触发 Provider rebuild assertion。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      characterProvider.loadCharacters().then((_) {
+        if (!mounted) return;
+        MomentAiService.resumePending(
+          characterProvider: characterProvider,
+          apiProvider: apiProvider,
+          notificationProvider: notificationProvider,
+          chatProvider: chatProvider,
+          chatSettings: chatSettings,
+          groupChatProvider: groupChatProvider,
+          memoryPointProvider: memoryPointProvider,
+          user: user,
+        );
+        _checkAutoMoments();
+      }).catchError((Object e) {
+        DevLogService.instance.log('朋友圈互动断点恢复失败: $e');
+      });
     });
     _cleanupOldApks();
     _checkUpdateOnStartup();

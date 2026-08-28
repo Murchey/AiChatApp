@@ -499,7 +499,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: context.listBgColor,
               borderRadius: BorderRadius.circular(10),
             ),
-            header: const Text('数据管理'),
+            header: const Text('表情包'),
             children: [
               CupertinoListTile(
                 leading: Icon(
@@ -508,7 +508,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 title: const Text('管理表情包'),
                 subtitle: Text(
-                  '查看、删除和编辑已添加的表情包',
+                  '查看或编辑已导入的表情包',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -530,7 +530,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('允许角色发送表情包'),
                 subtitle: Text(
                   settings.allowStickerSend
-                      ? '角色可在回复中按需发送你保存的表情包'
+                      ? '角色可按语义发送已保存的表情包'
                       : '已关闭，角色回复时不发送表情包',
                   style: TextStyle(
                     fontSize: 12,
@@ -600,7 +600,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: context.listBgColor,
               borderRadius: BorderRadius.circular(10),
             ),
-            header: const Text('显示设置'),
+            header: const Text('显示'),
             children: [
               CupertinoListTile(
                 leading: Icon(
@@ -632,7 +632,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 title: const Text('UI 样式'),
                 subtitle: Text(
-                  '会话顶部标题栏与发送按钮',
+                  '会话标题栏与发送按钮',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -662,7 +662,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 title: const Text('开屏图标'),
                 subtitle: Text(
-                  '自定义启动页显示的图片',
+                  '自定义启动页图片',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -694,7 +694,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   title: const Text('自定义气泡颜色'),
                   subtitle: Text(
-                    '自己 / 对方 × 浅色 / 深色：气泡与字体颜色',
+                    '自己 / 对方，浅色 / 深色模式分别设置',
                     style: TextStyle(
                       fontSize: 12,
                       color: context.textSecondaryColor,
@@ -716,12 +716,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: context.listBgColor,
               borderRadius: BorderRadius.circular(10),
             ),
-            header: const Text('消息通知'),
+            header: const Text('通知'),
             children: [
               CupertinoListTile(
                 title: const Text('未读消息发送系统通知'),
                 subtitle: Text(
-                  settings.unreadNotify ? '离开聊天界面时角色新消息将通过系统通知提醒' : '已关闭',
+                  settings.unreadNotify ? '离开聊天页时推送角色新消息' : '已关闭',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -748,7 +748,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: Text(
                   settings.developerMode
                       ? '已开启，「我」页底部显示软件通知互动日志'
-                      : '已关闭，「我」页底部显示软件通知互动日志',
+                      : '已关闭，开启后可查看软件通知互动日志',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -772,9 +772,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   title: const Text('快速测试自动发朋友圈'),
                   subtitle: Text(
-                    '立即让所有已开启「自动发朋友圈」的角色到期并触发一次发布，'
-                    '用于快速验证效果（正常使用无需点击）',
-                    maxLines: 3,
+                    '立即触发已启用角色的自动发帖，仅用于测试',
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
@@ -796,9 +795,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   title: const Text('立即触发角色主动问候'),
                   subtitle: Text(
-                    '立即让所有已开启「主动问候」的角色触发一次问候消息，'
-                    '用于快速验证效果（正常使用无需点击）',
-                    maxLines: 3,
+                    '立即触发已启用角色的主动问候，仅用于测试',
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
@@ -820,7 +818,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   title: const Text('快速触发角色仓库提醒'),
                   subtitle: Text(
-                    '立即模拟一次仓库更新通知（忽略内容去重），用于测试通知弹窗效果',
+                    '模拟一次仓库更新通知，用于测试弹窗效果',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -843,7 +841,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   title: const Text('触发 APP 更新弹窗'),
                   subtitle: Text(
-                    '立即检测一次 APP 更新，如果有新版本则显示更新弹窗',
+                    '立即检测更新并显示更新弹窗',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -864,7 +862,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: context.listBgColor,
               borderRadius: BorderRadius.circular(10),
             ),
-            header: const Text('更新检测'),
+            header: const Text('更新'),
             children: [
               CupertinoListTile(
                 title: const Text('启动时自动检测更新'),
@@ -907,7 +905,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: context.listBgColor,
               borderRadius: BorderRadius.circular(10),
             ),
-            header: const Text('记忆池'),
+            header: const Text('AI 记忆'),
             children: [
               CupertinoListTile(
                 leading: Icon(
@@ -916,7 +914,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 title: const Text('记忆池管理'),
                 subtitle: Text(
-                  '查看/管理角色近期的私聊、朋友圈、群聊记忆拼接内容',
+                  '管理角色跨场景记忆来源',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
@@ -943,12 +941,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: context.listBgColor,
               borderRadius: BorderRadius.circular(10),
             ),
-            header: const Text('存储空间'),
+            header: const Text('存储'),
             children: [
               CupertinoListTile(
                 title: const Text('管理占用空间'),
                 subtitle: Text(
-                  '扫描并清理聊天记录、角色数据、下载缓存等',
+                  '查看并清理用户数据与应用缓存',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textSecondaryColor,
