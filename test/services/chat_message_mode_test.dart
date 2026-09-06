@@ -14,6 +14,17 @@ void main() {
     expect(reply.choices, ['撑伞靠近', '继续沉默', '提起旧约', '转身离开']);
   });
 
+  test('stream usage chunk parses token usage even without text choices', () {
+    final chunk = LLMService.parseStreamChunk(
+      '{"choices":[],"usage":{"prompt_tokens":123,"completion_tokens":45,"total_tokens":168}}',
+    );
+
+    expect(chunk.content, isEmpty);
+    expect(chunk.usage.promptTokens, 123);
+    expect(chunk.usage.completionTokens, 45);
+    expect(chunk.usage.totalTokens, 168);
+  });
+
   test(
       'companionship roleplay prompt keeps user choice while avoiding forced drama',
       () {
@@ -48,6 +59,18 @@ void main() {
     expect(instruction, contains('括号动作流语C格式'));
     expect(instruction, contains('（动作/神态/环境描写）'));
     expect(instruction, isNot(contains('必须且只能是一个 JSON 字符串数组')));
+  });
+
+  test('non-stream roleplay instruction does not request embedded choices', () {
+    final instruction = PromptBuilder.buildOutputInstruction(
+      characterName: '角色',
+      replyToUser: true,
+      roleplayMode: true,
+      includeRoleplayChoices: false,
+    );
+
+    expect(instruction, isNot(contains('<<<CHOICES>>>')));
+    expect(instruction, contains('括号动作流语C格式'));
   });
 
   test('roleplay prompt only contains persona, relationship and memories', () {

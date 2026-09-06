@@ -367,10 +367,9 @@ class ChatProvider extends ChangeNotifier {
     _messagesMap[conversationId] ??= [];
     _messagesMap[conversationId]!.add(userMessage);
     _updateConversationLastMessage(conversationId, content);
-    // 乐观更新：发送后立即按「系统提示词 + 历史 + 本条输入」估算上下文用量，
-    // 无需等待 API 返回（API 返回后会用真实 usage.prompt_tokens 校准覆盖）
-    _contextTokens[conversationId] =
-        _estimateSendInputBudget(conversationId, extra: [content]);
+    // 用户消息已经入库，直接按当前会话历史估算，避免把本条输入重复计入。
+    // API 返回后会用真实 usage.prompt_tokens 校准输入 token。
+    _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
     _lastError = null;
     notifyListeners();
     await _persist();
@@ -394,10 +393,7 @@ class ChatProvider extends ChangeNotifier {
     _messagesMap[conversationId] ??= [];
     _messagesMap[conversationId]!.add(message);
     _updateConversationLastMessage(conversationId, '［剧情行动］$text');
-    _contextTokens[conversationId] = _estimateSendInputBudget(
-      conversationId,
-      extra: [text],
-    );
+    _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
     _lastError = null;
     notifyListeners();
     await _persist();
@@ -490,6 +486,11 @@ class ChatProvider extends ChangeNotifier {
       includeRoleplayChoices: includeChoices,
     );
     final history = _buildHistory(conversationId, contextCount);
+    final systemPromptTokens =
+        _estimateTextTokens(prompt) +
+        _estimateTextTokens(instruction) +
+        kPerMessageJsonTokens * 2;
+    _systemTokens[conversationId] = systemPromptTokens;
     final message = Message(
       id: const Uuid().v4(),
       conversationId: conversationId,
@@ -500,8 +501,9 @@ class ChatProvider extends ChangeNotifier {
     _messagesMap[conversationId]!.add(message);
     notifyListeners();
     var content = '';
+    ChatUsage streamUsage = const ChatUsage();
     try {
-      await for (final delta in LLMService.streamCompletion(
+      await for (final chunk in LLMService.streamCompletion(
         model: model,
         messages: [
           {'role': 'system', 'content': prompt},
@@ -509,7 +511,8 @@ class ChatProvider extends ChangeNotifier {
           {'role': 'user', 'content': instruction},
         ],
       )) {
-        content += delta;
+        content += chunk.content;
+        if (!chunk.usage.isEmpty) streamUsage = chunk.usage;
         final index = _messagesMap[conversationId]!
             .indexWhere((item) => item.id == message.id);
         if (index >= 0) {
@@ -530,6 +533,31 @@ class ChatProvider extends ChangeNotifier {
             message.copyWith(content: content);
       }
       _updateConversationLastMessage(conversationId, content);
+      final promptTokens = streamUsage.promptTokens ??
+          systemPromptTokens +
+              history.fold<int>(
+                0,
+                (sum, item) =>
+                    sum + _estimateTextTokens(item['content'] ?? '') +
+                        kPerMessageJsonTokens,
+              );
+      final completionTokens = streamUsage.completionTokens ??
+          _estimateTextTokens(content);
+      await TokenUsageProvider.instance.addUsage(
+        conversationId,
+        ChatUsage(
+          promptTokens: promptTokens,
+          completionTokens: completionTokens,
+          totalTokens: promptTokens + completionTokens,
+        ),
+      );
+      // 进度条显示下一次请求可能携带的上下文，必须与 contextCount 和
+      // _buildHistory 的消息转换规则保持一致。
+      _contextTokens[conversationId] = _estimateRequestInputBudget(
+        conversationId,
+        contextCount: contextCount,
+        systemTokens: systemPromptTokens,
+      );
       await _persist();
       return content.isEmpty ? const [] : [content];
     } on LLMException catch (e) {
@@ -603,6 +631,9 @@ class ChatProvider extends ChangeNotifier {
       replyToUser: replyToUser,
       currentTime: roleplayMode ? null : now,
       roleplayMode: roleplayMode,
+      // 非流式语C会在正文完成后单独请求候选行动。正文请求不附带候选
+      // 标记，避免模型生成后被解析器丢弃，既浪费输出 token 又造成统计偏差。
+      includeRoleplayChoices: false,
     );
     // 记录本会话的系统提示词 + 输出指令 token，供发送消息时乐观更新进度条
     _systemTokens[conversationId] = _estimateTextTokens(prompt) +
@@ -620,6 +651,7 @@ class ChatProvider extends ChangeNotifier {
         systemPromptTokens: _estimateTextTokens(prompt) +
             _estimateTextTokens(outputInstruction) +
             kPerMessageJsonTokens * 2, // 系统提示词与输出指令各是一条消息
+        contextCount: contextCount,
       );
     }
     try {
@@ -765,7 +797,7 @@ class ChatProvider extends ChangeNotifier {
       );
       final messages = result.messages;
       // 累计真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens）
-      TokenUsageProvider.instance.addUsage(conversationId, result.usage);
+      await TokenUsageProvider.instance.addUsage(conversationId, result.usage);
       final random = Random();
       final displayedMessages = <String>[];
       var stickerSent = false;
@@ -804,7 +836,10 @@ class ChatProvider extends ChangeNotifier {
       // 上下文窗口未截断、prompt 代表全量真实消耗），
       // 避免把显示值压成"最近一次请求的截断窗口"（几十条消息后只剩几百）。
       final prompt = result.usage.promptTokens;
-      final estimated = _estimateSendInputBudget(conversationId);
+      final estimated = _estimateRequestInputBudget(
+        conversationId,
+        contextCount: contextCount,
+      );
       _contextTokens[conversationId] =
           prompt != null && prompt > estimated ? prompt : estimated;
       return displayedMessages;
@@ -828,6 +863,7 @@ class ChatProvider extends ChangeNotifier {
     required int contextLength,
     required double threshold,
     int systemPromptTokens = 0,
+    int contextCount = 0,
     bool force = false,
   }) async {
     final messages = _messagesMap[conversationId] ?? [];
@@ -839,7 +875,9 @@ class ChatProvider extends ChangeNotifier {
     // 发送输入预算（系统提示词 + 摘要起历史）+ 系统提示词一起判断是否达到压缩阈值
     // （手动压缩时跳过）。与进度条展示的上下文使用量同口径。
     if (!force &&
-        _estimateSendInputBudget(conversationId,
+        _estimateRequestInputBudget(
+                conversationId,
+                contextCount: contextCount,
                 systemTokens: systemPromptTokens) <
             contextLength * threshold) {
       return false;
@@ -888,7 +926,10 @@ class ChatProvider extends ChangeNotifier {
         ),
       );
       // 压缩后参与上下文的消息大幅减少，按「摘要 + 保留消息」重算发送输入预算
-      _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
+      _contextTokens[conversationId] = _estimateRequestInputBudget(
+        conversationId,
+        contextCount: contextCount,
+      );
       _updateConversationLastMessage(conversationId, kept.last.content);
       notifyListeners();
       await _persist();
@@ -912,6 +953,7 @@ class ChatProvider extends ChangeNotifier {
       compressModel: compressModel,
       contextLength: contextLength,
       threshold: 1.0, // force 模式下不参与判断
+      contextCount: 0,
       force: true,
     );
   }
@@ -968,6 +1010,25 @@ class ChatProvider extends ChangeNotifier {
     return total;
   }
 
+  /// 按实际会发送给模型的 history payload 估算输入预算。
+  ///
+  /// 与 [_buildHistory] 共用同一套消息筛选和转换逻辑，因而会正确计入语C
+  /// 剧情行动、表情包描述和合并转发内容；[contextCount] 与实际请求一致。
+  int _estimateRequestInputBudget(
+    String conversationId, {
+    required int contextCount,
+    int? systemTokens,
+  }) {
+    final sys = systemTokens ?? (_systemTokens[conversationId] ?? 0);
+    final history = _buildHistory(conversationId, contextCount);
+    final historyTokens = history.fold<int>(
+      0,
+      (sum, item) =>
+          sum + _estimateTextTokens(item['content'] ?? '') + kPerMessageJsonTokens,
+    );
+    return sys + historyTokens;
+  }
+
   /// 估算会话当前"发送输入预算"（进度条口径，即公式的分子）：
   /// = 系统提示词 + 输出指令（[systemTokens] 或上次记录的缓存）+
   ///   摘要起全部文本消息历史 + [extra] 额外文本（如当前用户输入）。
@@ -983,11 +1044,18 @@ class ChatProvider extends ChangeNotifier {
 
   /// 获取某会话当前上下文 token 用量（发送输入预算，用于「聊天设置」展示与压缩进度）。
   /// 有记录时优先返回；无记录时用本地分词估算并缓存。
-  int getContextTokens(String conversationId) {
+  int getContextTokens(String conversationId, {int contextCount = 0}) {
     final tracked = _contextTokens[conversationId];
-    if (tracked != null) return tracked;
-    final estimated = _estimateSendInputBudget(conversationId);
-    _contextTokens[conversationId] = estimated;
+    // 有真实/最近一次请求记录时仍需在设置页按当前 contextCount 重算，
+    // 避免重启后或切换上下文条数后沿用旧口径。
+    if (tracked != null && contextCount == 0) return tracked;
+    final estimated = _estimateRequestInputBudget(
+      conversationId,
+      contextCount: contextCount,
+    );
+    // 有限上下文的展示值只是临时口径，不能覆盖缓存中的真实/全量请求值；
+    // 否则用户切回「无限制」时会错误沿用之前有限窗口的占用量。
+    if (contextCount == 0) _contextTokens[conversationId] = estimated;
     return estimated;
   }
 

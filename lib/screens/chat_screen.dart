@@ -19,6 +19,7 @@ import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/sticker_provider.dart';
+import '../providers/token_usage_provider.dart';
 import 'sticker_picker_screen.dart';
 import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
@@ -1563,7 +1564,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           roleplayProgressionStyle: chatSettings.roleplayProgressionStyle.name,
           roleplayMode: true,
         );
-        final choices = await LLMService.generateRoleplayChoices(
+        final choiceResult = await LLMService.generateRoleplayChoices(
           model: model,
           systemPrompt: choicePrompt,
           historyMessages: chatProvider.getRecentHistoryForCharacter(
@@ -1571,8 +1572,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             chatSettings.contextCount,
           ),
         );
+        // 候选行动是一次真实的独立 LLM 调用；必须和正文一样纳入累计用量。
+        await TokenUsageProvider.instance.addUsage(
+          widget.conversationId,
+          choiceResult.usage,
+        );
         if (mounted) {
-          await chatProvider.setRoleplayChoices(widget.conversationId, choices);
+          await chatProvider.setRoleplayChoices(
+            widget.conversationId,
+            choiceResult.messages,
+          );
         }
       } catch (e) {
         debugPrint('[ChatScreen] 语C候选行动生成失败: $e');

@@ -44,7 +44,11 @@ class ChatSettingsScreen extends StatelessWidget {
     ApiProvider api,
     ChatProvider chat,
   ) {
-    final tokens = chat.getContextTokens(conversationId!);
+    // 使用当前设置的上下文条数重算展示值，避免沿用上次请求或全量上下文缓存。
+    final tokens = chat.getContextTokens(
+      conversationId!,
+      contextCount: settings.contextCount,
+    );
     final model = api.getModelById(settings.selectedModelId);
     final contextLength = model?.contextLength ?? 0;
     final usage = contextLength > 0 ? (tokens / contextLength) : 0.0;

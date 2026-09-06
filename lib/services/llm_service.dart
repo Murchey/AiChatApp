@@ -118,7 +118,7 @@ class LLMService {
 
   /// 为语C正文回复提供 4 个可继续推进剧情的候选行动。
   /// 候选项仅用于填入输入框，不会写入聊天记录。
-  static Future<List<String>> generateRoleplayChoices({
+  static Future<ProactiveResult> generateRoleplayChoices({
     required ApiModel model,
     required String systemPrompt,
     required List<Map<String, String>> historyMessages,
@@ -136,7 +136,10 @@ class LLMService {
       maxTokens: 400,
       initialTemperature: 0.7,
     );
-    return parseMessages(completion.content).take(4).toList();
+    return ProactiveResult(
+      parseMessages(completion.content).take(4).toList(),
+      completion.usage,
+    );
   }
 
   /// 发送图片消息：以 OpenAI 兼容的视觉消息格式，把用户选择的图片
@@ -204,8 +207,8 @@ class LLMService {
     }
   }
 
-  /// OpenAI 兼容 SSE 流式补全，仅语C正文使用；每次 yield 新增文本片段。
-  static Stream<String> streamCompletion({
+  /// OpenAI 兼容 SSE 流式补全，仅语C正文使用，同时透传流式 usage。
+  static Stream<StreamCompletionChunk> streamCompletion({
     required ApiModel model,
     required List<Map<String, Object>> messages,
     int maxTokens = 1024,
@@ -236,6 +239,7 @@ class LLMService {
         'model': model.modelName,
         'messages': messages,
         'stream': true,
+        'stream_options': {'include_usage': true},
         'max_tokens': maxTokens,
         'temperature': temperature,
       })));
@@ -251,25 +255,33 @@ class LLMService {
         if (!line.startsWith('data:')) continue;
         final data = line.substring(5).trim();
         if (data == '[DONE]') break;
-        try {
-          final decoded = jsonDecode(data) as Map<String, dynamic>;
-          final choices = decoded['choices'] as List<dynamic>? ?? const [];
-          final delta = choices.isEmpty
-              ? null
-              : (choices.first as Map<String, dynamic>)['delta']
-                  as Map<String, dynamic>?;
-          final content = delta?['content'] as String? ?? '';
-          if (content.isNotEmpty) yield content;
-        } catch (_) {
-          // SSE 保活行或非标准事件忽略，继续读取下一片段。
-        }
+        final chunk = parseStreamChunk(data);
+        if (chunk.content.isNotEmpty || !chunk.usage.isEmpty) yield chunk;
       }
     } finally {
       client.close(force: true);
     }
   }
 
-  /// 调用对话补全 API，返回回复内容与真实 token 用量（usage）。
+  /// 解析单个 OpenAI 兼容 SSE data payload。
+  /// usage 通常出现在最后一条、且 choices 为空的事件。
+  static StreamCompletionChunk parseStreamChunk(String data) {
+    try {
+      final decoded = jsonDecode(data) as Map<String, dynamic>;
+      final choices = decoded['choices'] as List<dynamic>? ?? const [];
+      final delta = choices.isEmpty
+          ? null
+          : (choices.first as Map<String, dynamic>)['delta']
+              as Map<String, dynamic>?;
+      return StreamCompletionChunk(
+        content: delta?['content'] as String? ?? '',
+        usage: _parseUsage(decoded),
+      );
+    } catch (_) {
+      return const StreamCompletionChunk();
+    }
+  }
+
   /// 失败抛出 [LLMException]。
   ///
   /// [messages] 的 content 既可以是字符串（普通文本消息），
@@ -1145,6 +1157,17 @@ class LLMException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// 流式补全中的一个事件：可能只有正文片段，也可能只带最后的 usage。
+class StreamCompletionChunk {
+  final String content;
+  final ChatUsage usage;
+
+  const StreamCompletionChunk({
+    this.content = '',
+    this.usage = const ChatUsage(),
+  });
 }
 
 /// 一次对话补全的 token 用量（来自 API 响应 usage 字段；字段缺失为 null）

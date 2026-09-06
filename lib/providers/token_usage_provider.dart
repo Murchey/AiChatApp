@@ -29,6 +29,9 @@ class TokenUsageProvider extends ChangeNotifier {
   Map<String, TokenUsage> _usages = {};
   bool _loaded = false;
   Future<void>? _loading; // 正在进行的加载 Future：并发调用共享，避免重复/漏加载
+  // Token 请求可能并发完成（例如语C正文与候选行动）；串行化累加和写盘，
+  // 防止两个调用读取相同旧值后相互覆盖，导致累计用量漏算。
+  Future<void> _mutationQueue = Future.value();
 
   /// 读取持久化数据（首次调用时；重复调用无副作用）。
   ///
@@ -68,25 +71,31 @@ class TokenUsageProvider extends ChangeNotifier {
 
   /// 记录一次真实 token 用量（API 未返回 usage 时忽略）。
   /// 返回累计后的该会话用量（供调用方决定是否展示）。
-  Future<TokenUsage> addUsage(String conversationId, ChatUsage usage) async {
-    if (usage.isEmpty) return usageFor(conversationId);
-    await init();
-    final prev = _usages[conversationId] ?? const TokenUsage();
-    final next = TokenUsage(
-      sentTokens: prev.sentTokens + (usage.promptTokens ?? 0),
-      receivedTokens: prev.receivedTokens + (usage.completionTokens ?? 0),
-    );
-    _usages[conversationId] = next;
-    if (_usages.length > _maxEntries) {
-      // 只保留消耗最大的会话，避免无限膨胀
-      final entries = _usages.entries.toList()
-        ..sort((a, b) => b.value.totalTokens.compareTo(a.value.totalTokens));
-      _usages = Map.fromEntries(entries.take(_maxEntries));
-    }
-    notifyListeners();
-    await _persist();
-    _syncToWidget();
-    return next;
+  Future<TokenUsage> addUsage(String conversationId, ChatUsage usage) {
+    if (usage.isEmpty) return Future.value(usageFor(conversationId));
+    final task = _mutationQueue.then((_) async {
+      await init();
+      final prev = _usages[conversationId] ?? const TokenUsage();
+      final next = TokenUsage(
+        sentTokens: prev.sentTokens + (usage.promptTokens ?? 0),
+        receivedTokens: prev.receivedTokens + (usage.completionTokens ?? 0),
+      );
+      _usages[conversationId] = next;
+      if (_usages.length > _maxEntries) {
+        // 只保留消耗最大的会话，避免无限膨胀
+        final entries = _usages.entries.toList()
+          ..sort(
+              (a, b) => b.value.totalTokens.compareTo(a.value.totalTokens));
+        _usages = Map.fromEntries(entries.take(_maxEntries));
+      }
+      notifyListeners();
+      await _persist();
+      _syncToWidget();
+      return next;
+    });
+    // 即使一次持久化失败，也让后续累计继续执行，不让队列永久中断。
+    _mutationQueue = task.then<void>((_) {}, onError: (_) {});
+    return task;
   }
 
   /// 同步数据到小组件
