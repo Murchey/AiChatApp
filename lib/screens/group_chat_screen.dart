@@ -1396,14 +1396,17 @@ class _GroupMessageInputState extends State<_GroupMessageInput>
                 // 左侧加号：展开功能面板（相册/拍照/文件/功能检测）
                 CupertinoButton(
                   padding: EdgeInsets.zero,
+                  minimumSize: const Size(28, 28),
                   onPressed: _handleToggleGrid,
                   child: Icon(
                     _showGrid
                         ? CupertinoIcons.keyboard
                         : CupertinoIcons.add_circled,
+                    size: 26,
                     color: context.textSecondaryColor,
                   ),
                 ),
+                const SizedBox(width: 4),
                 Expanded(
                   child: CupertinoTextField(
                     controller: _controller,
@@ -1413,8 +1416,8 @@ class _GroupMessageInputState extends State<_GroupMessageInput>
                     maxLines: 4,
                     minLines: 1,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
+                      horizontal: 12,
+                      vertical: 8,
                     ),
                     style: TextStyle(
                       fontSize: 16,
@@ -1422,17 +1425,20 @@ class _GroupMessageInputState extends State<_GroupMessageInput>
                     ),
                     decoration: BoxDecoration(
                       color: context.fieldBgColor,
-                      borderRadius: BorderRadius.circular(5),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                 ),
                 // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（触发群聊回复）
                 if (_hasText) ...[
-                  // 发送按钮：经典主题色实底 / zmd 终末地深底金边（64×40，圆角 10px）
+                  const SizedBox(width: 6),
+                  // 经典 36 圆形箭头 / zmd 深底金边文字按钮
                   ChatSendButton(onPressed: _handleSend),
-                ] else
+                ] else ...[
+                  const SizedBox(width: 6),
                   CupertinoButton(
-                    padding: const EdgeInsets.all(4),
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(36, 36),
                     onPressed:
                         widget.replyEnabled ? widget.onRequestReply : null,
                     child: Icon(
@@ -1443,6 +1449,7 @@ class _GroupMessageInputState extends State<_GroupMessageInput>
                           : context.textSecondaryColor,
                     ),
                   ),
+                ],
               ],
             ),
           ),

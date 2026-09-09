@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:gal/gal.dart';
 import 'package:provider/provider.dart';
+import '../config/motion.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
@@ -759,7 +760,8 @@ class _MomentCardState extends State<MomentCard> {
               child: Image.file(
                 File(p),
                 fit: BoxFit.cover,
-                alignment: Alignment.center, // 确保从中心裁剪
+                // 顶部对齐：长图/竖图先露出内容开头，避免居中裁成一条细缝
+                alignment: Alignment.topCenter,
                 gaplessPlayback: true,
                 cacheWidth: cellPx,
                 cacheHeight: cellPx,
@@ -886,8 +888,8 @@ class _MomentCardState extends State<MomentCard> {
     Navigator.of(context).push(
       PageRouteBuilder(
         opaque: true,
-        transitionDuration: const Duration(milliseconds: 220),
-        reverseTransitionDuration: const Duration(milliseconds: 180),
+        transitionDuration: AppMotion.base,
+        reverseTransitionDuration: AppMotion.quick,
         pageBuilder: (_, __, ___) => _ImagePreviewPage(path: path),
       ),
     );
@@ -1039,8 +1041,8 @@ class _CommentInputBarState extends State<_CommentInputBar> {
 }
 
 /// 朋友圈单图缩略图（微信风格）：
-/// 不强制展示完整图片——竖图按 3:4 比例裁剪、横图按原比例，最大约 60%
-/// 内容区宽度 / 220 高度。异步读取原图尺寸后计算展示尺寸，避免布局跳动。
+/// 普通竖图 3:4、横图按原比例；长图（高宽比 ≥ 2.2）加宽并顶部对齐，
+/// 避免居中 cover 只露中间细缝。异步读取原图尺寸后计算展示尺寸，避免布局跳动。
 class _SingleImageThumb extends StatefulWidget {
   final String path;
   final VoidCallback onTap;
@@ -1100,6 +1102,8 @@ class _SingleImageThumbState extends State<_SingleImageThumb> {
 
     double w;
     double h;
+    var alignment = Alignment.center;
+    var filterQuality = FilterQuality.medium;
     final img = _imgSize;
     if (img == null) {
       // 未知尺寸：按 3:4 默认比例占位
@@ -1107,7 +1111,14 @@ class _SingleImageThumbState extends State<_SingleImageThumb> {
       h = maxHeight;
     } else {
       final aspect = img.width / img.height;
-      if (aspect >= 1) {
+      // 长图（截图/长漫等，高宽比 ≥ 2.2）：单独加宽加高，顶部对齐展示开头，
+      // 避免 3:4 居中 cover 只露出中间一条细缝造成「比例失真」观感
+      final isLongImage = img.height / img.width >= 2.2;
+      if (isLongImage) {
+        w = contentWidth * 0.72;
+        h = (w * img.height / img.width).clamp(180.0, 280.0);
+        alignment = Alignment.topCenter;
+      } else if (aspect >= 1) {
         // 横图 / 方形：宽优先，高度按原比例，超出高度上限则按比例截断
         w = maxWidth;
         h = w / aspect;
@@ -1117,13 +1128,15 @@ class _SingleImageThumbState extends State<_SingleImageThumb> {
           if (w > maxWidth) w = maxWidth;
         }
       } else {
-        // 竖图：微信风格 3:4 缩略图（cover 裁剪，不展示完整图片）
+        // 普通竖图：3:4 缩略图（cover 裁剪，不展示完整图片）
         w = maxHeight * 0.75;
         h = maxHeight;
         if (w > maxWidth) {
           w = maxWidth;
           h = w * 4 / 3;
         }
+        // 主体略偏上，减少人物/文字被裁到正中的问题
+        alignment = const Alignment(0, -0.15);
       }
     }
 
@@ -1137,11 +1150,11 @@ class _SingleImageThumbState extends State<_SingleImageThumb> {
           child: Image.file(
             File(widget.path),
             fit: BoxFit.cover,
+            alignment: alignment,
             gaplessPlayback: true,
             cacheWidth: (w * dpr).round(),
             cacheHeight: (h * dpr).round(),
-            // 缩略图尺寸小，低过滤质量视觉无差别，滚动光栅化更快
-            filterQuality: FilterQuality.low,
+            filterQuality: filterQuality,
             errorBuilder: (_, __, ___) => _imagePlaceholder(context),
           ),
         ),

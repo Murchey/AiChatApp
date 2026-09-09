@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import '../config/motion.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/moments_pack_entry.dart';
@@ -127,7 +128,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
       barrierDismissible: true,
       barrierLabel: '关闭分类筛选',
       barrierColor: CupertinoColors.black.withValues(alpha: 0.28),
-      transitionDuration: const Duration(milliseconds: 280),
+      transitionDuration: AppMotion.slow,
       pageBuilder: (drawerContext, animation, secondaryAnimation) =>
           StatefulBuilder(
         builder: (drawerContext, setDrawerState) => Align(

@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import '../config/motion.dart';
 import '../config/theme.dart';
 import '../screens/sticker_picker_screen.dart';
 import 'chat_send_button.dart';
@@ -146,7 +147,7 @@ class MessageInputState extends State<MessageInput>
     _pendingPanel = panel;
     FocusManager.instance.primaryFocus?.unfocus();
     SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
-    Future<void>.delayed(const Duration(milliseconds: 180), () {
+    Future<void>.delayed(AppMotion.inputPanelSettle, () {
       if (!mounted || _pendingPanel != panel) return;
       if (MediaQuery.viewInsetsOf(context).bottom == 0) {
         setState(() {
@@ -205,23 +206,30 @@ class MessageInputState extends State<MessageInput>
               children: [
                 CupertinoButton(
                   padding: EdgeInsets.zero,
+                  minimumSize: const Size(28, 28),
                   onPressed: _handleToggleGrid,
                   child: Icon(
                     _panel == _InputPanel.grid
                         ? CupertinoIcons.keyboard
                         : CupertinoIcons.add_circled,
+                    size: 26,
                     color: context.textSecondaryColor,
                   ),
                 ),
-                if (widget.showStickerButton)
+                if (widget.showStickerButton) ...[
+                  const SizedBox(width: 2),
                   CupertinoButton(
                     padding: EdgeInsets.zero,
+                    minimumSize: const Size(28, 28),
                     onPressed: _handleStickerTap,
                     child: Icon(
                       CupertinoIcons.smiley,
+                      size: 26,
                       color: context.accentColor,
                     ),
                   ),
+                ],
+                const SizedBox(width: 4),
                 Expanded(
                   child: CupertinoTextField(
                     controller: _controller,
@@ -230,24 +238,27 @@ class MessageInputState extends State<MessageInput>
                     maxLines: 4,
                     minLines: 1,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                        horizontal: 12, vertical: 8),
                     style: TextStyle(
                       fontSize: 16,
                       color: context.textPrimaryColor,
                     ),
                     decoration: BoxDecoration(
                       color: context.fieldBgColor,
-                      borderRadius: BorderRadius.circular(5),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                 ),
                 // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（点击请求角色回复）
                 if (_hasText) ...[
-                  // 发送按钮：经典主题色实底 / zmd 终末地深底金边（64×40，圆角 10px）
+                  const SizedBox(width: 6),
+                  // 经典 36 圆形箭头 / zmd 深底金边文字按钮
                   ChatSendButton(onPressed: _handleSend),
                 ] else if (widget.onRequestReply != null) ...[
+                  const SizedBox(width: 6),
                   CupertinoButton(
-                    padding: const EdgeInsets.all(4),
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(36, 36),
                     onPressed:
                         widget.replyEnabled ? widget.onRequestReply : null,
                     child: Icon(

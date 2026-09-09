@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
+import '../config/motion.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../providers/chat_provider.dart';
@@ -157,8 +158,8 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() => _currentTab = index);
     _pageController.animateToPage(
       index,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOut,
+      duration: AppMotion.base,
+      curve: AppMotion.soft,
     );
   }
 
@@ -195,8 +196,8 @@ class _HomeScreenState extends State<HomeScreen>
     if (key?.currentContext == null) return;
     Scrollable.ensureVisible(
       key!.currentContext!,
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
+      duration: AppMotion.base,
+      curve: AppMotion.soft,
       alignment: 0.0,
     );
   }
@@ -347,7 +348,7 @@ class _HomeScreenState extends State<HomeScreen>
               itemCount: entries.length,
               separatorBuilder: (_, __) => Container(
                 height: 0.5,
-                margin: const EdgeInsets.only(left: 57),
+                margin: const EdgeInsets.only(left: 56),
                 color: context.separatorColor,
               ),
               itemBuilder: (context, index) {
@@ -362,14 +363,14 @@ class _HomeScreenState extends State<HomeScreen>
                   child: CupertinoListTile(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 10,
+                      vertical: 8,
                     ),
                     // 置顶会话背景变灰，区分普通会话
                     backgroundColor:
                         entry.pinned ? context.pinnedChatColor : null,
                     // CupertinoListTile 默认把 leading 约束在 28×28，
                     // 必须显式指定与头像一致的尺寸，否则头像被压缩
-                    leadingSize: 45,
+                    leadingSize: 40,
                     leading: Stack(
                       clipBehavior: Clip.none,
                       children: [
@@ -396,13 +397,13 @@ class _HomeScreenState extends State<HomeScreen>
                     title: Text(
                       entry.title,
                       style: TextStyle(
-                        fontSize: 17,
+                        fontSize: 16,
                         fontWeight: FontWeight.w500,
                         color: context.textPrimaryColor,
                       ),
                     ),
                     subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 4),
+                      padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         entry.lastMessage.isEmpty
                             ? '开始对话...'
@@ -410,7 +411,7 @@ class _HomeScreenState extends State<HomeScreen>
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 13,
                           color: context.textSecondaryColor,
                         ),
                       ),
@@ -558,7 +559,7 @@ class _HomeScreenState extends State<HomeScreen>
                       _buildSelfTile(context, self),
                       Container(
                         height: 0.5,
-                        margin: const EdgeInsets.only(left: 61),
+                        margin: const EdgeInsets.only(left: 56),
                         color: context.separatorColor,
                       ),
                     ],
@@ -585,10 +586,10 @@ class _HomeScreenState extends State<HomeScreen>
                         CupertinoListTile(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
-                            vertical: 10,
+                            vertical: 8,
                           ),
                           // 同消息列表：显式放宽 leading 尺寸约束
-                          leadingSize: 45,
+                          leadingSize: 40,
                           leading: _buildSquareAvatar(
                             context,
                             character.displayName,
@@ -597,20 +598,20 @@ class _HomeScreenState extends State<HomeScreen>
                           title: Text(
                             _contactName(character),
                             style: TextStyle(
-                              fontSize: 17,
+                              fontSize: 16,
                               fontWeight: FontWeight.w500,
                               color: context.textPrimaryColor,
                             ),
                           ),
                           subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.only(top: 2),
                             child: Text(
                               character.description,
-                              maxLines: 2,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 14,
-                                height: 1.4,
+                                fontSize: 13,
+                                height: 1.3,
                                 color: context.textSecondaryColor,
                               ),
                             ),
@@ -630,7 +631,7 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       Container(
                         height: 0.5,
-                        margin: const EdgeInsets.only(left: 61),
+                        margin: const EdgeInsets.only(left: 56),
                         color: context.separatorColor,
                       ),
                     ],
@@ -698,26 +699,26 @@ class _HomeScreenState extends State<HomeScreen>
   /// 通讯录顶部的"自己"账号条目：不能发起聊天，点击进入自己的空间页查看/发布朋友圈
   Widget _buildSelfTile(BuildContext context, Character self) {
     return CupertinoListTile(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       // 同消息列表：显式放宽 leading 尺寸约束
-      leadingSize: 45,
+      leadingSize: 40,
       leading: _buildSquareAvatar(context, self.displayName, self.avatar),
       title: Text(
         _contactName(self),
         style: TextStyle(
-          fontSize: 17,
+          fontSize: 16,
           fontWeight: FontWeight.w500,
           color: context.textPrimaryColor,
         ),
       ),
       subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.only(top: 2),
         child: Text(
           self.signature.isEmpty ? '我的朋友圈' : self.signature,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: 14,
+            fontSize: 13,
             color: context.textSecondaryColor,
           ),
         ),
@@ -808,11 +809,12 @@ class _HomeScreenState extends State<HomeScreen>
     String name,
     String avatar, {
     IconData fallbackIcon = CupertinoIcons.person_fill,
+    double size = 40,
   }) {
     // 头像框样式跟随全局设置（方形 / 仿 QQ 圆形）
     return CharacterAvatar(
       base64: avatar,
-      size: 45,
+      size: size,
       fallbackIcon: fallbackIcon,
     );
   }

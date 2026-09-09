@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import '../config/motion.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
@@ -159,7 +160,7 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
     super.initState();
     _settleController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 260),
+      duration: AppMotion.slow,
     )..addListener(() {
         if (_settleAnim != null) setState(() {});
       });

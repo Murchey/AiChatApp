@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../config/motion.dart';
 import '../config/theme.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
@@ -244,8 +245,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           if (!_scrollController.hasClients) return;
           _scrollController.animateTo(
             0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
+            duration: AppMotion.base,
+            curve: AppMotion.out,
           );
         });
       } else {

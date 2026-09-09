@@ -139,13 +139,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       color: context.accentColor,
                     ),
                     title: const Text('管理当前角色'),
-                    subtitle: Text(
-                      '添加 / 删除 / 导出角色包',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
                     trailing: Icon(
                       CupertinoIcons.chevron_right,
                       size: 16,
@@ -166,13 +159,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       color: context.accentColor,
                     ),
                     title: const Text('管理当前朋友圈'),
-                    subtitle: Text(
-                      '导入 / 管理朋友圈数据',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
                     trailing: Icon(
                       CupertinoIcons.chevron_right,
                       size: 16,
@@ -193,13 +179,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       color: context.accentColor,
                     ),
                     title: const Text('创意工坊'),
-                    subtitle: Text(
-                      '从仓库下载导入角色包 / 游戏包',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
                     trailing: Icon(
                       CupertinoIcons.chevron_right,
                       size: 16,

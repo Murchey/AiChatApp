@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
+import '../config/motion.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
@@ -32,8 +33,8 @@ class _CharacterListScreenState extends State<CharacterListScreen> {
     if (key?.currentContext == null) return;
     Scrollable.ensureVisible(
       key!.currentContext!,
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
+      duration: AppMotion.base,
+      curve: AppMotion.soft,
       alignment: 0.0,
     );
   }
