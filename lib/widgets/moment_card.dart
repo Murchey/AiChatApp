@@ -720,8 +720,8 @@ class _MomentCardState extends State<MomentCard> {
 
   /// 图片：最多 9 张，1 张大图、多张 3 列网格；缺失时只显示文字占位。
   /// 点击图片全屏预览。
-  /// 解码尺寸按实际展示区域指定（cacheWidth/Height），避免原图全分辨率解码
-  /// 造成大内存占用与滚动卡顿。
+  /// 解码按 cover 所需像素等比缩放（禁止同时写死宽高硬拉伸），
+  /// 避免原图全分辨率解码造成大内存占用与滚动卡顿。
   Widget _images(BuildContext context) {
     final shown = moment.images.where(_imageExists).take(9).toList();
     if (shown.isEmpty) {
@@ -745,6 +745,7 @@ class _MomentCardState extends State<MomentCard> {
     // 多图：3 列网格，单格按卡片内可用宽度均分
     final cell = (screenWidth - 32 - 24 - 34 - 10 - 8) / 3;
     final dpr = MediaQuery.of(context).devicePixelRatio;
+    // 只约束解码宽度：同时写 cacheWidth/Height 会按盒子尺寸硬拉伸，长图变矮胖
     final cellPx = (cell * dpr).round();
     return Wrap(
       spacing: 4,
@@ -764,7 +765,6 @@ class _MomentCardState extends State<MomentCard> {
                 alignment: Alignment.topCenter,
                 gaplessPlayback: true,
                 cacheWidth: cellPx,
-                cacheHeight: cellPx,
                 // 缩略图尺寸小，低过滤质量视觉无差别，滚动光栅化更快
                 filterQuality: FilterQuality.low,
                 errorBuilder: (_, __, ___) => _imagePlaceholder(context),
@@ -1040,6 +1040,21 @@ class _CommentInputBarState extends State<_CommentInputBar> {
   }
 }
 
+/// 按 BoxFit.cover 所需像素等比计算解码目标尺寸。
+/// Flutter 在 cacheWidth/Height 同时非空时会忽略原图比例硬缩放，
+/// 必须用原图宽高换算，否则长图会被压成矮胖。
+/// [image] 为空时只约束宽度，高度不传（跟随原图比例）。
+(int, int?) _coverDecodeSize(double boxW, double boxH, Size? image, double dpr) {
+  if (image == null || image.width <= 0 || image.height <= 0) {
+    return ((boxW * dpr).round(), null);
+  }
+  final scale = max(boxW / image.width, boxH / image.height);
+  return (
+    (image.width * scale * dpr).round(),
+    (image.height * scale * dpr).round(),
+  );
+}
+
 /// 朋友圈单图缩略图（微信风格）：
 /// 普通竖图 3:4、横图按原比例；长图（高宽比 ≥ 2.2）加宽并顶部对齐，
 /// 避免居中 cover 只露中间细缝。异步读取原图尺寸后计算展示尺寸，避免布局跳动。
@@ -1140,6 +1155,10 @@ class _SingleImageThumbState extends State<_SingleImageThumb> {
       }
     }
 
+    // 解码尺寸按 cover 可视区等比换算：同时写死 cacheWidth/Height 会让
+    // Flutter 按盒子尺寸硬解码、忽略原图比例（长图被压成矮胖）。
+    final (cacheW, cacheH) = _coverDecodeSize(w, h, img, dpr);
+
     return GestureDetector(
       onTap: widget.onTap,
       child: ClipRRect(
@@ -1152,8 +1171,8 @@ class _SingleImageThumbState extends State<_SingleImageThumb> {
             fit: BoxFit.cover,
             alignment: alignment,
             gaplessPlayback: true,
-            cacheWidth: (w * dpr).round(),
-            cacheHeight: (h * dpr).round(),
+            cacheWidth: cacheW,
+            cacheHeight: cacheH,
             filterQuality: filterQuality,
             errorBuilder: (_, __, ___) => _imagePlaceholder(context),
           ),
