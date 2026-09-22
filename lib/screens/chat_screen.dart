@@ -6,8 +6,10 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import '../config/motion.dart';
 import '../config/theme.dart';
+import '../models/character.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
 import '../providers/api_provider.dart';
@@ -302,10 +304,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
+    final includeReasoning = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('导出聊天记录'),
+        content: const Text('是否将 AI 思考过程一并写入导出文件？'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('不含思考'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('包含思考'),
+          ),
+        ],
+      ),
+    );
+    if (includeReasoning == null || !mounted) return;
+
     try {
       final bytes = await ChatRecordsService.buildExportZip(
         characterName: widget.characterName,
         messages: messages,
+        includeReasoning: includeReasoning,
       );
       if (!mounted) return;
 
@@ -427,10 +454,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
-    // 菜单宽度（3项至少260，2项至少190）
-    final double menuWidth = items.length > 2 ? 260 : 190;
-    // 菜单高度：5 项以上会换行成两行（64 → 128）
-    final double menuHeight = items.length > 4 ? 128 : 64;
+    // 菜单尺寸：按等宽等高按钮网格推算（见 _menuPanelWidth / _menuPanelHeight）
+    final double menuWidth = _menuPanelWidth(items.length);
+    final double menuHeight = _menuPanelHeight(items.length);
 
     // 计算 X：我方气泡在右侧，菜单靠左；对方气泡在左侧，菜单靠右
     double left;
@@ -478,6 +504,103 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _closeMenu() {
     _menuOverlay?.remove();
     _menuOverlay = null;
+  }
+
+  /// 查看 AI 思考过程（仅本地展示，不回传）
+  void _showReasoningContent(Message message) {
+    final text = message.reasoningContent.trim();
+    if (text.isEmpty) return;
+    final duration = message.reasoningDurationMs;
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('AI 思考过程'),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.55,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (duration != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '思考耗时 ${_formatThinkingDuration(duration)}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: ctx.textSecondaryColor,
+                      ),
+                    ),
+                  ),
+                Text(
+                  text,
+                  textAlign: TextAlign.start,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: ctx.textPrimaryColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatThinkingDuration(int ms) {
+    if (ms < 1000) return '${ms}ms';
+    final s = ms / 1000;
+    return s >= 10 ? '${s.toStringAsFixed(0)}s' : '${s.toStringAsFixed(1)}s';
+  }
+
+  /// 角色气泡下方的思考时长（与时间标签同风格，不入正文）
+  /// 左对齐到气泡列（避开头像），不显示在用户消息上
+  Widget _buildThinkingDurationLabel(Message msg) {
+    if (msg.isFromUser) return const SizedBox.shrink();
+    final duration = msg.reasoningDurationMs;
+    if (duration == null) return const SizedBox.shrink();
+    return Consumer<ChatSettingsProvider>(
+      builder: (context, settings, _) {
+        if (!settings.showThinkingDuration) return const SizedBox.shrink();
+        return Padding(
+          // 与 ChatBubble 行内对齐：页边 12 + 头像 40 + 间距 8
+          padding: const EdgeInsets.only(top: 0, bottom: 6, left: 60, right: 48),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: context.textSecondaryColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '思考 ${_formatThinkingDuration(duration)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   /// 构建菜单项列表
@@ -536,6 +659,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         );
       }
     } else {
+      if (message.hasReasoning) {
+        items.add(
+          _menuItem(
+            icon: CupertinoIcons.lightbulb,
+            label: '查看思考',
+            onTap: () {
+              _closeMenu();
+              _showReasoningContent(message);
+            },
+          ),
+        );
+      }
       items.add(
         _menuItem(
           icon: CupertinoIcons.pencil,
@@ -593,7 +728,137 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
     );
 
+    // 分支对话：从当前消息处带历史分出新角色会话
+    items.add(
+      _menuItem(
+        icon: CupertinoIcons.arrow_branch,
+        label: '增加分支',
+        onTap: () {
+          _closeMenu();
+          _branchConversation(message);
+        },
+      ),
+    );
+
     return items;
+  }
+
+  /// 分支对话：为新角色命名后，复制截至当前消息（含）的聊天记录，
+  /// 创建新角色与其会话，并跳转过去继续聊天。
+  Future<void> _branchConversation(Message message) async {
+    final controller = TextEditingController();
+    final newName = await showCupertinoDialog<String>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('增加分支'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '给新角色命名，将从当前消息处分出新会话：\n'
+                '该条及之前的聊天记录会复制到新会话，之后的消息不会带入。\n'
+                '新角色将完整复制当前角色的角色包内容（人设、提示词、头像、记忆点等），仅名称为你新填的名字。',
+                style: TextStyle(fontSize: 13, height: 1.45),
+              ),
+              const SizedBox(height: 10),
+              CupertinoTextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 20,
+                placeholder: '输入新角色名称',
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('创建分支'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || newName == null || newName.isEmpty) return;
+
+    final characterProvider = context.read<CharacterProvider>();
+    final chatProvider = context.read<ChatProvider>();
+    final memoryProvider = context.read<MemoryPointProvider>();
+
+    // 源角色：按当前会话定位，用于整包复制角色卡内容
+    final sourceConversation = chatProvider.conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    final source = sourceConversation == null
+        ? null
+        : characterProvider.getCharacterById(sourceConversation.characterId);
+
+    final characterId = const Uuid().v4();
+    // 与源角色角色包一致：复制全部角色卡字段 + 记忆点，仅换 id 与分支名称
+    final newCharacter = source == null
+        ? Character(id: characterId, name: newName)
+        : Character(
+            id: characterId,
+            name: newName,
+            remark: source.remark,
+            signature: source.signature,
+            region: source.region,
+            avatar: source.avatar,
+            background: source.background,
+            description: source.description,
+            personality: source.personality,
+            greeting: source.greeting,
+            systemPrompt: source.systemPrompt,
+            userRelationship: source.userRelationship,
+            activeStart: source.activeStart,
+            activeEnd: source.activeEnd,
+            modelId: source.modelId,
+            defaultModelId: source.defaultModelId,
+            tags: List.of(source.tags),
+            moments: List.of(source.moments),
+          );
+
+    await characterProvider.addCharacter(newCharacter);
+    if (source != null) {
+      await memoryProvider.replacePoints(
+        characterId,
+        memoryProvider.pointsFor(source.id).toList(),
+      );
+    }
+    if (!mounted) return;
+
+    Conversation branch;
+    try {
+      branch = await chatProvider.branchConversation(
+        sourceConversationId: widget.conversationId,
+        throughMessageId: message.id,
+        newCharacterId: characterId,
+        newCharacterName: newName,
+        newCharacterAvatar: source?.avatar ?? '',
+      );
+    } catch (e) {
+      if (mounted) _showPlotTip('创建分支失败：$e');
+      return;
+    }
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => ChatScreen(
+          conversationId: branch.id,
+          characterName: newName,
+        ),
+      ),
+    );
   }
 
   /// 选择文本：弹窗显示消息文本，用户可长按选择复制
@@ -701,22 +966,293 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (mounted) _scrollToBottom();
   }
 
+  /// 剧情建议：先询问用户是否有补充，再基于当前聊天上下文生成建议，
+  /// 点选一条填入输入框（可编辑后发送），语C / 短信通用。
+  Future<void> _plotSuggestion() async {
+    final chatSettings = context.read<ChatSettingsProvider>();
+    final model =
+        context.read<ApiProvider>().getModelById(chatSettings.selectedModelId);
+    if (model == null) {
+      _showNoModelDialog('生成剧情建议');
+      return;
+    }
+
+    // 第一步：询问是否有补充（可留空直接生成）
+    final controller = TextEditingController();
+    final supplement = await showCupertinoDialog<String>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('剧情建议'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '生成前有补充要交代吗？会写进这次的建议里。',
+                style: TextStyle(fontSize: 13, height: 1.45),
+              ),
+              const SizedBox(height: 10),
+              CupertinoTextField(
+                controller: controller,
+                autofocus: true,
+                maxLines: 4,
+                minLines: 2,
+                placeholder: '可选：想发展的方向、禁忌、心情…',
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('生成建议'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    // 取消（null）不生成；空字符串 = 无补充直接生成
+    if (!mounted || supplement == null) return;
+
+    final chatProvider = context.read<ChatProvider>();
+    final conversation = chatProvider.conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    final character = conversation != null
+        ? context
+            .read<CharacterProvider>()
+            .getCharacterById(conversation.characterId)
+        : null;
+    final isRoleplayMode = chatSettings.isRoleplayMode;
+    final characterName = isRoleplayMode
+        ? (character?.name.trim().isNotEmpty == true
+            ? character!.name.trim()
+            : widget.characterName)
+        : character?.displayName ?? widget.characterName;
+    final memoryPoints = conversation != null
+        ? context
+            .read<MemoryPointProvider>()
+            .pointsFor(conversation.characterId)
+            .map((p) => p.content)
+            .toList()
+        : const <String>[];
+    final historyMessages = conversation == null
+        ? const <Map<String, String>>[]
+        : chatProvider.getRecentHistoryForCharacter(
+            conversation.characterId,
+            chatSettings.contextCount,
+          );
+    final systemPrompt = PromptBuilder.buildSystemPrompt(
+      baseSystemPrompt: character?.systemPrompt ?? '',
+      characterName: characterName,
+      userNickname: context.read<AuthProvider>().user?.nickname ?? '用户',
+      userRelationship: character?.userRelationship ?? '',
+      currentTime: DateTime.now(),
+      memoryPoints: memoryPoints,
+      roleplayProgressionStyle: chatSettings.roleplayProgressionStyle.name,
+      roleplayMode: isRoleplayMode,
+    );
+
+    // 第二步：生成（带 loading 弹窗）
+    if (!mounted) return;
+    showCupertinoDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const CupertinoAlertDialog(
+        title: Text('剧情建议'),
+        content: Padding(
+          padding: EdgeInsets.only(top: 14),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CupertinoActivityIndicator(),
+              SizedBox(width: 12),
+              Text('正在生成建议…'),
+            ],
+          ),
+        ),
+      ),
+    );
+    try {
+      final result = await LLMService.generatePlotSuggestions(
+        model: model,
+        systemPrompt: systemPrompt,
+        historyMessages: historyMessages,
+        userSupplement: supplement,
+        roleplayMode: isRoleplayMode,
+      );
+      // 与正文一样纳入累计用量
+      await TokenUsageProvider.instance.addUsage(
+        widget.conversationId,
+        result.usage,
+        label: widget.characterName,
+      );
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // 关闭 loading
+      final suggestions = result.messages
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (suggestions.isEmpty) {
+        _showPlotTip('没有生成有效的剧情建议，可稍后重试');
+        return;
+      }
+      _showPlotSuggestionResult(suggestions);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      _showPlotTip('生成失败：${LLMService.describeException(e)}');
+    }
+  }
+
+  void _showPlotTip(String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('提示'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 剧情建议结果：点选一条填入输入框
+  void _showPlotSuggestionResult(List<String> suggestions) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('剧情建议'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '点选一条填入输入框，可编辑后发送',
+              style: TextStyle(fontSize: 12, color: ctx.textSecondaryColor),
+            ),
+            const SizedBox(height: 10),
+            for (final suggestion in suggestions) ...[
+              SizedBox(
+                width: double.infinity,
+                child: CupertinoButton(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  color: ctx.fieldBgColor,
+                  borderRadius: BorderRadius.circular(10),
+                  alignment: Alignment.centerLeft,
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _inputKey.currentState?.setText(suggestion);
+                  },
+                  child: Text(
+                    suggestion,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: ctx.textPrimaryColor,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ],
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 长按菜单按钮：等宽等高，保证多行时纵向对齐
+  static const double _menuCellWidth = 74;
+  static const double _menuCellHeight = 46;
+  static const double _menuSpacing = 4;
+  static const double _menuPadding = 8;
+  /// Border.all 的线宽；Container 会把它计入内边距（decoration.padding），
+  /// 尺寸公式必须预留，否则 Positioned 约束会比面板固有宽高各窄 1dp（debug 溢出黄条）。
+  static const double _menuBorder = 0.5;
+  /// 单行最多按钮数（再宽会超出手机屏宽）
+  static const int _menuMaxColumns = 3;
+
+  /// 行数：按每行最多 [_menuMaxColumns] 个换行
+  int _menuRowCount(int itemCount) =>
+      (itemCount + _menuMaxColumns - 1) ~/ _menuMaxColumns;
+
+  /// 单行最大按钮数：用于推导面板宽度（各行尽量均分后最宽的一行）
+  int _menuColumns(int itemCount) {
+    final rows = _menuRowCount(itemCount);
+    return (itemCount + rows - 1) ~/ rows;
+  }
+
+  double _menuPanelWidth(int itemCount) {
+    final columns = _menuColumns(itemCount);
+    return columns * _menuCellWidth +
+        (columns - 1) * _menuSpacing +
+        (_menuPadding + _menuBorder) * 2;
+  }
+
+  double _menuPanelHeight(int itemCount) {
+    final rows = _menuRowCount(itemCount);
+    return rows * _menuCellHeight +
+        (rows - 1) * _menuSpacing +
+        (_menuPadding + _menuBorder) * 2;
+  }
+
   Widget _buildMenuPanel(Message message, List<Widget> items) {
+    final rowCount = _menuRowCount(items.length);
+    // 各行尽量均分（7 项 → 3/2/2），避免出现只剩 1 项的孤行
+    final base = items.length ~/ rowCount;
+    final extra = items.length % rowCount;
+    final rows = <Widget>[];
+    var index = 0;
+    for (var r = 0; r < rowCount; r++) {
+      final count = base + (r < extra ? 1 : 0);
+      final rowItems = items.sublist(index, index + count);
+      index += count;
+      // 不满一行的居中，保持整体对称
+      rows.add(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var i = 0; i < rowItems.length; i++) ...[
+              if (i > 0) const SizedBox(width: _menuSpacing),
+              rowItems[i],
+            ],
+          ],
+        ),
+      );
+      if (r != rowCount - 1) rows.add(const SizedBox(height: _menuSpacing));
+    }
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.all(_menuPadding),
       decoration: BoxDecoration(
         color: CupertinoColors.systemGrey6.resolveFrom(context),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: CupertinoColors.systemGrey4.resolveFrom(context),
-          width: 0.5,
+          width: _menuBorder,
         ),
       ),
-      child: Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        children: items,
-      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: rows),
     );
   }
 
@@ -728,18 +1264,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: SizedBox(
+        width: _menuCellWidth,
+        height: _menuCellHeight,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 22, color: context.textPrimaryColor),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textPrimaryColor,
+            Icon(icon, size: 20, color: context.textPrimaryColor),
+            const SizedBox(height: 3),
+            // 网格为固定尺寸：忽略系统字号缩放，避免文字撑破按钮
+            MediaQuery.withNoTextScaling(
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.15,
+                  color: context.textPrimaryColor,
+                ),
               ),
             ),
           ],
@@ -1577,6 +2119,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         await TokenUsageProvider.instance.addUsage(
           widget.conversationId,
           choiceResult.usage,
+          label: widget.characterName,
         );
         if (mounted) {
           await chatProvider.setRoleplayChoices(
@@ -1949,6 +2492,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       onLongPress: (message, bubbleKey) =>
                                           _showBubbleMenu(message, bubbleKey),
                                     ),
+                                    // 思考时长：角色气泡下方，左对齐气泡列
+                                    if (!msg.isFromUser)
+                                      _buildThinkingDurationLabel(msg),
                                   ],
                                 ),
                               );
@@ -2097,6 +2643,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               onExport: _exportChat,
                               onImport: _importChat,
                               onFeatureDetect: _runFeatureDetect,
+                              onPlotSuggestion: _plotSuggestion,
                               showStickerButton: context
                                   .watch<ChatSettingsProvider>()
                                   .showStickerButton,

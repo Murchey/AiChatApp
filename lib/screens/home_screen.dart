@@ -180,6 +180,8 @@ class _HomeScreenState extends State<HomeScreen>
     if (!mounted) return;
     final info = await UpdateService.checkForUpdate(
       proxyUrl: settings.updateProxyUrl,
+      giteeRepoUrl: settings.updateGiteeRepoUrl,
+      githubRepoUrl: settings.updateGitHubRepoUrl,
     );
     if (!mounted || info == null) return;
     showUpdateAvailableDialog(context, info, proxyUrl: settings.updateProxyUrl);

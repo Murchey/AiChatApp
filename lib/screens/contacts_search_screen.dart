@@ -4,6 +4,7 @@ import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../providers/character_provider.dart';
+import '../utils/character_search.dart';
 import '../utils/pinyin_util.dart';
 import '../widgets/character_avatar.dart';
 
@@ -30,22 +31,6 @@ class _ContactsSearchScreenState extends State<ContactsSearchScreen> {
     final kw = value.trim();
     if (kw == _keyword) return;
     setState(() => _keyword = kw);
-  }
-
-  /// 命中判定：原文（昵称/备注/签名/地区/标签）或完整拼音包含关键词
-  bool _matches(Character c, String query) {
-    final haystack = [
-      c.displayName,
-      c.name,
-      c.remark,
-      c.signature,
-      c.region,
-      c.description,
-      ...c.tags,
-    ].join(' ').toLowerCase();
-    if (haystack.contains(query)) return true;
-    // 拼音匹配：如查「zhangsan」可命中「张三」
-    return PinyinUtil.fullPinyin(c.displayName).contains(query);
   }
 
   @override
@@ -77,7 +62,7 @@ class _ContactsSearchScreenState extends State<ContactsSearchScreen> {
                         if (provider.selfCharacter != null)
                           provider.selfCharacter!,
                         ...provider.manageableCharacters,
-                      ].where((c) => _matches(c, query)).toList()
+                      ].where((c) => characterMatchesQuery(c, query)).toList()
                         ..sort((a, b) => a.id ==
                                 CharacterProvider.selfCharacterId
                             ? -1

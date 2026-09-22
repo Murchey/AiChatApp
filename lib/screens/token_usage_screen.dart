@@ -70,6 +70,11 @@ class _TokenUsageScreenState extends State<TokenUsageScreen> {
               Container(height: 0.5, color: context.separatorColor),
               _SummaryRow(label: '累计输出 tokens', value: usage.receivedTotal),
               Container(height: 0.5, color: context.separatorColor),
+              _SummaryRow(
+                label: '其中思考 tokens',
+                value: usage.reasoningTotal,
+              ),
+              Container(height: 0.5, color: context.separatorColor),
               _SummaryRow(label: '累计消耗', value: usage.total, highlight: true),
               Container(height: 0.5, color: context.separatorColor),
               _SummaryRow(
@@ -81,8 +86,9 @@ class _TokenUsageScreenState extends State<TokenUsageScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
             child: Text(
-              '累计输入 = Σ 每轮实际发送给 API 的 prompt_tokens（已含系统提示词与多轮历史上下文回传）；'
-              '累计输出 = Σ 每轮 API 返回的 completion_tokens',
+              '累计输入 = Σ prompt_tokens；'
+              '累计输出 = Σ completion_tokens（已含思考，对齐账单）；'
+              '其中思考优先取 API reasoning_tokens，否则按思考正文估算，不重复计入总额。',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 11,
@@ -197,14 +203,18 @@ class _TokenUsageScreenState extends State<TokenUsageScreen> {
     final character = conversation != null
         ? characterProvider.getCharacterById(conversation.characterId)
         : null;
-    final title =
-        character?.displayName ?? conversation?.characterName ?? '已删除的会话';
-    final avatar = conversation?.characterAvatar ?? '';
+    // 会话还在时优先实时名称；会话删除后用统计页记住的名称，不再显示占位
+    final remembered = e.value.label.trim();
+    final title = character?.displayName ??
+        conversation?.characterName ??
+        (remembered.isNotEmpty ? remembered : '未命名会话');
+    final avatar =
+        conversation?.characterAvatar ?? e.value.avatar;
+    final showAvatar = avatar.isNotEmpty;
     return _UsageTile(
       title: title,
-      avatar: avatar,
+      avatar: showAvatar ? avatar : '',
       usage: e.value,
-      subtitle: conversation == null ? '会话已删除' : null,
     );
   }
 
@@ -214,13 +224,14 @@ class _TokenUsageScreenState extends State<TokenUsageScreen> {
     GroupChatProvider groupProvider,
   ) {
     final group = _firstById(groupProvider.groups, e.key, (g) => g.id);
-    final title =
-        group == null ? '已删除的群聊' : '${group.name}（${group.memberCount}）';
+    final remembered = e.value.label.trim();
+    final title = group != null
+        ? '${group.name}（${group.memberCount}）'
+        : (remembered.isNotEmpty ? remembered : '未命名群聊');
     return _UsageTile(
       title: title,
-      avatar: group?.avatar ?? '',
+      avatar: group?.avatar ?? e.value.avatar,
       usage: e.value,
-      subtitle: group == null ? '群聊已删除' : null,
     );
   }
 
@@ -316,7 +327,6 @@ class _UsageTile extends StatelessWidget {
   final String title;
   final String? avatar;
   final TokenUsage usage;
-  final String? subtitle;
 
   /// 无头像场景（如朋友圈聚合）用图标占位
   final IconData? leadingIcon;
@@ -325,14 +335,17 @@ class _UsageTile extends StatelessWidget {
     required this.title,
     this.avatar,
     required this.usage,
-    this.subtitle,
     this.leadingIcon,
   });
 
   @override
   Widget build(BuildContext context) {
-    final sub = subtitle ??
-        '输入 ${_fmtTokens(usage.sentTokens)} · 输出 ${_fmtTokens(usage.receivedTokens)}';
+    final sub = usage.reasoningTokens > 0
+        ? '输入 ${_fmtTokens(usage.sentTokens)} · '
+            '输出 ${_fmtTokens(usage.receivedTokens)}'
+            '（思考 ${_fmtTokens(usage.reasoningTokens)}）'
+        : '输入 ${_fmtTokens(usage.sentTokens)} · '
+            '输出 ${_fmtTokens(usage.receivedTokens)}';
     return CupertinoListTile(
       leading: leadingIcon != null
           ? Container(

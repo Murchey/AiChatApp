@@ -149,17 +149,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    // 尝试获取 release body
+    // 尝试获取 release body / COS Note
     showAppToast('正在获取仓库更新内容...');
-    final body = await WorkshopService.fetchReleaseBody(
-      notifyRepo.url,
-      kUpdateNotifyTag,
-    );
+    final String? body;
+    final String emptyTip;
+    if (notifyRepo.isCos) {
+      body = await WorkshopService.fetchCosNote(
+        notifyRepo.url,
+        auth: notifyRepo.hasCosAuth ? notifyRepo.cosAuth : null,
+      );
+      emptyTip = '未找到 Note/*.md 或内容为空';
+    } else {
+      body = await WorkshopService.fetchReleaseBody(
+        notifyRepo.url,
+        kUpdateNotifyTag,
+      );
+      emptyTip = '未找到 V1.2.0 tag 或内容为空';
+    }
 
     if (!mounted) return;
 
     if (body == null || body.isEmpty) {
-      showAppToast('未找到 V1.2.0 tag 或内容为空');
+      showAppToast(emptyTip);
       return;
     }
 
@@ -175,6 +186,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final settings = context.read<SettingsProvider>();
     UpdateInfo? info = await UpdateService.checkForUpdate(
       proxyUrl: settings.updateProxyUrl,
+      giteeRepoUrl: settings.updateGiteeRepoUrl,
+      githubRepoUrl: settings.updateGitHubRepoUrl,
     );
 
     if (!mounted) return;
@@ -192,7 +205,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       giteeDownloadUrl:
           'https://gitee.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
       githubDownloadUrl:
-          'https://github.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
+          'https://github.com/Niriko-mu/AiChat/releases/download/v99.0.0/AiChat-V99.0.0.apk',
     );
 
     // 显示更新弹窗
@@ -324,6 +337,103 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: const Text('取消'),
         ),
       ),
+    );
+  }
+
+  /// 弹出单个更新源（Gitee / GitHub）仓库地址配置
+  void _showSingleUpdateRepoDialog({
+    required BuildContext context,
+    required SettingsProvider settings,
+    required String title,
+    required String currentUrl,
+    required String defaultUrl,
+    required Future<void> Function(String url) onSave,
+    required Future<void> Function() onReset,
+  }) {
+    final controller = TextEditingController(text: currentUrl);
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              '用于检查新版本与下载对应 Release 资产，保存后生效并持久化。',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: ctx.textSecondaryColor,
+              ),
+            ),
+            const SizedBox(height: 12),
+            CupertinoTextField(
+              controller: controller,
+              placeholder: defaultUrl,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '支持完整仓库 URL 或 owner/repo。',
+              style: TextStyle(
+                fontSize: 11,
+                color: ctx.textSecondaryColor,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onReset();
+              showAppToast('已恢复默认');
+            },
+            child: const Text('恢复默认'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () {
+              final url = controller.text.trim();
+              Navigator.pop(ctx);
+              onSave(url);
+              showAppToast('已保存');
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showGiteeRepoDialog(BuildContext context, SettingsProvider settings) {
+    _showSingleUpdateRepoDialog(
+      context: context,
+      settings: settings,
+      title: 'Gitee 更新仓库',
+      currentUrl: settings.updateGiteeRepoUrl,
+      defaultUrl: kGiteeRepoUrl,
+      onSave: settings.setUpdateGiteeRepoUrl,
+      onReset: () => settings.setUpdateGiteeRepoUrl(kGiteeRepoUrl),
+    );
+  }
+
+  void _showGitHubRepoDialog(BuildContext context, SettingsProvider settings) {
+    _showSingleUpdateRepoDialog(
+      context: context,
+      settings: settings,
+      title: 'GitHub 更新仓库',
+      currentUrl: settings.updateGitHubRepoUrl,
+      defaultUrl: kGitHubRepoUrl,
+      onSave: settings.setUpdateGitHubRepoUrl,
+      onReset: () => settings.setUpdateGitHubRepoUrl(kGitHubRepoUrl),
     );
   }
 
@@ -877,6 +987,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: settings.autoCheckUpdate,
                   onChanged: (v) => settings.setAutoCheckUpdate(v),
                 ),
+              ),
+              CupertinoListTile(
+                title: const Text('Gitee 更新仓库'),
+                subtitle: Text(
+                  settings.updateGiteeRepoUrl,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => _showGiteeRepoDialog(context, settings),
+              ),
+              CupertinoListTile(
+                title: const Text('GitHub 更新仓库'),
+                subtitle: Text(
+                  settings.updateGitHubRepoUrl,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => _showGitHubRepoDialog(context, settings),
               ),
               CupertinoListTile(
                 title: const Text('GitHub 加速地址'),

@@ -13,9 +13,9 @@ const String kGiteeRepo = 'AiChatApp';
 const String kGiteeRepoUrl = 'https://gitee.com/Murchey/AiChatApp';
 
 /// GitHub 仓库信息（备用下载源）
-const String kGitHubOwner = 'Murchey';
-const String kGitHubRepo = 'AiChatApp';
-const String kGitHubRepoUrl = 'https://github.com/Murchey/AiChatApp';
+const String kGitHubOwner = 'Niriko-mu';
+const String kGitHubRepo = 'AiChat';
+const String kGitHubRepoUrl = 'https://github.com/Niriko-mu/AiChat';
 
 /// 角色卡社区项目地址（【我】页面底部展示）
 const String kCharacterCommunityUrl =
@@ -71,31 +71,47 @@ class UpdateService {
   /// 检测顺序：Gitee（国内直连，首选）→ GitHub（备用）。
   /// 版本检测均直连官方 API；[proxyUrl] 仅用于下载新版 APK 时加速。
   /// 两个源都返回各自 Release 的 APK 直链，由更新弹窗的"下载源"选项卡选择。
-  static Future<UpdateInfo?> checkForUpdate({String proxyUrl = ''}) async {
+  ///
+  /// [giteeRepoUrl] / [githubRepoUrl] 可在设置中持久化自定义，
+  /// 为空时回落到内置默认仓库。
+  static Future<UpdateInfo?> checkForUpdate({
+    String proxyUrl = '',
+    String? giteeRepoUrl,
+    String? githubRepoUrl,
+  }) async {
     try {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version; // 例如 1.0.0
 
+      final giteeUrl = _normalizeRepoUrl(giteeRepoUrl, kGiteeRepoUrl);
+      final githubUrl = _normalizeRepoUrl(githubRepoUrl, kGitHubRepoUrl);
+      final gitee = _parseRepoUrl(giteeUrl);
+      final github = _parseRepoUrl(githubUrl);
+
       // 1. Gitee 最新 Release（无需代理）
-      final gitee = await _fetchRelease(
-        apiUrl:
-            'https://gitee.com/api/v5/repos/$kGiteeOwner/$kGiteeRepo/releases/latest',
-        downloadPrefix: '$kGiteeRepoUrl/releases/download',
-      );
+      final giteeRelease = gitee == null
+          ? null
+          : await _fetchRelease(
+              apiUrl:
+                  'https://gitee.com/api/v5/repos/${gitee.owner}/${gitee.repo}/releases/latest',
+              downloadPrefix: '$giteeUrl/releases/download',
+            );
       // 2. GitHub 最新 Release（版本检测直连 API，代理仅用于后续 APK 下载加速）
-      final github = await _fetchRelease(
-        apiUrl:
-            'https://api.github.com/repos/$kGitHubOwner/$kGitHubRepo/releases/latest',
-        downloadPrefix: '$kGitHubRepoUrl/releases/download',
-      );
+      final githubRelease = github == null
+          ? null
+          : await _fetchRelease(
+              apiUrl:
+                  'https://api.github.com/repos/${github.owner}/${github.repo}/releases/latest',
+              downloadPrefix: '$githubUrl/releases/download',
+            );
 
-      if (gitee == null && github == null) return null;
+      if (giteeRelease == null && githubRelease == null) return null;
 
-      final latestVersion = gitee?.version ?? github!.version;
+      final latestVersion = giteeRelease?.version ?? githubRelease!.version;
       // 更新说明优先抓取 GitHub 仓库 Release 的说明内容
-      final releaseNotes = (github?.notes.isNotEmpty ?? false)
-          ? github!.notes
-          : (gitee?.notes ?? '');
+      final releaseNotes = (githubRelease?.notes.isNotEmpty ?? false)
+          ? githubRelease!.notes
+          : (giteeRelease?.notes ?? '');
 
       if (!_isNewerVersion(latestVersion, currentVersion)) return null;
       // 用户点过「不再提醒」的版本不再弹出
@@ -103,12 +119,30 @@ class UpdateService {
       return UpdateInfo(
         latestVersion: latestVersion,
         releaseNotes: releaseNotes,
-        giteeDownloadUrl: gitee?.downloadUrl ?? '',
-        githubDownloadUrl: github?.downloadUrl ?? '',
+        giteeDownloadUrl: giteeRelease?.downloadUrl ?? '',
+        githubDownloadUrl: githubRelease?.downloadUrl ?? '',
       );
     } catch (_) {
       return null;
     }
+  }
+
+  static String _normalizeRepoUrl(String? input, String fallback) {
+    final s = input?.trim() ?? '';
+    return s.isEmpty ? fallback : s.replaceAll(RegExp(r'/+$'), '');
+  }
+
+  /// 解析 `https://github.com/owner/repo` / `owner/repo` 为 owner/repo。
+  static ({String owner, String repo})? _parseRepoUrl(String url) {
+    var p = url.trim().replaceAll(RegExp(r'/+$'), '');
+    if (p.isEmpty) return null;
+    final uri = Uri.tryParse(p);
+    if (uri != null && uri.host.isNotEmpty) {
+      p = uri.path.replaceAll(RegExp(r'^/+'), '');
+    }
+    final segs = p.split('/').where((s) => s.isNotEmpty).toList();
+    if (segs.length < 2) return null;
+    return (owner: segs[0], repo: segs[1]);
   }
 
   /// 请求单个源的最新 Release，解析出版本号、更新说明与 APK 直链。

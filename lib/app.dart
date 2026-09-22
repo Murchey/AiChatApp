@@ -163,7 +163,9 @@ class _AiChatAppState extends State<AiChatApp> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 200),
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(ctx).height * 0.55,
+                ),
                 child: SingleChildScrollView(
                   child: MarkdownBody(
                     data: body,

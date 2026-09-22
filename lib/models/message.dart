@@ -69,6 +69,12 @@ class Message {
   // 是否为会话压缩生成的摘要消息（压缩时不删除前文原文，仅用此标记定位上下文起点）
   final bool isCompressionSummary;
 
+  /// AI 思考过程原文（reasoning_content）。仅本地保存/展示，不回传给模型。
+  final String reasoningContent;
+
+  /// 本次 AI 思考耗时（毫秒）；无思考或未知时为 null。
+  final int? reasoningDurationMs;
+
   Message({
     required this.id,
     required this.conversationId,
@@ -85,7 +91,11 @@ class Message {
     this.stickerSource,
     this.forwardedItems = const [],
     this.isCompressionSummary = false,
+    this.reasoningContent = '',
+    this.reasoningDurationMs,
   }) : createdAt = createdAt ?? DateTime.now();
+
+  bool get hasReasoning => reasoningContent.trim().isNotEmpty;
 
   Message copyWith({
     String? content,
@@ -97,6 +107,8 @@ class Message {
     String? stickerSource,
     List<ForwardItem>? forwardedItems,
     bool? isCompressionSummary,
+    String? reasoningContent,
+    int? reasoningDurationMs,
   }) {
     return Message(
       id: id,
@@ -114,6 +126,8 @@ class Message {
       stickerSource: stickerSource ?? this.stickerSource,
       forwardedItems: forwardedItems ?? this.forwardedItems,
       isCompressionSummary: isCompressionSummary ?? this.isCompressionSummary,
+      reasoningContent: reasoningContent ?? this.reasoningContent,
+      reasoningDurationMs: reasoningDurationMs ?? this.reasoningDurationMs,
     );
   }
 
@@ -146,6 +160,10 @@ class Message {
           .map((e) => ForwardItem.fromJson(e as Map<String, dynamic>))
           .toList(),
       isCompressionSummary: json['is_compression_summary'] as bool? ?? false,
+      reasoningContent: json['reasoning_content'] as String? ?? '',
+      reasoningDurationMs: json['reasoning_duration_ms'] is int
+          ? json['reasoning_duration_ms'] as int
+          : int.tryParse('${json['reasoning_duration_ms'] ?? ''}'),
     );
   }
 
@@ -166,6 +184,8 @@ class Message {
       'sticker_source': stickerSource,
       'forwarded_items': forwardedItems.map((e) => e.toJson()).toList(),
       'is_compression_summary': isCompressionSummary,
+      'reasoning_content': reasoningContent,
+      'reasoning_duration_ms': reasoningDurationMs,
     };
   }
 }

@@ -11,18 +11,30 @@ import '../utils/app_toast.dart';
 /// 图片缩放裁剪编辑页：图片以铺满方式展示在当前屏幕范围的取景区内，
 /// 支持双指缩放与拖动调整取景，点「完成」后按所见即所得导出 JPEG。
 ///
-/// 取景区比例与开屏页 / 聊天背景的实际展示比例一致（均为全屏铺满），
-/// 因此裁剪结果即最终展示效果。
+/// - 默认（全屏）：开屏页 / 聊天背景等全屏铺满场景
+/// - [squareCrop]：居中方形取景，用于角色/个人头像
 ///
-/// 缩放/拖动使用自定义手势实现：不依赖 InteractiveViewer（其内部会把缩放
-/// 下限钳制在「子组件不小于视口」，无法缩到 1x 以下）。允许缩到 0.3x，
-/// 缩小后露出的空白区域按当前深浅色模式补色。导出文件写入系统临时目录，
+/// 缩放/拖动使用自定义手势实现。导出文件写入系统临时目录，
 /// 由调用方在使用完毕后删除。
 class ImageCropScreen extends StatefulWidget {
   /// 待裁剪的源图片本地路径
   final String imagePath;
 
-  const ImageCropScreen({super.key, required this.imagePath});
+  /// 头像模式：居中方形取景并导出方形 JPEG
+  final bool squareCrop;
+
+  /// 导出图片最大边（头像模式默认 500）
+  final int? maxOutputSide;
+
+  final String title;
+
+  const ImageCropScreen({
+    super.key,
+    required this.imagePath,
+    this.squareCrop = false,
+    this.maxOutputSide,
+    this.title = '调整图片',
+  });
 
   @override
   State<ImageCropScreen> createState() => _ImageCropScreenState();
@@ -94,21 +106,39 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
     var newOffset = details.localFocalPoint - focalScene * newScale;
     final childW = _fitW * newScale;
     final childH = _fitH * newScale;
-    // 子图小于视口时保持完整可见且可拖动调整位置，大于视口时允许滑动浏览
-    newOffset = Offset(
-      newOffset.dx.clamp(
-        math.min(viewport.width - childW, 0.0),
-        math.max(viewport.width - childW, 0.0),
-      ),
-      newOffset.dy.clamp(
-        math.min(viewport.height - childH, 0.0),
-        math.max(viewport.height - childH, 0.0),
-      ),
+    newOffset = _clampOffset(
+      newOffset,
+      childW: childW,
+      childH: childH,
+      viewport: viewport,
     );
     setState(() {
       _scale = newScale;
       _offset = newOffset;
     });
+  }
+
+  /// 拖动范围：100% 等比缩放时也保留约 25% 视口的自由度，
+  /// 便于把主体挪进取景框（头像方形 / 全屏取景通用）。
+  Offset _clampOffset(
+    Offset raw, {
+    required double childW,
+    required double childH,
+    required Size viewport,
+  }) {
+    double clampAxis(double value, double child, double extent) {
+      // 经典：图 ≥ 视口时贴边，不露出大片空白
+      final tightMin = math.min(extent - child, 0.0);
+      final tightMax = math.max(extent - child, 0.0);
+      // 额外余量：图刚好铺满某一边时也能左右/上下挪动
+      final slack = extent * 0.25;
+      return value.clamp(tightMin - slack, tightMax + slack);
+    }
+
+    return Offset(
+      clampAxis(raw.dx, childW, viewport.width),
+      clampAxis(raw.dy, childH, viewport.height),
+    );
   }
 
   Future<void> _confirm() async {
@@ -120,15 +150,40 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
       if (boundary == null) throw Exception('渲染节点不存在');
       // 确保导出帧已绘制完成（含最后一次缩放/拖动）
       await WidgetsBinding.instance.endOfFrame;
-      final captured = await boundary.toImage(pixelRatio: 3.0);
+      const pixelRatio = 3.0;
+      final captured = await boundary.toImage(pixelRatio: pixelRatio);
       final byteData =
           await captured.toByteData(format: ui.ImageByteFormat.png);
       captured.dispose();
       final png = byteData?.buffer.asUint8List();
       if (png == null) throw Exception('图像编码失败');
-      final decoded = img.decodeImage(png);
+      var decoded = img.decodeImage(png);
       if (decoded == null) throw Exception('图像解析失败');
-      // 压缩为 JPEG，减小开屏 / 背景图片体积
+
+      // 头像模式：仅导出居中方形区域
+      if (widget.squareCrop) {
+        final size = boundary.size;
+        final side = math.min(size.width, size.height);
+        final cropX = ((size.width - side) / 2 * pixelRatio).round();
+        final cropY = ((size.height - side) / 2 * pixelRatio).round();
+        final cropSide = (side * pixelRatio).round();
+        decoded = img.copyCrop(
+          decoded,
+          x: cropX.clamp(0, decoded.width - 1),
+          y: cropY.clamp(0, decoded.height - 1),
+          width: cropSide.clamp(1, decoded.width - cropX),
+          height: cropSide.clamp(1, decoded.height - cropY),
+        );
+        final maxSide = widget.maxOutputSide ?? 500;
+        if (decoded.width > maxSide || decoded.height > maxSide) {
+          decoded = img.copyResize(
+            decoded,
+            width: decoded.width >= decoded.height ? maxSide : null,
+            height: decoded.height > decoded.width ? maxSide : null,
+          );
+        }
+      }
+
       final jpg = img.encodeJpg(decoded, quality: 90);
       final dir = await getTemporaryDirectory();
       final out = File(
@@ -150,7 +205,7 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
     final bg = context.isDark ? CupertinoColors.black : CupertinoColors.white;
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: const Text('调整图片'),
+        middle: Text(widget.title),
         trailing: _saving
             ? const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 12),
@@ -173,8 +228,7 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
       ),
       child: Column(
         children: [
-          // 取景区：图片铺满，双指缩放/拖动；
-          // 缩小到 1x 以下露出的空白区域按当前深浅色模式补色
+          // 取景区：图片铺满，双指缩放/拖动
           Expanded(
             child: Container(
               color: bg,
@@ -189,7 +243,9 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
             padding: const EdgeInsets.symmetric(vertical: 10),
             color: context.navBarColor,
             child: Text(
-              '双指缩放、拖动调整取景，完成后将按此画面展示',
+              widget.squareCrop
+                  ? '双指缩放、拖动调整取景；点「完成」后应用方形头像'
+                  : '双指缩放、拖动调整取景，完成后将按此画面展示',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
@@ -230,32 +286,83 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
             (viewport.height - _fitH) / 2,
           );
         }
+        final side = math.min(viewport.width, viewport.height);
+        final maskX = (viewport.width - side) / 2;
+        final maskY = (viewport.height - side) / 2;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onScaleStart: _onScaleStart,
           onScaleUpdate: (d) => _onScaleUpdate(d, viewport),
-          child: ClipRect(
-            child: Stack(
-              children: [
-                // 主题色补底
-                Positioned.fill(child: ColoredBox(color: bg)),
-                // 当前取景变换下的图片
-                Positioned(
-                  left: _offset.dx,
-                  top: _offset.dy,
-                  width: _fitW * _scale,
-                  height: _fitH * _scale,
-                  child: Image.file(
-                    File(widget.imagePath),
-                    fit: BoxFit.fill,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          child: Stack(
+            children: [
+              ClipRect(
+                child: Stack(
+                  children: [
+                    // 主题色补底
+                    Positioned.fill(child: ColoredBox(color: bg)),
+                    // 当前取景变换下的图片
+                    Positioned(
+                      left: _offset.dx,
+                      top: _offset.dy,
+                      width: _fitW * _scale,
+                      height: _fitH * _scale,
+                      child: Image.file(
+                        File(widget.imagePath),
+                        fit: BoxFit.fill,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.squareCrop)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _SquareCropMaskPainter(
+                        rect: Rect.fromLTWH(maskX, maskY, side, side),
+                        maskColor: CupertinoColors.black.withValues(alpha: 0.45),
+                        borderColor: CupertinoColors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
                   ),
                 ),
-              ],
-            ),
+            ],
           ),
         );
       },
     );
   }
+}
+
+/// 头像取景遮罩：方形内清晰，方形外压暗
+class _SquareCropMaskPainter extends CustomPainter {
+  final Rect rect;
+  final Color maskColor;
+  final Color borderColor;
+
+  _SquareCropMaskPainter({
+    required this.rect,
+    required this.maskColor,
+    required this.borderColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final mask = Paint()..color = maskColor;
+    final path = Path()
+      ..addRect(Offset.zero & size)
+      ..addRect(rect)
+      ..fillType = PathFillType.evenOdd;
+    canvas.drawPath(path, mask);
+    final border = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = borderColor;
+    canvas.drawRect(rect, border);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SquareCropMaskPainter oldDelegate) =>
+      oldDelegate.rect != rect || oldDelegate.maskColor != maskColor;
 }

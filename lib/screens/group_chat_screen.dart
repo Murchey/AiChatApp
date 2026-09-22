@@ -20,6 +20,7 @@ import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/sticker_provider.dart';
+import '../providers/token_usage_provider.dart';
 import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
 import '../services/memory_pool_builder.dart';
@@ -366,9 +367,9 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
-    // 菜单宽度/高度：4 项以内一行（64 高），更多则两行（128 高）
-    final double menuWidth = items.length > 2 ? 260 : 190;
-    final double menuHeight = items.length > 4 ? 128 : 64;
+    // 菜单尺寸：按等宽等高按钮网格推算（见 _menuPanelWidth / _menuPanelHeight）
+    final double menuWidth = _menuPanelWidth(items.length);
+    final double menuHeight = _menuPanelHeight(items.length);
 
     // 计算 X：我方气泡在右侧，菜单靠左；对方气泡在左侧，菜单靠右
     double left;
@@ -402,22 +403,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             left: left,
             top: top,
             width: menuWidth,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              decoration: BoxDecoration(
-                color: CupertinoColors.systemGrey6.resolveFrom(context),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: CupertinoColors.systemGrey4.resolveFrom(context),
-                  width: 0.5,
-                ),
-              ),
-              child: Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: items,
-              ),
-            ),
+            child: _buildMenuPanel(items),
           ),
         ],
       ),
@@ -428,6 +414,234 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   void _closeMenu() {
     _menuOverlay?.remove();
     _menuOverlay = null;
+  }
+
+  // ─── 剧情建议（群聊） ────────────────────────────────────
+
+  /// 剧情建议：先询问用户是否有补充，再基于群聊上下文生成建议，
+  /// 点选一条填入输入框（可编辑后发送），语C / 短信通用。
+  Future<void> _plotSuggestion() async {
+    final chatSettings = context.read<ChatSettingsProvider>();
+    final api = context.read<ApiProvider>();
+    final model = api.getModelById(chatSettings.selectedModelId);
+    if (model == null) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('未选择模型'),
+          content: const Text(
+            '无法生成剧情建议。请在聊天设置里选择模型后再试。',
+          ),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final controller = TextEditingController();
+    final supplement = await showCupertinoDialog<String>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('剧情建议'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '生成前有补充要交代吗？会写进这次的建议里。',
+                style: TextStyle(fontSize: 13, height: 1.45),
+              ),
+              const SizedBox(height: 10),
+              CupertinoTextField(
+                controller: controller,
+                autofocus: true,
+                maxLines: 4,
+                minLines: 2,
+                placeholder: '可选：想发展的方向、禁忌、心情…',
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('生成建议'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || supplement == null) return;
+
+    final groupProvider = context.read<GroupChatProvider>();
+    final group = groupProvider.getGroupById(widget.groupId);
+    final charProvider = context.read<CharacterProvider>();
+    final memberNames = <String>[
+      for (final id in group?.memberCharacterIds ?? const <String>[])
+        if (charProvider.getCharacterById(id)?.displayName.trim().isNotEmpty ==
+            true)
+          charProvider.getCharacterById(id)!.displayName.trim(),
+    ];
+    final userNickname =
+        context.read<AuthProvider>().user?.nickname ?? '用户';
+    // 群聊不套用单一角色人设：建议是给用户出主意，不是角色发言
+    final systemPrompt = '当前是群聊「${group?.name ?? ''}」。\n'
+        '群成员（角色）：${memberNames.isEmpty ? '（无）' : memberNames.join('、')}。\n'
+        '用户昵称：$userNickname（你正在帮这个人出主意）。\n'
+        '你的任务是作为对话剧情顾问，给用户提供可以直接发进群聊的消息建议，'
+        '帮助ta推进群聊对话，而不是扮演任何群成员发言。';
+
+    final chatMessages = groupProvider.getMessages(widget.groupId);
+    final contextCount = (group?.contextCount ?? chatSettings.contextCount) > 0
+        ? (group?.contextCount ?? chatSettings.contextCount)
+        : 20;
+    final texts = chatMessages
+        .where((m) =>
+            (m.type == MessageType.text || m.type == MessageType.narration) &&
+            m.content.trim().isNotEmpty)
+        .toList();
+    final start = texts.length > contextCount ? texts.length - contextCount : 0;
+    final historyMessages = <Map<String, String>>[
+      for (final m in texts.sublist(start))
+        {
+          'role': m.isFromUser ? 'user' : 'assistant',
+          'content': m.senderName.trim().isEmpty
+              ? m.content
+              : '${m.senderName}：${m.content}',
+        },
+    ];
+
+    if (!mounted) return;
+    showCupertinoDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const CupertinoAlertDialog(
+        title: Text('剧情建议'),
+        content: Padding(
+          padding: EdgeInsets.only(top: 14),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CupertinoActivityIndicator(),
+              SizedBox(width: 12),
+              Text('正在生成建议…'),
+            ],
+          ),
+        ),
+      ),
+    );
+    try {
+      final result = await LLMService.generatePlotSuggestions(
+        model: model,
+        systemPrompt: systemPrompt,
+        historyMessages: historyMessages,
+        userSupplement: supplement,
+        roleplayMode: chatSettings.isRoleplayMode,
+      );
+      await TokenUsageProvider.instance.addUsage(
+        widget.groupId,
+        result.usage,
+        label: group?.name ?? '群聊',
+      );
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      final suggestions = result.messages
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (suggestions.isEmpty) {
+        _showPlotTip('没有生成有效的剧情建议，可稍后重试');
+        return;
+      }
+      _showPlotSuggestionResult(suggestions);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      _showPlotTip('生成失败：${LLMService.describeException(e)}');
+    }
+  }
+
+  void _showPlotTip(String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('提示'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 剧情建议结果：点选一条填入群聊输入框
+  void _showPlotSuggestionResult(List<String> suggestions) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('剧情建议'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '点选一条填入输入框，可编辑后发送',
+              style: TextStyle(fontSize: 12, color: ctx.textSecondaryColor),
+            ),
+            const SizedBox(height: 10),
+            for (final suggestion in suggestions) ...[
+              SizedBox(
+                width: double.infinity,
+                child: CupertinoButton(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  color: ctx.fieldBgColor,
+                  borderRadius: BorderRadius.circular(10),
+                  alignment: Alignment.centerLeft,
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _inputKey.currentState?.setText(suggestion);
+                  },
+                  child: Text(
+                    suggestion,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: ctx.textPrimaryColor,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ],
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 构建长按菜单项：复制 / 选择文本 / 引用 +（我方）撤回或（角色）删除
@@ -621,6 +835,80 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
+  /// 长按菜单按钮：等宽等高，保证多行时纵向对齐
+  static const double _menuCellWidth = 74;
+  static const double _menuCellHeight = 46;
+  static const double _menuSpacing = 4;
+  static const double _menuPadding = 8;
+  /// Border.all 的线宽；Container 会把它计入内边距（decoration.padding），
+  /// 尺寸公式必须预留，否则 Positioned 约束会比面板固有宽高各窄 1dp（debug 溢出黄条）。
+  static const double _menuBorder = 0.5;
+  /// 单行最多按钮数（再宽会超出手机屏宽）
+  static const int _menuMaxColumns = 3;
+
+  /// 行数：按每行最多 [_menuMaxColumns] 个换行
+  int _menuRowCount(int itemCount) =>
+      (itemCount + _menuMaxColumns - 1) ~/ _menuMaxColumns;
+
+  /// 单行最大按钮数：用于推导面板宽度（各行尽量均分后最宽的一行）
+  int _menuColumns(int itemCount) {
+    final rows = _menuRowCount(itemCount);
+    return (itemCount + rows - 1) ~/ rows;
+  }
+
+  double _menuPanelWidth(int itemCount) {
+    final columns = _menuColumns(itemCount);
+    return columns * _menuCellWidth +
+        (columns - 1) * _menuSpacing +
+        (_menuPadding + _menuBorder) * 2;
+  }
+
+  double _menuPanelHeight(int itemCount) {
+    final rows = _menuRowCount(itemCount);
+    return rows * _menuCellHeight +
+        (rows - 1) * _menuSpacing +
+        (_menuPadding + _menuBorder) * 2;
+  }
+
+  Widget _buildMenuPanel(List<Widget> items) {
+    final rowCount = _menuRowCount(items.length);
+    // 各行尽量均分（7 项 → 3/2/2），避免出现只剩 1 项的孤行
+    final base = items.length ~/ rowCount;
+    final extra = items.length % rowCount;
+    final rows = <Widget>[];
+    var index = 0;
+    for (var r = 0; r < rowCount; r++) {
+      final count = base + (r < extra ? 1 : 0);
+      final rowItems = items.sublist(index, index + count);
+      index += count;
+      // 不满一行的居中，保持整体对称
+      rows.add(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var i = 0; i < rowItems.length; i++) ...[
+              if (i > 0) const SizedBox(width: _menuSpacing),
+              rowItems[i],
+            ],
+          ],
+        ),
+      );
+      if (r != rowCount - 1) rows.add(const SizedBox(height: _menuSpacing));
+    }
+    return Container(
+      padding: const EdgeInsets.all(_menuPadding),
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemGrey6.resolveFrom(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: CupertinoColors.systemGrey4.resolveFrom(context),
+          width: _menuBorder,
+        ),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: rows),
+    );
+  }
+
   Widget _menuItem({
     required IconData icon,
     required String label,
@@ -629,18 +917,24 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: SizedBox(
+        width: _menuCellWidth,
+        height: _menuCellHeight,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 22, color: context.textPrimaryColor),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textPrimaryColor,
+            Icon(icon, size: 20, color: context.textPrimaryColor),
+            const SizedBox(height: 3),
+            // 网格为固定尺寸：忽略系统字号缩放，避免文字撑破按钮
+            MediaQuery.withNoTextScaling(
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.15,
+                  color: context.textPrimaryColor,
+                ),
               ),
             ),
           ],
@@ -1195,6 +1489,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                             onExport: _exportGroupChat,
                             onImport: _importGroupChat,
                             onContextSettings: _openContextSettings,
+                            onPlotSuggestion: _plotSuggestion,
                           ),
                         ],
                       );
@@ -1229,6 +1524,9 @@ class _GroupMessageInput extends StatefulWidget {
   /// 打开群聊上下文设置（加号面板入口）
   final VoidCallback? onContextSettings;
 
+  /// 剧情建议：询问补充后生成可填入输入框的建议（语C/短信通用）
+  final VoidCallback? onPlotSuggestion;
+
   const _GroupMessageInput({
     super.key,
     required this.onSend,
@@ -1241,6 +1539,7 @@ class _GroupMessageInput extends StatefulWidget {
     this.onExport,
     this.onImport,
     this.onContextSettings,
+    this.onPlotSuggestion,
   });
 
   @override
@@ -1512,6 +1811,15 @@ class _GroupMessageInputState extends State<_GroupMessageInput>
           widget.onFeatureDetect?.call();
         },
       ),
+      if (widget.onPlotSuggestion != null)
+        _GroupGridItem(
+          icon: CupertinoIcons.sparkles,
+          label: '剧情建议',
+          onTap: () {
+            setState(() => _showGrid = false);
+            widget.onPlotSuggestion!.call();
+          },
+        ),
       _GroupGridItem(
         icon: CupertinoIcons.arrow_down_circle,
         label: '导出记录',

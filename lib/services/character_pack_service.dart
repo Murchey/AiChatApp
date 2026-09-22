@@ -374,9 +374,23 @@ class CharacterPackService {
   ///
   /// [memoryByCharacter]：角色 id → 该角色的持久化记忆点。提供时会把记忆点
   /// 一并写入角色包 `Profile.json` 的 `memory_points` 字段，随角色包导入 / 分享。
+  /// 系统「保存文件」对话框场景请用 [encodeCharacterPack] + FilePickerHelper。
   static Future<String> exportPack(
     List<Character> characters, {
     String? saveDirectory,
+    Map<String, List<MemoryPoint>>? memoryByCharacter,
+  }) async {
+    final packed =
+        await encodeCharacterPack(characters, memoryByCharacter: memoryByCharacter);
+    final dir = saveDirectory ?? await _defaultSaveDirectory();
+    final file = File('$dir/${packed.fileName}');
+    await file.writeAsBytes(packed.bytes);
+    return file.path;
+  }
+
+  /// 打包角色为 zip 字节 + 建议文件名（不落盘），供系统保存对话框使用。
+  static Future<({Uint8List bytes, String fileName})> encodeCharacterPack(
+    List<Character> characters, {
     Map<String, List<MemoryPoint>>? memoryByCharacter,
   }) async {
     final archive = Archive();
@@ -475,14 +489,11 @@ class CharacterPackService {
 
     final zipBytes = ZipEncoder().encode(archive);
 
-    final dir = saveDirectory ?? await _defaultSaveDirectory();
     final now = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
     final fileName =
         '角色包_${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
-    final file = File('$dir/$fileName');
-    await file.writeAsBytes(zipBytes);
-    return file.path;
+    return (bytes: Uint8List.fromList(zipBytes), fileName: fileName);
   }
 
   /// 将选中的角色导出为 zip 朋友圈数据包（保存到下载目录），返回保存路径。
@@ -493,6 +504,17 @@ class CharacterPackService {
     List<Character> characters, {
     String? saveDirectory,
   }) async {
+    final packed = await encodeMomentsPack(characters);
+    final dir = saveDirectory ?? await _defaultSaveDirectory();
+    final file = File('$dir/${packed.fileName}');
+    await file.writeAsBytes(packed.bytes);
+    return file.path;
+  }
+
+  /// 打包朋友圈数据包为 zip 字节 + 建议文件名（不落盘）。
+  static Future<({Uint8List bytes, String fileName})> encodeMomentsPack(
+    List<Character> characters,
+  ) async {
     const packageFolder = 'Moments';
     final archive = Archive();
     for (final c in characters) {
@@ -538,14 +560,11 @@ class CharacterPackService {
 
     final zipBytes = ZipEncoder().encode(archive);
 
-    final dir = saveDirectory ?? await _defaultSaveDirectory();
     final now = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
     final fileName =
         '朋友圈_${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
-    final file = File('$dir/$fileName');
-    await file.writeAsBytes(zipBytes);
-    return file.path;
+    return (bytes: Uint8List.fromList(zipBytes), fileName: fileName);
   }
 
   static Future<String> _defaultSaveDirectory() async {

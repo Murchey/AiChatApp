@@ -6,6 +6,7 @@ import '../config/theme.dart';
 import '../providers/api_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
+import '../services/llm_service.dart';
 
 /// 上下文条数上限（滑条最右端为【无限制】）
 const int kMaxContextCount = 999;
@@ -833,6 +834,76 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
             ),
           ],
+          const SizedBox(height: 12),
+          // 模型思考强度
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('模型思考强度'),
+            children: [
+              CupertinoListTile(
+                title: const Text('思考强度'),
+                subtitle: Text(
+                  settings.thinkingLevel.description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: CupertinoSlidingSegmentedControl<ModelThinkingLevel>(
+                    groupValue: settings.thinkingLevel,
+                    backgroundColor: context.fieldBgColor,
+                    thumbColor: context.accentColor,
+                    padding: const EdgeInsets.all(3),
+                    children: {
+                      for (final level in ModelThinkingLevel.values)
+                        level: Text(
+                          level.displayName,
+                          style: TextStyle(color: segmentedTextColor),
+                        ),
+                    },
+                    onValueChanged: (level) {
+                      if (level != null) settings.setThinkingLevel(level);
+                    },
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: Text(
+                  '是否生效取决于模型是否支持思考/推理参数；'
+                  '「默认」不附加额外字段，兼容 MiMo / Qwen / DeepSeek / GPT 等。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+              ),
+              CupertinoListTile(
+                title: const Text('显示 AI 思考时长'),
+                subtitle: Text(
+                  '在角色回复上方显示本次思考耗时（不作为正文回传）',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: CupertinoSwitch(
+                  value: settings.showThinkingDuration,
+                  onChanged: (v) => settings.setShowThinkingDuration(v),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 24),
         ],
       ),

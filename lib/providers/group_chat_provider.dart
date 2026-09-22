@@ -639,7 +639,13 @@ class GroupChatProvider extends ChangeNotifier {
         );
         if (generation != _replyGeneration) break;
         // 累计该群真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens）
-        TokenUsageProvider.instance.addUsage(groupId, result.usage);
+        final g = getGroupById(groupId);
+        TokenUsageProvider.instance.addUsage(
+          groupId,
+          result.usage,
+          label: g?.name,
+          avatar: g?.avatar,
+        );
 
         var visibleMessageIndex = 0;
         var stickerSent = false;
@@ -854,10 +860,11 @@ ${memory.isEmpty ? '' : '''
 ${memory.map((e) => '- $e').join('\n')}'''}
 ${extra.isEmpty ? '' : '\n$extra\n'}
 ## 群聊回复要求
-1. 消息必须极度口语化，像真实微信群聊，允许语气词、表情包文字（如[捂脸]）或不规范大小写。
-2. ${roleplayMode ? '使用括号动作流语C格式：用（动作/神态/环境描写）描写动作，后接自然台词；不要输出 JSON。' : '针对群聊中的最新内容，把想说的话拆分为 1~3 条短消息，每条 5~15 个字，最多不超过 20 个字。'}
+1. 像真人微信群聊：口语、短句，允许语气词、表情包文字（如[捂脸]）或不规范大小写。
+2. ${roleplayMode ? '使用括号动作流语C格式：用（动作/神态/环境描写）描写动作，后接自然台词；每次只写 1～2 组「（动作）+ 台词」，一两句即可，不要长段；不要输出 JSON。' : '针对群聊中的最新内容，把想说的话拆分为 1~3 条短消息，每条 5~15 个字，最多不超过 20 个字。'}
 3. 只输出你自己想说的话：严禁复述、转述、总结或引用其他成员的发言内容，也不要出现"XX说……"之类的句式。
-4. $activeLine'''
+4. $activeLine
+5. 不要 AI 腔：不要列点式总结、不要「首先/其次/总之」堆砌，不要自称 AI/助手/模型；只像群友那样插话。'''
         .trim();
   }
 

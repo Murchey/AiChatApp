@@ -136,6 +136,9 @@ class SettingsProvider extends ChangeNotifier {
   bool _autoCheckUpdate = true;
   // 更新代理地址（默认第一个内置加速源）
   String _updateProxyUrl = kProxySources.first;
+  // 更新检测仓库（可持久化自定义，默认内置 Gitee / GitHub）
+  String _updateGiteeRepoUrl = kGiteeRepoUrl;
+  String _updateGitHubRepoUrl = kGitHubRepoUrl;
   // 未读消息发送系统通知
   bool _unreadNotify = true;
   // 开发者模式（在「我」页底部显示通知与日志文本框）
@@ -155,6 +158,8 @@ class SettingsProvider extends ChangeNotifier {
   Color get accentColor => _accentColor;
   bool get autoCheckUpdate => _autoCheckUpdate;
   String get updateProxyUrl => _updateProxyUrl;
+  String get updateGiteeRepoUrl => _updateGiteeRepoUrl;
+  String get updateGitHubRepoUrl => _updateGitHubRepoUrl;
   bool get unreadNotify => _unreadNotify;
   bool get developerMode => _developerMode;
 
@@ -211,6 +216,10 @@ class SettingsProvider extends ChangeNotifier {
     _autoCheckUpdate = prefs.getBool('auto_check_update') ?? true;
     _updateProxyUrl =
         prefs.getString('update_proxy_url') ?? kProxySources.first;
+    _updateGiteeRepoUrl =
+        prefs.getString('update_gitee_repo_url') ?? kGiteeRepoUrl;
+    _updateGitHubRepoUrl =
+        prefs.getString('update_github_repo_url') ?? kGitHubRepoUrl;
     _unreadNotify = prefs.getBool('unread_notify') ?? true;
     _developerMode = prefs.getBool('developer_mode') ?? false;
     _allowStickerSend = prefs.getBool('allow_sticker_send') ?? true;
@@ -278,6 +287,31 @@ class SettingsProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('update_proxy_url', url);
     notifyListeners();
+  }
+
+  /// 设置更新检测用的 Gitee 仓库地址（空串恢复默认）
+  Future<void> setUpdateGiteeRepoUrl(String url) async {
+    final v = url.trim();
+    _updateGiteeRepoUrl = v.isEmpty ? kGiteeRepoUrl : v.replaceAll(RegExp(r'/+$'), '');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('update_gitee_repo_url', _updateGiteeRepoUrl);
+    notifyListeners();
+  }
+
+  /// 设置更新检测用的 GitHub 仓库地址（空串恢复默认）
+  Future<void> setUpdateGitHubRepoUrl(String url) async {
+    final v = url.trim();
+    _updateGitHubRepoUrl =
+        v.isEmpty ? kGitHubRepoUrl : v.replaceAll(RegExp(r'/+$'), '');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('update_github_repo_url', _updateGitHubRepoUrl);
+    notifyListeners();
+  }
+
+  /// 恢复更新仓库为内置默认
+  Future<void> resetUpdateRepos() async {
+    await setUpdateGiteeRepoUrl(kGiteeRepoUrl);
+    await setUpdateGitHubRepoUrl(kGitHubRepoUrl);
   }
 
   /// 设置未读消息是否发送系统通知

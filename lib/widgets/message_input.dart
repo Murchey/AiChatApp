@@ -24,6 +24,8 @@ class MessageInput extends StatefulWidget {
   final ValueChanged<String>? onRoleplayChoice;
   final VoidCallback? onRequestReply; // 请求角色回复（对号按钮触发）
   final bool replyEnabled; // 对号按钮是否可点：上一条消息是用户发送时才可点
+  /// 剧情建议：询问补充后生成可填入输入框的建议（语C/短信通用）
+  final VoidCallback? onPlotSuggestion;
   /// 外部可通过此 key 调用 setText / focus
   final GlobalKey<MessageInputState>? inputKey;
 
@@ -45,6 +47,7 @@ class MessageInput extends StatefulWidget {
     this.onRoleplayChoice,
     this.onRequestReply,
     this.replyEnabled = true,
+    this.onPlotSuggestion,
   });
 
   @override
@@ -456,6 +459,16 @@ class MessageInputState extends State<MessageInput>
           widget.onFeatureDetect?.call();
         },
       ),
+      // 剧情建议：语C/短信通用，先问补充再生成可发送的建议
+      if (widget.onPlotSuggestion != null)
+        _GridItem(
+          icon: CupertinoIcons.sparkles,
+          label: '剧情建议',
+          onTap: () {
+            setState(() => _panel = _InputPanel.none);
+            widget.onPlotSuggestion!.call();
+          },
+        ),
       if (widget.onRoleplayNarration != null)
         _GridItem(
           icon: CupertinoIcons.book,

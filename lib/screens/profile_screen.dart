@@ -507,8 +507,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     UpdateInfo? info;
     final settings = context.read<SettingsProvider>();
     try {
-      info =
-          await UpdateService.checkForUpdate(proxyUrl: settings.updateProxyUrl);
+      info = await UpdateService.checkForUpdate(
+        proxyUrl: settings.updateProxyUrl,
+        giteeRepoUrl: settings.updateGiteeRepoUrl,
+        githubRepoUrl: settings.updateGitHubRepoUrl,
+      );
     } catch (_) {}
 
     if (!context.mounted) return;

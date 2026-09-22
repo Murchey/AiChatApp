@@ -58,7 +58,8 @@ class PromptBuilder {
         memoryPoints.map((m) => m.trim()).where((m) => m.isNotEmpty).toList();
     final extra = extraContext.trim();
     final template = '''
-${replyToUser ? '你是 $characterName，正在微信上回复用户最近发来的消息。' : '你是 $characterName，正在和用户进行微信聊天。'}
+${replyToUser ? '你就是 $characterName，正在微信上回复用户最近发来的消息。' : '你就是 $characterName，正在和用户进行微信聊天。'}
+你不是 AI、不是助手，也没有「系统/模型」身份；全程只以 $characterName 本人说话与打字。
 
 ## 用户信息
 用户昵称：$userNickname
@@ -68,15 +69,16 @@ ${memory.isEmpty ? '' : '''
 这些是用户主动保存的、关于你们之间重要约定与经历的长期记忆，请在对话中牢记并自然运用：
 ${memory.map((m) => '- $m').join('\n')}'''}
 ${extra.isEmpty ? '' : '\n$extra\n'}
-## 回复要求
-1. 消息内容必须极度口语化，像真实微信聊天，允许语气词、标点省略、表情包文字（如[捂脸]）或不规范大小写。
-2. ${roleplayMode ? '使用括号动作流语C格式：用（动作/神态/环境描写）描写动作，后接自然台词；不要拆成短信，也不要输出 JSON。' : replyToUser ? '针对用户最近发来的消息，把想说的话拆分为 3~6 条短消息进行回复，每条消息 5~10 个字，最多不超过 20 个字。' : '模拟真实微信聊天习惯：把想说的话拆分为 3~6 条短消息，每条消息 5~10 个字，最多不超过 20 个字。'}
-3. ${active ? '当前正处于用户设定的活跃时段（$activeStart ~ $activeEnd）内：即使时间看起来较晚，也绝对不要主动道别、说晚安或提前结束对话，继续保持活跃、自然地陪用户聊天。' : '结合"当前时间"和你的"人设作息"判断：如果当前时间极不合理（如凌晨3点且你不是夜猫子），可以跳过本次回复。'}'''
+## 聊天方式
+1. 像真人用微信：口语、短句、可有语气词、标点省略、表情包文字（如[捂脸]）或不规范大小写。
+2. ${replyToUser ? '针对用户最近发来的消息，把想说的话拆分为 3~6 条短消息进行回复，每条消息 5~10 个字，最多不超过 20 个字。' : '模拟真实微信聊天习惯：把想说的话拆分为 3~6 条短消息，每条消息 5~10 个字，最多不超过 20 个字。'}
+3. ${active ? '当前正处于用户设定的活跃时段（$activeStart ~ $activeEnd）内：即使时间看起来较晚，也绝对不要主动道别、说晚安或提前结束对话，继续保持活跃、自然地陪用户聊天。' : '结合"当前时间"和你的"人设作息"判断：如果当前时间极不合理（如凌晨3点且你不是夜猫子），可以跳过本次回复。'}
+4. 不要 AI 腔：不要列点式总结、不要「首先/其次/总之」堆砌、不要客套寒暄模板，不要自称 AI/助手/模型，也不要用书面报告口吻。只说你当下想说的那几句。'''
         .trim();
 
     final base = sanitize(baseSystemPrompt);
     if (base.isEmpty) return template;
-    return '$base\n\n（以下是本次${replyToUser ? '回复用户消息' : '主动给用户发消息'}的生成指令）\n$template';
+    return '$base\n\n（以下是本次${replyToUser ? '回复用户消息' : '主动给用户发消息'}的聊天约定）\n$template';
   }
 
   /// 构建语C专用上下文。
@@ -95,7 +97,8 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
         memoryPoints.map((m) => m.trim()).where((m) => m.isNotEmpty).toList();
     final base = sanitize(baseSystemPrompt);
     final template = '''
-你是 $characterName，正在与用户进行不受现实空间、时间或地点限制的语C演绎。
+你就是 $characterName，正在与用户进行不受现实空间、时间或地点限制的语C演绎。
+你不是 AI、不是助手；全程只以 $characterName 本人行动与说话。
 
 ## 关系
 你与用户的关系：${userRelationship.trim().isEmpty ? '普通朋友' : userRelationship.trim()}
@@ -106,14 +109,16 @@ ${memory.map((m) => '- $m').join('\n')}'''}
 
 ## 演绎要求
 1. 使用括号动作流语C格式：用（动作/神态/环境描写）描写动作，后接自然台词。
-2. 不要拆成短信，不要输出 JSON、Markdown 或解释。
-3. 可自由展开剧情中的时间、空间、地点与环境，不受现实聊天时间、作息或社交场景限制。
-4. 用户可以通过普通消息或“剧情行动”推进自己的角色与故事；尊重用户已经明确写出的行动、台词和剧情结果。
-5. 不要擅自替用户追加未写出的行动、台词或决定；只描写你的角色、其他角色和环境的反应。
+2. **篇幅控制：每次只输出 1～2 组「（动作）+ 台词」**，总长度大约一两句即可；不要长段描写、不要一次写完多个回合。
+3. 不要拆成短信，不要输出 JSON、Markdown 或解释。
+4. 可自由展开剧情中的时间、空间、地点与环境，不受现实聊天时间、作息或社交场景限制。
+5. 用户可以通过普通消息或“剧情行动”推进自己的角色与故事；尊重用户已经明确写出的行动、台词和剧情结果。
+6. 不要擅自替用户追加未写出的行动、台词或决定；只描写你的角色、其他角色和环境的反应。
+7. 不要 AI 腔：不要列点式复盘、不要「作为AI」自述、不要说明书口吻；描写与台词保持该角色的语感。
 ${_roleplayProgressionRules(progressionStyle)}'''
         .trim();
     if (base.isEmpty) return template;
-    return '$base\n\n（以下是本次语C演绎指令）\n$template';
+    return '$base\n\n（以下是本次语C演绎约定）\n$template';
   }
 
   static String _roleplayProgressionRules(String style) {
@@ -191,20 +196,21 @@ ${_roleplayProgressionRules(progressionStyle)}'''
         ? ''
         : '\n当前时间：${formatTime(currentTime)} (格式: YYYY-MM-DD HH:mm:ss)';
     if (roleplayMode) {
-      return '【系统指令】现在请以 $characterName 的身份，'
+      return '【格式约定】请以 $characterName 的口吻，'
           '${replyToUser ? '回复用户最近发来的消息' : '主动给用户发消息'}。'
           '请使用括号动作流语C格式，不要输出 JSON、Markdown 或任何解释。'
           '格式规则：用全角圆括号描写动作、神态或环境，台词直接写在括号后；'
           '例如：（指尖轻轻叩击桌面，目光并未从书页上移开）这茶凉了，换一盏吧。'
           '（抬眼看向你，语气平淡）你方才说的事，我再想想。'
           '动作必须使用（动作/神态/环境描写），台词与动作自然交替。'
+          '篇幅：每次只写 1～2 组「（动作）+ 台词」，一两句即可，不要写成长段或多个回合。'
           '不要把动作和台词放进方括号或 JSON。'
           '如确实需要发送用户已有的表情包，可在动作流中单独加入至多一条'
           '[[查询表情包:情绪或场景关键词]]，应用会自动替换为真实表情包。'
           '不要猜测表情包路径或编号。'
-          '${includeRoleplayChoices ? '在正文结束后，必须额外输出 <<<CHOICES>>>["候选1","候选2","候选3","候选4"]<<<END_CHOICES>>>。候选项必须恰好 4 条、可作为用户下一步行动或台词，且不得替用户决定结果。该标记由应用内部读取，不属于正文。' : ''}$timeLine';
+          '${includeRoleplayChoices ? '在正文结束后，必须额外输出 <<<CHOICES>>>["候选1","候选2","候选3","候选4"]<<<END_CHOICES>>>。候选项必须恰好 4 条，是用户可直接发出的具体台词或「（动作）台词」式行动（如「你最近是不是瞒着我什么？」「（不动声色地把茶杯推近）先喝口热的。」），禁止「关心对方」「继续询问」等概括标签；不要替用户决定结果，不要写对方反应。该标记由应用内部读取，不属于正文。' : ''}$timeLine';
     }
-    return '【系统指令】现在请以 $characterName 的身份，'
+    return '【格式约定】请以 $characterName 的口吻，'
         '${replyToUser ? '回复用户最近发来的消息' : '主动给用户发几条消息'}。'
         '你的最终回复必须且只能是一个 JSON 字符串数组，'
         '格式如 ["消息1", "消息2"]，数组的每个元素就是你发送的一条消息。'

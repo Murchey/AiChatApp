@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -12,8 +11,8 @@ import '../providers/api_provider.dart';
 import '../providers/chat_background_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/character_provider.dart';
-import '../providers/memory_point_provider.dart';
 import '../services/prompt_builder.dart';
+import '../utils/avatar_picker.dart';
 import '../utils/file_utils.dart';
 import '../widgets/character_avatar.dart';
 import 'character_detail_screen.dart';
@@ -104,24 +103,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-  /// 选择相册图片并更新角色头像
-  Future<void> _pickAvatar() async {
+  /// 选择相册/拍照 → 方形裁剪 → 更新角色头像
+  Future<void> _pickAvatar({ImageSource source = ImageSource.gallery}) async {
     final characterId = _characterId;
     if (characterId.isEmpty) return;
     final provider = context.read<CharacterProvider>();
     final chatProvider = context.read<ChatProvider>();
-    final picker = ImagePicker();
-    final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 500,
-      maxHeight: 500,
-      imageQuality: 85,
-    );
-    if (file == null || !mounted) return;
-    final bytes = await file.readAsBytes();
-    await provider.updateAvatar(characterId, base64Encode(bytes));
+    final b64 = await pickAndCropAvatarBase64(context, source: source);
+    if (b64 == null || !mounted) return;
+    await provider.updateAvatar(characterId, b64);
     // 同步会话快照，首页消息列表头像实时更新
-    chatProvider.updateCharacterAvatar(characterId, base64Encode(bytes));
+    chatProvider.updateCharacterAvatar(characterId, b64);
     if (!mounted) return;
     showCupertinoDialog(
       context: context,
@@ -135,6 +127,37 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             child: const Text('确定'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showAvatarSourceSheet() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('更换头像'),
+        message: const Text('选择图片后可裁剪方形区域再应用'),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _pickAvatar(source: ImageSource.gallery);
+            },
+            child: const Text('从相册选择'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _pickAvatar(source: ImageSource.camera);
+            },
+            child: const Text('拍照'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('取消'),
+        ),
       ),
     );
   }
@@ -510,7 +533,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           children: [
             // 头像（点击更换，形状跟随全局设置）
             GestureDetector(
-              onTap: _pickAvatar,
+              onTap: _showAvatarSourceSheet,
               child: Stack(
                 children: [
                   CharacterAvatar(
@@ -1445,19 +1468,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               '记忆点管理',
               style: TextStyle(color: context.textPrimaryColor),
             ),
-            subtitle: Consumer<MemoryPointProvider>(
-              builder: (context, provider, _) {
-                final count = provider.pointsFor(_characterId).length;
-                return Text(
-                  count > 0
-                      ? '已保存 $count 条长期记忆，将自动拼入对话提示词 · 点击管理'
-                      : '把重要的约定与经历存下来，让角色长期记住 · 点击管理',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                );
-              },
+            subtitle: Text(
+              '此处可以储存世界观、用户人设、对话中的记忆点等，可回传到上下文',
+              style: TextStyle(
+                fontSize: 12,
+                color: context.textSecondaryColor,
+              ),
             ),
             trailing: Icon(
               CupertinoIcons.chevron_right,

@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/workshop_repository.dart';
 import '../providers/workshop_provider.dart';
+import '../services/cos_auth.dart';
 import '../services/update_service.dart';
+import '../services/workshop_service.dart';
 
 /// 配置可用仓库：列出已添加的角色卡仓库，右上角加号弹窗添加仓库并自动检查可用性。
 class WorkshopReposScreen extends StatefulWidget {
@@ -16,32 +18,72 @@ class WorkshopReposScreen extends StatefulWidget {
 class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
   bool _busy = false;
 
-  /// 弹窗添加仓库 → 自动检查可用性 → 提示成功后返回上一级页面
+  /// 右上角 +：直接打开填写弹窗（类型由 URL 自动识别，弹窗内也可切换）
   Future<void> _showAddDialog() async {
     if (_busy) return;
-    final result = await showCupertinoDialog<({String path, String proxyUrl})>(
+    await _openRepoDialog(initialType: WorkshopRepoType.git.name);
+  }
+
+  Future<void> _openRepoDialog({
+    required String initialType,
+    String? initialPath,
+    String? initialProxyUrl,
+    CosAuth initialCosAuth = const CosAuth(),
+    String title = '添加仓库',
+    WorkshopRepository? editing,
+  }) async {
+    final result = await showCupertinoDialog<
+        ({
+          String path,
+          String proxyUrl,
+          String type,
+          CosAuth cosAuth,
+        })>(
       context: context,
-      builder: (_) => const _AddRepoDialog(),
+      builder: (_) => _AddRepoDialog(
+        title: title,
+        initialPath: initialPath,
+        initialProxyUrl: initialProxyUrl,
+        initialType: initialType,
+        initialCosAuth: initialCosAuth,
+      ),
     );
     if (result == null || !mounted) return;
 
     setState(() => _busy = true);
     try {
       final provider = context.read<WorkshopProvider>();
-      final repo = await provider.addRepository(
-        path: result.path,
-        proxyUrl: result.proxyUrl,
-      );
+      final WorkshopRepository repo;
+      if (editing != null) {
+        repo = await provider.updateRepository(
+          repo: editing,
+          path: result.path,
+          proxyUrl: result.proxyUrl,
+          type: result.type,
+          cosAuth: result.cosAuth,
+        );
+      } else {
+        repo = await provider.addRepository(
+          path: result.path,
+          proxyUrl: result.proxyUrl,
+          type: result.type,
+          cosAuth: result.cosAuth,
+        );
+      }
       if (!mounted) return;
       await _showTip(
         repo.isAvailable
-            ? '仓库添加成功，可用分类：${_tagsLabel(repo)}'
-            : '仓库已添加，但未检测到可用的资产 tag',
+            ? '${editing != null ? '仓库已更新' : '仓库添加成功'}，可用分类：${_tagsLabel(repo)}'
+            : '${editing != null ? '仓库已更新' : '仓库已添加'}，但未检测到可用的资产',
       );
       // 完成添加后返回上一级（创意工坊）页面
-      if (mounted) Navigator.of(context).pop();
+      if (editing == null && mounted) Navigator.of(context).pop();
     } catch (e) {
-      if (mounted) await _showTip('仓库添加失败：$e');
+      if (mounted) {
+        await _showTip(
+          '${editing != null ? '仓库更新失败' : '仓库添加失败'}：$e',
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -64,38 +106,17 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
     setState(() => _busy = false);
   }
 
-  /// 编辑仓库：弹窗预填当前路径/代理，保存后重新检查可用性
+  /// 编辑仓库：弹窗预填当前路径/代理/类型/密钥，保存后重新检查可用性
   Future<void> _edit(WorkshopRepository repo) async {
     if (_busy) return;
-    final result = await showCupertinoDialog<({String path, String proxyUrl})>(
-      context: context,
-      builder: (_) => _AddRepoDialog(
-        title: '编辑仓库',
-        initialPath: repo.url,
-        initialProxyUrl: repo.proxyUrl,
-      ),
+    await _openRepoDialog(
+      title: '编辑仓库',
+      initialPath: repo.url,
+      initialProxyUrl: repo.proxyUrl,
+      initialType: repo.type.name,
+      initialCosAuth: repo.cosAuth,
+      editing: repo,
     );
-    if (result == null || !mounted) return;
-
-    setState(() => _busy = true);
-    try {
-      final provider = context.read<WorkshopProvider>();
-      final updated = await provider.updateRepository(
-        repo: repo,
-        path: result.path,
-        proxyUrl: result.proxyUrl,
-      );
-      if (!mounted) return;
-      await _showTip(
-        updated.isAvailable
-            ? '仓库已更新，可用分类：${_tagsLabel(updated)}'
-            : '仓库已更新，但未检测到可用的资产 tag',
-      );
-    } catch (e) {
-      if (mounted) await _showTip('仓库更新失败：$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
   Future<void> _remove(WorkshopRepository repo) async {
@@ -103,7 +124,11 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text('移除仓库'),
-        content: Text('确定移除仓库「${repo.name}」吗？'),
+        content: Text(
+          '确定移除仓库「${repo.name}」吗？',
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           CupertinoDialogAction(
             child: const Text('取消'),
@@ -175,18 +200,22 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
                       Expanded(
                         child: Text(
                           repo.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 15,
                             color: context.textPrimaryColor,
                           ),
                         ),
                       ),
-                      if (isSelected)
+                      if (isSelected) ...[
+                        const SizedBox(width: 8),
                         Icon(
                           CupertinoIcons.checkmark_circle_fill,
                           size: 20,
                           color: context.accentColor,
                         ),
+                      ],
                     ],
                   ),
                 ),
@@ -381,14 +410,19 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
                 color: context.textPrimaryColor,
               ),
             ),
-            const Spacer(),
-            Text(
-              notifyRepo?.name ?? '请选择',
-              style: TextStyle(
-                fontSize: 14,
-                color: notifyRepo != null
-                    ? context.textSecondaryColor
-                    : CupertinoColors.systemGrey,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                notifyRepo?.name ?? '请选择',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: notifyRepo != null
+                      ? context.textSecondaryColor
+                      : CupertinoColors.systemGrey,
+                ),
               ),
             ),
             const SizedBox(width: 4),
@@ -404,10 +438,20 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
   }
 
   Widget _buildRepoRow(BuildContext context, WorkshopRepository repo) {
-    final proxyIdx = kProxySources.indexOf(repo.proxyUrl);
-    final proxyLabel = repo.proxyUrl.isEmpty
-        ? '不使用代理'
-        : (proxyIdx >= 0 ? '代理 ${proxyIdx + 1}' : '自定义代理');
+    final isCos = repo.isCos;
+    final typeLabel = isCos
+        ? (repo.hasCosAuth ? 'COS 私有读' : 'COS 对象储存')
+        : 'Git Release';
+    final String metaLine;
+    if (isCos) {
+      metaLine = repo.hasCosAuth ? '$typeLabel · 访问密钥' : typeLabel;
+    } else {
+      final proxyIdx = kProxySources.indexOf(repo.proxyUrl);
+      final proxyLabel = repo.proxyUrl.isEmpty
+          ? '不使用代理'
+          : (proxyIdx >= 0 ? '代理 ${proxyIdx + 1}' : '自定义代理');
+      metaLine = '$typeLabel · $proxyLabel';
+    }
 
     return Container(
       color: context.listBgColor,
@@ -418,19 +462,41 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  repo.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    color: context.textPrimaryColor,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        repo.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                    ),
+                    _TagChip(
+                      text: typeLabel,
+                      color: isCos
+                          ? const Color(0xFF8B5CF6)
+                          : const Color(0xFF64748B),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$repo.url · $proxyLabel',
+                  repo.url,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  metaLine,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -448,29 +514,30 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
                     ),
                   )
                 else if (repo.availableTags.isNotEmpty)
-                  Row(
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
                     children: [
                       if (repo.hasCharacter)
-                        const _TagChip(text: '角色分类 V1.1.0'),
-                      if (repo.hasGame) ...[
-                        const SizedBox(width: 6),
-                        const _TagChip(
-                          text: '游戏分类 V1.0.0',
-                          color: Color(0xFF3B82F6),
+                        _TagChip(
+                          text: isCos ? '角色分类 Characters' : '角色分类 V1.1.0',
                         ),
-                      ],
-                      if (repo.hasSticker) ...[
-                        const SizedBox(width: 6),
-                        const _TagChip(
-                          text: '表情包分类 V1.3.0',
-                          color: Color(0xFFEC4899),
+                      if (repo.hasGame)
+                        _TagChip(
+                          text: isCos ? '游戏分类 Games' : '游戏分类 V1.0.0',
+                          color: const Color(0xFF3B82F6),
                         ),
-                      ],
+                      if (repo.hasSticker)
+                        _TagChip(
+                          text:
+                              isCos ? '表情包分类 Stickers' : '表情包分类 V1.3.0',
+                          color: const Color(0xFFEC4899),
+                        ),
                     ],
                   )
                 else
                   Text(
-                    '未检测到可用 tag',
+                    isCos ? '未检测到可用目录' : '未检测到可用 tag',
                     style: TextStyle(
                       fontSize: 12,
                       color: context.textSecondaryColor,
@@ -542,16 +609,20 @@ class _TagChip extends StatelessWidget {
   }
 }
 
-/// 添加 / 编辑仓库弹窗：下载代理选项（不使用 / 内置代理 / 自定义）+ 仓库路径
+/// 添加 / 编辑仓库弹窗：来源类型 + 路径 +（Git）代理 /（COS）访问密钥
 class _AddRepoDialog extends StatefulWidget {
   final String title;
   final String? initialPath;
   final String? initialProxyUrl;
+  final String initialType;
+  final CosAuth initialCosAuth;
 
   const _AddRepoDialog({
     this.title = '添加仓库',
     this.initialPath,
     this.initialProxyUrl,
+    this.initialType = 'git',
+    this.initialCosAuth = const CosAuth(),
   });
 
   @override
@@ -560,8 +631,12 @@ class _AddRepoDialog extends StatefulWidget {
 
 class _AddRepoDialogState extends State<_AddRepoDialog> {
   late final TextEditingController _pathController;
+  late final TextEditingController _akController;
+  late final TextEditingController _skController;
   late String _proxyUrl; // 当前代理选择（空 = 不使用代理）
   late String _customProxy; // 用户输入的自定义代理
+  late String _type; // 'git' | 'cos'
+  late bool _useCosAuth;
   String? _hint;
 
   @override
@@ -569,7 +644,15 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
     super.initState();
     final initProxy = widget.initialProxyUrl ?? '';
     _pathController = TextEditingController(text: widget.initialPath ?? '');
+    _akController =
+        TextEditingController(text: widget.initialCosAuth.accessKeyId);
+    _skController =
+        TextEditingController(text: widget.initialCosAuth.secretAccessKey);
     _proxyUrl = initProxy;
+    _type = widget.initialType == WorkshopRepoType.cos.name
+        ? WorkshopRepoType.cos.name
+        : WorkshopRepoType.git.name;
+    _useCosAuth = widget.initialCosAuth.enabled;
     // 初始代理为自定义时，回填自定义输入框内容
     _customProxy = initProxy.isNotEmpty && !kProxySources.contains(initProxy)
         ? initProxy
@@ -579,7 +662,22 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
   @override
   void dispose() {
     _pathController.dispose();
+    _akController.dispose();
+    _skController.dispose();
     super.dispose();
+  }
+
+  bool get _isCos => _type == WorkshopRepoType.cos.name;
+
+  /// 输入完整 URL 时自动切换来源类型（粘贴 COS / GitHub / Gitee 链接）
+  void _onPathChanged(String value) {
+    if (_hint != null) setState(() => _hint = null);
+    final s = value.trim();
+    if (!s.contains('://')) return;
+    final detected = WorkshopService.detectRepoType(s);
+    if (detected.name != _type) {
+      setState(() => _type = detected.name);
+    }
   }
 
   String get _proxyLabel {
@@ -689,76 +787,249 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
   void _submit() {
     final path = _pathController.text.trim();
     if (path.isEmpty) {
-      setState(() => _hint = '请输入仓库路径');
+      setState(() => _hint = _isCos ? '请输入 BASE_URL' : '请输入仓库路径');
       return;
     }
-    Navigator.pop(context, (path: path, proxyUrl: _proxyUrl));
+    if (_isCos) {
+      if (!path.toLowerCase().startsWith('https://')) {
+        setState(() => _hint = 'COS 来源必须使用 https:// 完整 BASE_URL');
+        return;
+      }
+      if (!WorkshopService.looksLikeCosUrl(path)) {
+        setState(() => _hint = '该 URL 看起来是 GitHub / Gitee，请切换到 Git 来源');
+        return;
+      }
+      if (_useCosAuth) {
+        final ak = _akController.text.trim();
+        final sk = _skController.text.trim();
+        if (ak.isEmpty || sk.isEmpty) {
+          setState(() => _hint = '启用访问密钥时，请填写 AccessKey ID 与 Secret');
+          return;
+        }
+      }
+    } else {
+      // Git 类型：若填了完整 URL 且像 COS，提示类型不匹配
+      if (path.contains('://') && WorkshopService.looksLikeCosUrl(path)) {
+        setState(() => _hint = '该 URL 看起来是对象储存，请切换到「对象储存」来源');
+        return;
+      }
+    }
+    Navigator.pop(
+      context,
+      (
+        path: path,
+        proxyUrl: _proxyUrl,
+        type: _type,
+        cosAuth: CosAuth(
+          enabled: _isCos && _useCosAuth,
+          accessKeyId: _isCos && _useCosAuth ? _akController.text.trim() : '',
+          secretAccessKey:
+              _isCos && _useCosAuth ? _skController.text.trim() : '',
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return CupertinoAlertDialog(
       title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 8),
-          // 下载代理选项
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _pickProxy,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                children: [
-                  Text(
-                    '下载代理',
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.55,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              // 来源类型
+              Text(
+                '来源类型',
+                textAlign: TextAlign.start,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: context.textSecondaryColor,
+                ),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: CupertinoSegmentedControl<String>(
+                  children: {
+                    WorkshopRepoType.git.name: const Text('Git'),
+                    WorkshopRepoType.cos.name: const Text('对象储存'),
+                  },
+                  groupValue: _type,
+                  onValueChanged: (v) => setState(() {
+                    _type = v;
+                    _hint = null;
+                  }),
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (_isCos) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    '填写对象储存 BASE_URL。目录约定：\n'
+                    'Characters/*.zip — 角色\n'
+                    'Games/*.zip — 朋友圈\n'
+                    'Stickers/*.zip — 表情包\n'
+                    'Note/*.md — 更新通知',
+                    textAlign: TextAlign.start,
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 12,
+                      height: 1.5,
                       color: context.textPrimaryColor,
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    _proxyLabel,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: context.textSecondaryColor,
+                ),
+                const SizedBox(height: 10),
+                // 私有读：访问密钥
+                SizedBox(
+                  width: double.infinity,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '使用访问密钥（私有读）',
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                      ),
+                      CupertinoSwitch(
+                        value: _useCosAuth,
+                        onChanged: (v) => setState(() => _useCosAuth = v),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_useCosAuth) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      '桶为私有读时填写。密钥仅保存在本机，用于 List/Get 签名。',
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1.4,
+                        color: context.textSecondaryColor,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    CupertinoIcons.chevron_down,
-                    size: 14,
-                    color: context.textSecondaryColor,
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: CupertinoTextField(
+                      controller: _akController,
+                      placeholder: 'AccessKey ID',
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      onChanged: (_) {
+                        if (_hint != null) setState(() => _hint = null);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: CupertinoTextField(
+                      controller: _skController,
+                      placeholder: 'SecretAccessKey',
+                      obscureText: true,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      onChanged: (_) {
+                        if (_hint != null) setState(() => _hint = null);
+                      },
+                    ),
                   ),
                 ],
+                const SizedBox(height: 10),
+              ] else ...[
+                // 下载代理选项（仅 Git）
+                SizedBox(
+                  width: double.infinity,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _pickProxy,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Text(
+                            '下载代理',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: context.textPrimaryColor,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            _proxyLabel,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: context.textSecondaryColor,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            CupertinoIcons.chevron_down,
+                            size: 14,
+                            color: context.textSecondaryColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              // 仓库路径 / BASE_URL
+              SizedBox(
+                width: double.infinity,
+                child: CupertinoTextField(
+                  controller: _pathController,
+                  autofocus: true,
+                  placeholder: _isCos
+                      ? 'https://bucket.example.com/aichat'
+                      : 'owner/repo 或仓库 URL',
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  onChanged: _onPathChanged,
+                  onSubmitted: (_) => _submit(),
+                ),
               ),
-            ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: Text(
+                  _hint ??
+                      (_isCos
+                          ? '例如：https://bucket.cos.ap-xxx.myqcloud.com/aichat'
+                          : '例如：Murchey/AiChatCharacterCommunity'),
+                  textAlign: TextAlign.start,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _hint != null
+                        ? CupertinoColors.systemRed
+                        : context.textSecondaryColor,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          // 仓库路径
-          CupertinoTextField(
-            controller: _pathController,
-            autofocus: true,
-            placeholder: 'owner/repo 或仓库 URL',
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            onChanged: (_) {
-              if (_hint != null) setState(() => _hint = null);
-            },
-            onSubmitted: (_) => _submit(),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _hint ?? '例如：Murchey/AiChatCharacterCommunity',
-            style: TextStyle(
-              fontSize: 12,
-              color: _hint != null
-                  ? CupertinoColors.systemRed
-                  : context.textSecondaryColor,
-            ),
-          ),
-        ],
+        ),
       ),
       actions: [
         CupertinoDialogAction(

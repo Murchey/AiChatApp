@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/llm_service.dart';
 
 /// 角色回复格式：短信短消息 / 括号动作流语C。
 enum ChatMessageMode { sms, roleplay }
@@ -29,6 +30,8 @@ class ChatSettingsProvider extends ChangeNotifier {
   static const _roleplayStreamKey = 'chat_roleplay_stream_enabled';
   static const _roleplayProgressionKey = 'chat_roleplay_progression_style';
   static const _roleplayChoicesKey = 'chat_roleplay_choices_enabled';
+  static const _thinkingLevelKey = 'chat_thinking_level';
+  static const _showThinkingDurationKey = 'chat_show_thinking_duration';
 
   /// 携带上下文条数，0 表示无限制（携带全部记录）
   int _contextCount = 10;
@@ -49,6 +52,8 @@ class ChatSettingsProvider extends ChangeNotifier {
   RoleplayProgressionStyle _roleplayProgressionStyle =
       RoleplayProgressionStyle.free;
   bool _enableRoleplayChoices = true;
+  ModelThinkingLevel _thinkingLevel = ModelThinkingLevel.defaultLevel;
+  bool _showThinkingDuration = true;
 
   /// 记忆池按角色停用的来源（key=角色 id，value=停用的来源标题集合，
   /// 标题见 MemoryPoolBuilder 的 kPrivateSectionTitle 等常量）。
@@ -66,6 +71,8 @@ class ChatSettingsProvider extends ChangeNotifier {
   RoleplayProgressionStyle get roleplayProgressionStyle =>
       _roleplayProgressionStyle;
   bool get enableRoleplayChoices => _enableRoleplayChoices;
+  ModelThinkingLevel get thinkingLevel => _thinkingLevel;
+  bool get showThinkingDuration => _showThinkingDuration;
 
   /// 该角色记忆池中已停用的来源标题集合（停用后不拼入提示词）
   Set<String> disabledPoolSectionsFor(String characterId) =>
@@ -97,6 +104,17 @@ class ChatSettingsProvider extends ChangeNotifier {
       orElse: () => RoleplayProgressionStyle.free,
     );
     _enableRoleplayChoices = prefs.getBool(_roleplayChoicesKey) ?? true;
+    _thinkingLevel = ModelThinkingLevel.values.firstWhere(
+      // 旧枚举名 medium 迁移为 defaultLevel
+      (l) =>
+          l.name == prefs.getString(_thinkingLevelKey) ||
+          (prefs.getString(_thinkingLevelKey) == 'medium' &&
+              l == ModelThinkingLevel.defaultLevel),
+      orElse: () => ModelThinkingLevel.defaultLevel,
+    );
+    // 同步到 LLM 请求层
+    LLMService.thinkingLevel = _thinkingLevel;
+    _showThinkingDuration = prefs.getBool(_showThinkingDurationKey) ?? true;
     final raw = prefs.getString(_memoryPoolDisabledKey);
     _disabledPoolSections = {};
     if (raw != null && raw.isNotEmpty) {
@@ -194,6 +212,23 @@ class ChatSettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_roleplayChoicesKey, value);
+  }
+
+  /// 设置模型思考强度，并同步到 LLM 请求层。
+  Future<void> setThinkingLevel(ModelThinkingLevel level) async {
+    _thinkingLevel = level;
+    LLMService.thinkingLevel = level;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_thinkingLevelKey, level.name);
+  }
+
+  /// 是否在 AI 回复上方显示思考时长（不计入正文、不回传模型）。
+  Future<void> setShowThinkingDuration(bool value) async {
+    _showThinkingDuration = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_showThinkingDurationKey, value);
   }
 
   /// 设置角色记忆池某来源（标题见 MemoryPoolBuilder 常量）的启停。

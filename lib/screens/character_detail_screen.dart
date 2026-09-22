@@ -13,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../utils/app_toast.dart';
+import '../utils/avatar_picker.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/moment_card.dart';
 import '../widgets/publish_moment_screen.dart';
@@ -172,32 +173,24 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
     super.dispose();
   }
 
-  /// 点击头像选择图片（相册 / 拍照）
-  Future<void> _pickAvatar(Character character) async {
-    final picker = ImagePicker();
+  /// 点击头像选择图片（相册 / 拍照）→ 方形裁剪 → 应用
+  Future<void> _pickAvatar(
+    Character character, {
+    ImageSource source = ImageSource.gallery,
+  }) async {
     final chatProvider = context.read<ChatProvider>();
     final characterProvider = context.read<CharacterProvider>();
     final authProvider = context.read<AuthProvider>();
-    final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 500,
-      maxHeight: 500,
-      imageQuality: 85,
-    );
-    if (file == null || !mounted) return;
-    final bytes = await file.readAsBytes();
-    if (!mounted) return;
+    final b64 = await pickAndCropAvatarBase64(context, source: source);
+    if (b64 == null || !mounted) return;
     final characterId = character.id;
-    await characterProvider.updateAvatar(characterId, base64Encode(bytes));
+    await characterProvider.updateAvatar(characterId, b64);
     if (widget.characterId == CharacterProvider.selfCharacterId) {
       // "自己"的头像与个人资料头像保持一致
-      await authProvider.updateProfile(avatar: base64Encode(bytes));
+      await authProvider.updateProfile(avatar: b64);
     } else {
       // 同步会话快照，首页消息列表头像实时更新
-      chatProvider.updateCharacterAvatar(
-        characterId,
-        base64Encode(bytes),
-      );
+      chatProvider.updateCharacterAvatar(characterId, b64);
     }
   }
 
@@ -229,9 +222,16 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
-              _pickAvatar(character);
+              _pickAvatar(character, source: ImageSource.gallery);
             },
             child: const Text('从相册选择'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _pickAvatar(character, source: ImageSource.camera);
+            },
+            child: const Text('拍照'),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(

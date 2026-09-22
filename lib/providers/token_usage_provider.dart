@@ -10,7 +10,9 @@ import '../services/widget_sync_service.dart';
 /// 在每次真实 LLM 调用成功后累加该轮的实际用量：
 /// - 输入 tokens = API usage.prompt_tokens（系统提示词 + 历史上下文回传 + 本次提问，
 ///   即每轮真正发送给 API 的完整 prompt；多轮对话中逐轮递增）
-/// - 输出 tokens = API usage.completion_tokens（AI 回复）
+/// - 输出 tokens = API usage.completion_tokens（AI 回复，**已含思考**）
+/// - 其中思考 tokens = completion_tokens_details.reasoning_tokens
+///   （缺失时按思考正文估算），仅为输出的子集，不重复计入总额
 ///
 /// 数据按会话 id（私聊 conversationId / 群聊 groupId）存储并持久化，
 /// 展示页可随时读取、一键重置。
@@ -70,8 +72,14 @@ class TokenUsageProvider extends ChangeNotifier {
   }
 
   /// 记录一次真实 token 用量（API 未返回 usage 时忽略）。
+  /// [label]/[avatar] 会写入统计条目，会话删除后统计页仍可显示原名称。
   /// 返回累计后的该会话用量（供调用方决定是否展示）。
-  Future<TokenUsage> addUsage(String conversationId, ChatUsage usage) {
+  Future<TokenUsage> addUsage(
+    String conversationId,
+    ChatUsage usage, {
+    String? label,
+    String? avatar,
+  }) {
     if (usage.isEmpty) return Future.value(usageFor(conversationId));
     final task = _mutationQueue.then((_) async {
       await init();
@@ -79,6 +87,11 @@ class TokenUsageProvider extends ChangeNotifier {
       final next = TokenUsage(
         sentTokens: prev.sentTokens + (usage.promptTokens ?? 0),
         receivedTokens: prev.receivedTokens + (usage.completionTokens ?? 0),
+        reasoningTokens: prev.reasoningTokens + (usage.reasoningTokens ?? 0),
+        label: (label != null && label.trim().isNotEmpty)
+            ? label.trim()
+            : prev.label,
+        avatar: (avatar != null && avatar.isNotEmpty) ? avatar : prev.avatar,
       );
       _usages[conversationId] = next;
       if (_usages.length > _maxEntries) {
@@ -140,11 +153,15 @@ class TokenUsageProvider extends ChangeNotifier {
   int get sentTotal =>
       _usages.values.fold<int>(0, (sum, u) => sum + u.sentTokens);
 
-  /// 全部会话累计接收的 token
+  /// 全部会话累计接收的 token（含思考）
   int get receivedTotal =>
       _usages.values.fold<int>(0, (sum, u) => sum + u.receivedTokens);
 
-  /// 全部会话累计消耗（发送 + 接收）
+  /// 全部会话累计思考 token（输出子集，不重复计入 total）
+  int get reasoningTotal =>
+      _usages.values.fold<int>(0, (sum, u) => sum + u.reasoningTokens);
+
+  /// 全部会话累计消耗（发送 + 接收；接收已含思考）
   int get total => sentTotal + receivedTotal;
 
   /// 是否有任何会话有消耗记录

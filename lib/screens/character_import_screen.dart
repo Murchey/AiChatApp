@@ -11,6 +11,9 @@ import '../providers/memory_point_provider.dart';
 import '../utils/conversation_relink.dart';
 import '../widgets/character_avatar.dart';
 
+/// 批量处理同名角色时的操作
+enum _BatchConflictAction { overwriteAll, skipDuplicates, askEach }
+
 /// 角色包导入二级页：勾选要导入的角色
 class CharacterImportScreen extends StatefulWidget {
   final List<CharacterPackEntry> entries;
@@ -73,51 +76,66 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
         .where((n) => n.isNotEmpty)
         .toSet();
 
-    for (final entry in widget.entries) {
-      if (!_selected.contains(entry.folderName) || entry.error != null) {
-        continue;
-      }
+    final selectedEntries = widget.entries
+        .where((e) => _selected.contains(e.folderName) && e.error == null)
+        .toList();
+    final conflictNames = selectedEntries
+        .map((e) => e.character.name.trim())
+        .where((n) => n.isNotEmpty && usedNames.contains(n))
+        .toList();
 
+    // 多角色包里同名较多时：一次确认批量覆盖，避免逐个点覆盖
+    _BatchConflictAction batch = _BatchConflictAction.askEach;
+    if (conflictNames.isNotEmpty) {
+      if (!mounted) return;
+      final choice = await _promptBatchConflict(conflictNames);
+      if (choice == null || !mounted) return; // 取消整次导入
+      batch = choice;
+    }
+
+    var batchOverwrite = batch == _BatchConflictAction.overwriteAll;
+    var batchSkip = batch == _BatchConflictAction.skipDuplicates;
+
+    for (final entry in selectedEntries) {
       var name = entry.character.name.trim();
-      // 与已有角色重名：弹出「覆盖 / 改名」选择，取消则跳过该角色
-      if (usedNames.contains(name)) {
-        if (!mounted) return;
-        final decision = await _promptDuplicate(context, name, usedNames);
-        if (!mounted) return;
-        if (decision == null) continue;
+      if (name.isEmpty) continue;
 
-        if (decision.overwrite) {
-          // 覆盖当前角色数据：保留原 id（聊天记录不覆盖），替换资料/提示词；
-          // 朋友圈合并覆盖：包内与本地 id 一致的动态用包内版本覆盖，
-          // 本地已有的动态（含角色自己新发的）保留，包内新增的动态追加
-          final existing = provider.findCharacterByName(name);
-          if (existing == null) continue;
-          final json = entry.character.toJson()
-            ..['id'] = existing.id
-            ..['name'] = name;
-          var character = Character.fromJson(json);
-          if (existing.moments.isNotEmpty || character.moments.isNotEmpty) {
-            character = character.copyWith(
-              moments: CharacterImportScreen.mergeMomentsOnOverwrite(
-                existing.moments,
-                character.moments,
-              ),
-            );
-          }
-          await provider.overwriteCharacter(character);
-          // 角色包覆盖导入：用包内记忆点替换该角色的持久化记忆
-          await memoryProvider.replacePoints(character.id, entry.memoryPoints);
+      // 与已有角色重名
+      if (usedNames.contains(name)) {
+        if (batchOverwrite) {
+          // 批量覆盖：不再弹窗
+        } else if (batchSkip) {
+          continue;
+        } else {
           if (!mounted) return;
-          // 同步会话中的角色头像快照，保证首页列表头像一致
-          context
-              .read<ChatProvider>()
-              .updateCharacterAvatar(existing.id, character.avatar);
-          usedNames.add(name);
+          final decision = await _promptDuplicate(context, name, usedNames);
+          if (!mounted) return;
+          if (decision == null) continue;
+          if (decision.overwrite) {
+            await _overwriteExisting(
+              provider: provider,
+              memoryProvider: memoryProvider,
+              name: name,
+              entry: entry,
+            );
+            count++;
+            continue;
+          }
+          name = decision.newName ?? name;
+        }
+
+        if (batchOverwrite) {
+          await _overwriteExisting(
+            provider: provider,
+            memoryProvider: memoryProvider,
+            name: name,
+            entry: entry,
+          );
           count++;
           continue;
         }
-        name = decision.newName ?? name;
       }
+
       usedNames.add(name);
 
       // 重新生成 id，避免与已导入角色冲突；重名角色写入修改后的名称
@@ -149,6 +167,79 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
               Navigator.pop(context);
             },
             child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 覆盖已有同名角色：保留原 id 与聊天记录，替换资料/提示词，合并朋友圈与记忆点
+  Future<void> _overwriteExisting({
+    required CharacterProvider provider,
+    required MemoryPointProvider memoryProvider,
+    required String name,
+    required CharacterPackEntry entry,
+  }) async {
+    final existing = provider.findCharacterByName(name);
+    if (existing == null) return;
+    final json = entry.character.toJson()
+      ..['id'] = existing.id
+      ..['name'] = name;
+    var character = Character.fromJson(json);
+    if (existing.moments.isNotEmpty || character.moments.isNotEmpty) {
+      character = character.copyWith(
+        moments: CharacterImportScreen.mergeMomentsOnOverwrite(
+          existing.moments,
+          character.moments,
+        ),
+      );
+    }
+    await provider.overwriteCharacter(character);
+    await memoryProvider.replacePoints(character.id, entry.memoryPoints);
+    if (!mounted) return;
+    context
+        .read<ChatProvider>()
+        .updateCharacterAvatar(existing.id, character.avatar);
+  }
+
+  /// 批量同名处理：一次确认「全部覆盖 / 跳过同名 / 逐个询问」
+  Future<_BatchConflictAction?> _promptBatchConflict(
+    List<String> conflictNames,
+  ) {
+    final preview = conflictNames.length <= 6
+        ? conflictNames.join('、')
+        : '${conflictNames.take(6).join('、')} 等 ${conflictNames.length} 个';
+    return showCupertinoDialog<_BatchConflictAction>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('已有同名角色'),
+        content: Text(
+          '本次导入中有 ${conflictNames.length} 个角色与本地重名：\n$preview\n\n'
+          '「全部覆盖」会替换这些角色的资料与提示词（保留聊天记录，朋友圈按包内内容合并/覆盖）。',
+          textAlign: TextAlign.left,
+          style: const TextStyle(fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('取消导入'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () =>
+                Navigator.pop(ctx, _BatchConflictAction.askEach),
+            child: const Text('逐个处理'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () =>
+                Navigator.pop(ctx, _BatchConflictAction.skipDuplicates),
+            child: const Text('仅导入新角色'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () =>
+                Navigator.pop(ctx, _BatchConflictAction.overwriteAll),
+            child: const Text('全部覆盖'),
           ),
         ],
       ),

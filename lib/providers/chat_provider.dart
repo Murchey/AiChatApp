@@ -192,6 +192,14 @@ class ChatProvider extends ChangeNotifier {
     return const [];
   }
 
+  /// 会话头像快照（统计页记忆用；会话不存在时返回空）
+  String _conversationAvatar(String conversationId) {
+    for (final c in _conversations) {
+      if (c.id == conversationId) return c.characterAvatar;
+    }
+    return '';
+  }
+
   /// 获取某角色最后一条消息的时间。
   /// 没有会话记录时返回 null。
   DateTime? getLastMessageTimeForCharacter(String characterId) {
@@ -501,7 +509,9 @@ class ChatProvider extends ChangeNotifier {
     _messagesMap[conversationId]!.add(message);
     notifyListeners();
     var content = '';
+    var reasoning = '';
     ChatUsage streamUsage = const ChatUsage();
+    final streamWatch = Stopwatch()..start();
     try {
       await for (final chunk in LLMService.streamCompletion(
         model: model,
@@ -512,15 +522,19 @@ class ChatProvider extends ChangeNotifier {
         ],
       )) {
         content += chunk.content;
+        reasoning += chunk.reasoning;
         if (!chunk.usage.isEmpty) streamUsage = chunk.usage;
         final index = _messagesMap[conversationId]!
             .indexWhere((item) => item.id == message.id);
         if (index >= 0) {
-          _messagesMap[conversationId]![index] =
-              message.copyWith(content: content);
+          _messagesMap[conversationId]![index] = message.copyWith(
+            content: content,
+            reasoningContent: reasoning,
+          );
           notifyListeners();
         }
       }
+      streamWatch.stop();
       final reply = LLMService.parseRoleplayReply(content);
       content = reply.content;
       if (reply.choices.isNotEmpty) {
@@ -529,8 +543,13 @@ class ChatProvider extends ChangeNotifier {
       final index = _messagesMap[conversationId]!
           .indexWhere((item) => item.id == message.id);
       if (index >= 0) {
-        _messagesMap[conversationId]![index] =
-            message.copyWith(content: content);
+        _messagesMap[conversationId]![index] = message.copyWith(
+          content: content,
+          reasoningContent: reasoning,
+          reasoningDurationMs:
+              reasoning.trim().isEmpty ? null : streamWatch.elapsedMilliseconds,
+        );
+        _persist();
       }
       _updateConversationLastMessage(conversationId, content);
       final promptTokens = streamUsage.promptTokens ??
@@ -541,15 +560,21 @@ class ChatProvider extends ChangeNotifier {
                     sum + _estimateTextTokens(item['content'] ?? '') +
                         kPerMessageJsonTokens,
               );
+      // completion 已含思考；网关未给 reasoning_tokens 时按思考正文估算
+      final reasoningTokens = streamUsage.reasoningTokens ??
+          LLMService.estimateReasoningTokens(reasoning);
       final completionTokens = streamUsage.completionTokens ??
-          _estimateTextTokens(content);
+          _estimateTextTokens(content) + reasoningTokens;
       await TokenUsageProvider.instance.addUsage(
         conversationId,
         ChatUsage(
           promptTokens: promptTokens,
           completionTokens: completionTokens,
           totalTokens: promptTokens + completionTokens,
+          reasoningTokens: reasoningTokens,
         ),
+        label: characterName,
+        avatar: _conversationAvatar(conversationId),
       );
       // 进度条显示下一次请求可能携带的上下文，必须与 contextCount 和
       // _buildHistory 的消息转换规则保持一致。
@@ -796,11 +821,28 @@ class ChatProvider extends ChangeNotifier {
         extraSystemContext: extraSystemContext,
       );
       final messages = result.messages;
-      // 累计真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens）
-      await TokenUsageProvider.instance.addUsage(conversationId, result.usage);
+      // 累计真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens，含思考）
+      var usage = result.usage;
+      if (usage.reasoningTokens == null &&
+          result.reasoningContent.trim().isNotEmpty) {
+        usage = ChatUsage(
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+          reasoningTokens:
+              LLMService.estimateReasoningTokens(result.reasoningContent),
+        );
+      }
+      await TokenUsageProvider.instance.addUsage(
+        conversationId,
+        usage,
+        label: characterName,
+        avatar: _conversationAvatar(conversationId),
+      );
       final random = Random();
       final displayedMessages = <String>[];
       var stickerSent = false;
+      var reasoningAttached = false;
       for (final content in messages) {
         final query = StickerQueryProtocol.extractQuery(content);
         final visibleContent = StickerQueryProtocol.visibleText(content);
@@ -824,7 +866,17 @@ class ChatProvider extends ChangeNotifier {
           if (visibleContent.isEmpty) continue;
         }
         if (visibleContent.isEmpty) continue;
-        addProactiveMessage(conversationId, visibleContent);
+        addProactiveMessage(
+          conversationId,
+          visibleContent,
+          reasoningContent: reasoningAttached
+              ? ''
+              : result.reasoningContent,
+          reasoningDurationMs: reasoningAttached
+              ? null
+              : result.reasoningDurationMs,
+        );
+        if (result.reasoningContent.trim().isNotEmpty) reasoningAttached = true;
         displayedMessages.add(visibleContent);
         HapticFeedback.lightImpact(); // 消息提示震动
         // 延迟 = 随机 0~1s + 消息长度 * 50ms（模拟打字耗时）+ 600ms 消息间隔
@@ -1141,8 +1193,14 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  /// 将一条角色主动消息加入会话并持久化（渲染阶段逐条调用）
-  void addProactiveMessage(String conversationId, String content) {
+  /// 将一条角色主动消息加入会话并持久化（渲染阶段逐条调用）。
+  /// [reasoningContent] / [reasoningDurationMs] 仅挂在第一条文本消息上。
+  void addProactiveMessage(
+    String conversationId,
+    String content, {
+    String reasoningContent = '',
+    int? reasoningDurationMs,
+  }) {
     if (content.trim().isEmpty) return;
     debugPrint('[ChatProvider] addProactiveMessage 入库: $conversationId');
     _messagesMap[conversationId] ??= [];
@@ -1151,6 +1209,8 @@ class ChatProvider extends ChangeNotifier {
       conversationId: conversationId,
       content: content,
       sender: MessageSender.character,
+      reasoningContent: reasoningContent,
+      reasoningDurationMs: reasoningDurationMs,
     ));
     _updateConversationLastMessage(conversationId, content);
     _notifyCharacterMessage(conversationId, content);
@@ -1343,6 +1403,64 @@ class ChatProvider extends ChangeNotifier {
     _updateConversationLastMessage(conversationId, messages.last.content);
     notifyListeners();
     await _persist();
+  }
+
+  /// 分支对话：以 [sourceConversationId] 中 [throughMessageId]（含）为分叉点，
+  /// 复制该条及之前的消息到新角色的新会话，返回新会话。
+  /// 原会话不受影响；分支点之后的消息不会带入新会话。
+  Future<Conversation> branchConversation({
+    required String sourceConversationId,
+    required String throughMessageId,
+    required String newCharacterId,
+    required String newCharacterName,
+    String newCharacterAvatar = '',
+  }) async {
+    final source = _messagesMap[sourceConversationId] ?? const <Message>[];
+    final branchIndex =
+        source.indexWhere((m) => m.id == throughMessageId);
+    if (branchIndex < 0) {
+      throw StateError('分支点消息不存在');
+    }
+    final branchPoint = source[branchIndex];
+    final conversation = Conversation(
+      id: const Uuid().v4(),
+      characterId: newCharacterId,
+      characterName: newCharacterName,
+      characterAvatar: newCharacterAvatar,
+      lastMessage: branchPoint.content,
+      lastMessageTime: branchPoint.createdAt,
+    );
+    final copied = <Message>[];
+    for (var i = 0; i <= branchIndex; i++) {
+      final m = source[i];
+      copied.add(Message(
+        id: const Uuid().v4(),
+        conversationId: conversation.id,
+        content: m.content,
+        type: m.type,
+        sender: m.sender,
+        // 分支会话是 1v1：清掉群聊侧的发送者标记，避免头像/上下文错乱
+        senderCharacterId: '',
+        senderName: '',
+        createdAt: m.createdAt,
+        isRead: true,
+        quoteContent: m.quoteContent,
+        quoteSender: m.quoteSender,
+        stickerLabel: m.stickerLabel,
+        stickerSource: m.stickerSource,
+        forwardedItems: m.forwardedItems,
+        isCompressionSummary: m.isCompressionSummary,
+        reasoningContent: m.reasoningContent,
+        reasoningDurationMs: m.reasoningDurationMs,
+      ));
+    }
+    _conversations.insert(0, conversation);
+    _messagesMap[conversation.id] = copied;
+    _contextTokens[conversation.id] =
+        _estimateConversationTokens(conversation.id);
+    notifyListeners();
+    await _persist();
+    return conversation;
   }
 
   /// 发送图片消息

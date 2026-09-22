@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
+import '../utils/avatar_picker.dart';
 
 /// 用户资料卡编辑页（微信"个人信息"样式）
 class ProfileEditScreen extends StatefulWidget {
@@ -42,19 +43,43 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     super.dispose();
   }
 
-  Future<void> _pickAvatar() async {
-    final picker = ImagePicker();
-    final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 500,
-      maxHeight: 500,
-      imageQuality: 85,
-    );
-    if (file == null || !mounted) return;
-    final bytes = await file.readAsBytes();
+  Future<void> _pickAvatar({ImageSource source = ImageSource.gallery}) async {
+    final b64 = await pickAndCropAvatarBase64(context, source: source);
+    if (b64 == null || !mounted) return;
     setState(() {
-      _newAvatarBase64 = base64Encode(bytes);
+      _newAvatarBase64 = b64;
     });
+  }
+
+  void _showAvatarSourceSheet() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('更换头像'),
+        message: const Text('选择图片后可裁剪方形区域再应用'),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _pickAvatar(source: ImageSource.gallery);
+            },
+            child: const Text('从相册选择'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _pickAvatar(source: ImageSource.camera);
+            },
+            child: const Text('拍照'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('取消'),
+        ),
+      ),
+    );
   }
 
   /// 性别选择（底部弹层，微信样式）
@@ -237,7 +262,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     ),
                   ],
                 ),
-                onTap: _pickAvatar,
+                onTap: () => _showAvatarSourceSheet(),
               ),
               CupertinoListTile(
                 title: const Text('昵称'),

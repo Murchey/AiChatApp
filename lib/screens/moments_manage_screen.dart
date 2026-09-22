@@ -7,6 +7,7 @@ import '../models/character.dart';
 import '../models/moments_pack_entry.dart';
 import '../providers/character_provider.dart';
 import '../services/character_pack_service.dart';
+import '../utils/character_search.dart';
 import '../utils/conversation_relink.dart';
 import '../utils/file_picker_helper.dart';
 import '../widgets/character_avatar.dart';
@@ -25,6 +26,33 @@ class MomentsManageScreen extends StatefulWidget {
 class _MomentsManageScreenState extends State<MomentsManageScreen> {
   final Set<String> _selected = {};
   bool _busy = false; // 正在解析/导出中
+
+  // 搜索状态：右上角放大镜开启后在导航栏下方展示搜索框
+  final TextEditingController _searchController = TextEditingController();
+  bool _searching = false;
+  String _keyword = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searching = !_searching;
+      if (!_searching) {
+        _searchController.clear();
+        _keyword = '';
+      }
+    });
+  }
+
+  void _onSearchChanged(String value) {
+    final kw = value.trim();
+    if (kw == _keyword) return;
+    setState(() => _keyword = kw);
+  }
 
   List<Character> get _selectedCharacters {
     final provider = context.read<CharacterProvider>();
@@ -142,20 +170,27 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
     );
   }
 
-  /// 导出选中的角色为 zip 朋友圈数据包
+  /// 导出选中的角色为 zip 朋友圈数据包（系统保存对话框选择位置）
   Future<void> _exportSelected() async {
     final list = _selectedCharacters;
     if (list.isEmpty || _busy) return;
     setState(() => _busy = true);
     try {
-      final path = await CharacterPackService.exportMomentsPack(list);
+      final packed = await CharacterPackService.encodeMomentsPack(list);
       if (!mounted) return;
+      final savedName = await FilePickerHelper.saveFile(
+        suggestedName: packed.fileName,
+        mimeType: 'application/zip',
+        bytes: packed.bytes,
+      );
+      if (!mounted) return;
+      if (savedName == null) return; // 用户取消保存
       showCupertinoDialog(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
           title: const Text('导出成功'),
           content: Text(
-            '已将 ${list.length} 个角色的朋友圈打包为 zip，可分享给他人：\n\n$path',
+            '已将 ${list.length} 个角色的朋友圈打包并保存为：\n\n$savedName',
           ),
           actions: [
             CupertinoDialogAction(
@@ -239,19 +274,28 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
     final provider = context.watch<CharacterProvider>();
     // 列表最上方固定显示"自己"的朋友圈，其余角色按通讯录顺序排列
     final self = provider.selfCharacter;
-    final momentsCharacters = <Character>[
+    final withMoments = <Character>[
       if (self != null && self.moments.isNotEmpty) self,
       ...provider.characters.where((c) =>
           c.moments.isNotEmpty && c.id != CharacterProvider.selfCharacterId),
     ];
+    // 搜索过滤：命中昵称/备注/签名等，或昵称拼音
+    final query = _keyword.toLowerCase();
+    final momentsCharacters = query.isEmpty
+        ? withMoments
+        : withMoments.where((c) => characterMatchesQuery(c, query)).toList();
     final selectedCount = _selected.length;
+    final canSelectAll = momentsCharacters.isNotEmpty &&
+        selectedCount < momentsCharacters.length;
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('管理朋友圈'),
-        trailing: momentsCharacters.isNotEmpty &&
-                selectedCount < momentsCharacters.length
-            ? CupertinoButton(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (canSelectAll) ...[
+              CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: () {
                   setState(() {
@@ -261,44 +305,74 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
                   });
                 },
                 child: const Text('全选'),
-              )
-            : null,
+              ),
+              const SizedBox(width: 12),
+            ],
+            _searching
+                ? CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _toggleSearch,
+                    child: const Text('取消'),
+                  )
+                : CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _toggleSearch,
+                    child: Icon(
+                      CupertinoIcons.search,
+                      size: 22,
+                      color: context.accentColor,
+                    ),
+                  ),
+          ],
+        ),
       ),
       child: Column(
         children: [
-          // 导入朋友圈数据包入口
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const SizedBox.shrink(),
-            children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.archivebox,
-                  color: context.accentColor,
-                ),
-                title: const Text('导入朋友圈数据包'),
-                subtitle: Text(
-                  '从 zip 文件导入朋友圈数据',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: _busy
-                    ? const CupertinoActivityIndicator()
-                    : Icon(
-                        CupertinoIcons.chevron_right,
-                        size: 16,
-                        color: context.textSecondaryColor,
-                      ),
-                onTap: _pickAndImportPack,
+          // 搜索框（仅搜索状态显示，输入即过滤下方列表）
+          if (_searching)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: CupertinoSearchTextField(
+                controller: _searchController,
+                autofocus: true,
+                placeholder: '搜索角色（支持中文或拼音）',
+                onChanged: _onSearchChanged,
               ),
-            ],
-          ),
+            ),
+          // 导入朋友圈数据包入口（搜索时隐藏，让结果更聚焦）
+          if (!_searching)
+            CupertinoListSection.insetGrouped(
+              backgroundColor: context.scaffoldColor,
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              header: const SizedBox.shrink(),
+              children: [
+                CupertinoListTile(
+                  leading: Icon(
+                    CupertinoIcons.archivebox,
+                    color: context.accentColor,
+                  ),
+                  title: const Text('导入朋友圈数据包'),
+                  subtitle: Text(
+                    '从 zip 文件导入朋友圈数据',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  trailing: _busy
+                      ? const CupertinoActivityIndicator()
+                      : Icon(
+                          CupertinoIcons.chevron_right,
+                          size: 16,
+                          color: context.textSecondaryColor,
+                        ),
+                  onTap: _pickAndImportPack,
+                ),
+              ],
+            ),
           // 角色列表（仅展示已有朋友圈的角色，可勾选）
           Expanded(
             child: momentsCharacters.isEmpty
@@ -306,7 +380,9 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 40),
                       child: Text(
-                        '暂无朋友圈数据，点击上方「导入朋友圈数据包」导入',
+                        query.isNotEmpty
+                            ? '未找到匹配的角色'
+                            : '暂无朋友圈数据，点击上方「导入朋友圈数据包」导入',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 14,

@@ -5,6 +5,33 @@ import 'package:flutter/foundation.dart';
 import '../models/sticker_pack.dart';
 import '../providers/api_provider.dart';
 
+/// 模型思考强度：映射到 reasoning_effort / enable_thinking（视模型支持情况）。
+///
+/// 兼容说明（OpenAI 兼容网关上常见）：
+/// - 默认：不附加任何字段，用模型/网关默认（兼容性最好）
+/// - 关闭：`enable_thinking: false`（Qwen / 混元 / 部分兼容层）
+/// - 低/高/极高：`reasoning_effort`（OpenAI / DeepSeek / Kimi / GLM 等）+ `enable_thinking: true`
+///   「极高」对应 `xhigh`（部分模型写为 max / ultrahigh，不支持时网关可能忽略或报错）
+enum ModelThinkingLevel { off, low, defaultLevel, high, xhigh }
+
+extension ModelThinkingLevelX on ModelThinkingLevel {
+  String get displayName => switch (this) {
+        ModelThinkingLevel.off => '关闭',
+        ModelThinkingLevel.low => '低',
+        ModelThinkingLevel.defaultLevel => '默认',
+        ModelThinkingLevel.high => '高',
+        ModelThinkingLevel.xhigh => '极高',
+      };
+
+  String get description => switch (this) {
+        ModelThinkingLevel.off => '关闭深度思考，回复更快',
+        ModelThinkingLevel.low => '少量思考，适合日常闲聊',
+        ModelThinkingLevel.defaultLevel => '使用模型默认思考设置（推荐）',
+        ModelThinkingLevel.high => '更深入思考，可能更慢、更耗 token',
+        ModelThinkingLevel.xhigh => '极限思考（xhigh），最慢、最耗 token，部分模型不支持',
+      };
+}
+
 /// 主动消息系统 - LLM 服务层
 ///
 /// 封装 API 调用与响应容错解析：
@@ -14,6 +41,40 @@ import '../providers/api_provider.dart';
 class LLMService {
   static const String defaultBaseUrl = 'https://api.deepseek.com';
   static const List<String> _fallbackMessages = ['（网络开小差了，等下再聊）'];
+
+  /// 当前思考强度（由聊天设置同步）；写入请求体的兼容字段。
+  static ModelThinkingLevel thinkingLevel = ModelThinkingLevel.defaultLevel;
+
+  /// 按思考强度生成请求体附加字段。
+  ///
+  /// 尽量兼容 MiMo / Qwen / DeepSeek / Grok / Gemini / GPT / GLM / Kimi / 混元
+  /// 等 OpenAI 兼容网关：默认不附加；显式档位时同时带
+  /// `reasoning_effort`（OpenAI 系）与 `enable_thinking`（Qwen/混元系），
+  /// 不认识的字段通常会被忽略。
+  static Map<String, Object> thinkingRequestFields() {
+    switch (thinkingLevel) {
+      case ModelThinkingLevel.off:
+        return const {'enable_thinking': false};
+      case ModelThinkingLevel.low:
+        return const {
+          'enable_thinking': true,
+          'reasoning_effort': 'low',
+        };
+      case ModelThinkingLevel.defaultLevel:
+        return const {};
+      case ModelThinkingLevel.high:
+        return const {
+          'enable_thinking': true,
+          'reasoning_effort': 'high',
+        };
+      case ModelThinkingLevel.xhigh:
+        // 部分模型/网关识别 xhigh；不支持时可能忽略或 400，可改回「默认」
+        return const {
+          'enable_thinking': true,
+          'reasoning_effort': 'xhigh',
+        };
+    }
+  }
 
   /// 会话压缩的 System Prompt：将较早的聊天记录压缩为一段摘要
   static const String kCompressSystemPrompt =
@@ -113,7 +174,12 @@ class LLMService {
     final result =
         roleplayMode ? parseRoleplayMessage(raw) : parseMessages(raw);
     debugPrint('[LLMService] 解析结果(${result.length}条): $result');
-    return ProactiveResult(result, completion.usage);
+    return ProactiveResult(
+      result,
+      completion.usage,
+      reasoningContent: completion.reasoningContent,
+      reasoningDurationMs: completion.reasoningDurationMs,
+    );
   }
 
   /// 为语C正文回复提供 4 个可继续推进剧情的候选行动。
@@ -123,9 +189,18 @@ class LLMService {
     required String systemPrompt,
     required List<Map<String, String>> historyMessages,
   }) async {
-    const instruction = '【系统指令】基于当前语C剧情，给用户提供恰好 4 个可选的下一步行动或台词。'
-        '每项简洁具体，保持当前角色、场景与剧情连续；不要替用户决定结果。'
-        '只输出 JSON 字符串数组，例如：["选项1","选项2","选项3","选项4"]，不要输出其他内容。';
+    const instruction = '【系统指令】基于当前语C剧情，给用户提供恰好 4 个可选的下一步行动或台词。\n'
+        '要求：\n'
+        '1. 每一条都必须是用户可以直接发出的具体内容（完整台词，或「（动作）台词」式行动），'
+        '点一下就能发进聊天，不要概括、不要抽象标签。\n'
+        '2. 禁止「关心对方」「继续询问」「转移话题」这类概括；'
+        '要写成具体话或具体动作。\n'
+        '3. 四条尽量方向不同（如：靠近 / 试探 / 拒绝 / 旁敲侧击），但每条都仍要具体。\n'
+        '4. 不要替用户决定结果，不要写对方的反应。\n'
+        '示例（好）：「你最近是不是瞒着我什么？」'
+        '「（不动声色地把茶杯推近）先喝口热的。」\n'
+        '示例（坏）：「询问对方」「表达关心」「继续对话」。\n'
+        '只输出 JSON 字符串数组，例如：["台词或行动1","台词或行动2","台词或行动3","台词或行动4"]，不要输出其他内容。';
     final completion = await _fetchWithKimiFallback(
       model: model,
       messages: [
@@ -135,6 +210,60 @@ class LLMService {
       ],
       maxTokens: 400,
       initialTemperature: 0.7,
+    );
+    return ProactiveResult(
+      parseMessages(completion.content).take(4).toList(),
+      completion.usage,
+    );
+  }
+
+  /// 剧情建议：基于当前聊天上下文（可附用户补充）生成可直接填入输入框的建议。
+  /// 语C / 短信通用；建议写成用户可以直接发出的内容，用来指导 AI 继续推进对话。
+  /// 不会写入聊天记录。
+  static Future<ProactiveResult> generatePlotSuggestions({
+    required ApiModel model,
+    required String systemPrompt,
+    required List<Map<String, String>> historyMessages,
+    String userSupplement = '',
+    bool roleplayMode = false,
+  }) async {
+    final supplement = userSupplement.trim();
+    final supplementBlock = supplement.isEmpty
+        ? ''
+        : '\n\n用户的补充（必须融入建议，不可忽略）：\n$supplement';
+    final instruction = (roleplayMode
+            ? '【系统指令】你是剧情导演，不是角色本人。基于当前语C剧情，'
+                '给用户提供恰好 3 条剧情建议，帮用户决定下一步怎么推进故事，'
+                '用户选一条发出后即可指导 AI 沿该方向继续聊天。\n'
+                '要求：\n'
+                '1. 每条建议都是用户可以直接发出的内容：完整台词，或「（动作）台词」式剧情行动。\n'
+                '2. 三条方向不同（如：推进主线 / 拉近关系 / 制造冲突），但都要具体、可发送。\n'
+                '3. 不要替用户决定结果，不要写对方的反应。\n'
+                '示例（好）：「（把密信推到桌上）这封信是谁送来的？」'
+                '「我今晚就走，你别拦我。」\n'
+                '示例（坏）：「推进主线」「继续发展关系」。\n'
+                '只输出 JSON 字符串数组，例如：["建议1","建议2","建议3"]，不要输出其他内容。'
+            : '【系统指令】你是对话剧情顾问，不是聊天对方。基于当前聊天记录，'
+                '给用户提供恰好 3 条剧情建议，帮用户想好下一句怎么回，'
+                '用户选一条发出后即可指导 AI 沿该方向继续聊下去。\n'
+                '要求：\n'
+                '1. 每条建议都是用户可以直接发出的消息内容（口语、符合当前聊天氛围）。\n'
+                '2. 三条方向不同（如：顺着话题深入 / 抛出新话题 / 暗示下一步安排），但都要具体、可发送。\n'
+                '3. 不要写对方的回复，禁止「继续聊」「关心对方」这类概括标签。\n'
+                '示例（好）：「刚下班，今天那家店还开着吗？」'
+                '「上次你说的事，后来怎么样了？」\n'
+                '示例（坏）：「继续话题」「询问近况」。\n'
+                '只输出 JSON 字符串数组，例如：["建议1","建议2","建议3"]，不要输出其他内容。') +
+        supplementBlock;
+    final completion = await _fetchWithKimiFallback(
+      model: model,
+      messages: [
+        {'role': 'system', 'content': systemPrompt},
+        ...historyMessages,
+        {'role': 'user', 'content': instruction},
+      ],
+      maxTokens: 600,
+      initialTemperature: 0.8,
     );
     return ProactiveResult(
       parseMessages(completion.content).take(4).toList(),
@@ -189,7 +318,12 @@ class LLMService {
     final result =
         roleplayMode ? parseRoleplayMessage(raw) : parseMessages(raw);
     debugPrint('[LLMService] 解析结果(${result.length}条): $result');
-    return ProactiveResult(result, completion.usage);
+    return ProactiveResult(
+      result,
+      completion.usage,
+      reasoningContent: completion.reasoningContent,
+      reasoningDurationMs: completion.reasoningDurationMs,
+    );
   }
 
   /// 按文件扩展名推断图片 MIME（OpenAI 视觉格式要求 data URL 带类型）
@@ -242,6 +376,7 @@ class LLMService {
         'stream_options': {'include_usage': true},
         'max_tokens': maxTokens,
         'temperature': temperature,
+        ...thinkingRequestFields(),
       })));
       final response =
           await request.close().timeout(const Duration(seconds: 60));
@@ -256,7 +391,9 @@ class LLMService {
         final data = line.substring(5).trim();
         if (data == '[DONE]') break;
         final chunk = parseStreamChunk(data);
-        if (chunk.content.isNotEmpty || !chunk.usage.isEmpty) yield chunk;
+        if (chunk.content.isNotEmpty || chunk.reasoning.isNotEmpty || !chunk.usage.isEmpty) {
+        yield chunk;
+      }
       }
     } finally {
       client.close(force: true);
@@ -273,13 +410,29 @@ class LLMService {
           ? null
           : (choices.first as Map<String, dynamic>)['delta']
               as Map<String, dynamic>?;
+      final reasoning = _extractReasoning(delta) ??
+          _extractReasoning(choices.isEmpty
+              ? null
+              : (choices.first as Map<String, dynamic>)['message']
+                  as Map<String, dynamic>?) ??
+          _extractReasoning(decoded) ??
+          '';
       return StreamCompletionChunk(
         content: delta?['content'] as String? ?? '',
         usage: _parseUsage(decoded),
+        reasoning: reasoning,
       );
     } catch (_) {
       return const StreamCompletionChunk();
     }
+  }
+
+  /// 从 message/delta 中提取思考过程（DeepSeek reasoning_content，部分网关 reasoning）。
+  static String? _extractReasoning(Map<String, dynamic>? map) {
+    if (map == null) return null;
+    final v = map['reasoning_content'] ?? map['reasoning'];
+    if (v is String) return v;
+    return null;
   }
 
   /// 失败抛出 [LLMException]。
@@ -338,6 +491,7 @@ class LLMService {
     required bool jsonMode,
   }) async {
     final client = HttpClient();
+    final stopwatch = Stopwatch()..start();
     try {
       final request = await client
           .postUrl(Uri.parse(url))
@@ -354,6 +508,7 @@ class LLMService {
         'max_tokens': maxTokens,
         if (temperature != null) 'temperature': temperature,
         if (jsonMode) 'response_format': {'type': 'json_object'},
+        ...thinkingRequestFields(),
       })));
 
       final response =
@@ -364,6 +519,7 @@ class LLMService {
           .transform(utf8.decoder)
           .join()
           .timeout(const Duration(seconds: 60));
+      stopwatch.stop();
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(body) as Map<String, dynamic>;
@@ -373,9 +529,16 @@ class LLMService {
         }
         final message = (choices.first as Map<String, dynamic>)['message']
             as Map<String, dynamic>?;
+        final reasoning = _extractReasoning(message) ?? '';
+        final content = message?['content'] as String? ?? '';
+        // 无思考内容时不记录时长，避免把纯正文耗时误标成思考
+        final durationMs =
+            reasoning.trim().isEmpty ? null : stopwatch.elapsedMilliseconds;
         return CompletionResult(
-          message?['content'] as String? ?? '',
+          content,
           _parseUsage(decoded),
+          reasoningContent: reasoning,
+          reasoningDurationMs: durationMs,
         );
       }
 
@@ -389,6 +552,7 @@ class LLMService {
       } catch (_) {}
       throw LLMException('API 请求失败：$errorMessage');
     } finally {
+      stopwatch.stop();
       client.close(force: true);
     }
   }
@@ -1030,7 +1194,29 @@ class LLMService {
       promptTokens: _usageInt(usage['prompt_tokens']),
       completionTokens: _usageInt(usage['completion_tokens']),
       totalTokens: _usageInt(usage['total_tokens']),
+      reasoningTokens: parseReasoningTokens(usage),
     );
+  }
+
+  /// 从 usage 中解析思考 token（OpenAI: completion_tokens_details.reasoning_tokens）。
+  /// 字段缺失或无法解析时返回 null，由调用方按正文估算。
+  static int? parseReasoningTokens(Map<String, dynamic> usage) {
+    final details = usage['completion_tokens_details'];
+    if (details is Map<String, dynamic>) {
+      return _usageInt(details['reasoning_tokens']);
+    }
+    return null;
+  }
+
+  /// 估算思考 token（网关未返回 reasoning_tokens 时使用）。
+  static int estimateReasoningTokens(String reasoning) {
+    if (reasoning.trim().isEmpty) return 0;
+    // 与 ChatProvider 文本估算同口径：英文词 ≈ token，中文按字
+    final en = RegExp(r'[A-Za-z0-9]+').allMatches(reasoning).length;
+    final cjk = reasoning.runes.where((r) {
+      return (r >= 0x2E80 && r <= 0x9FFF) || (r >= 0xF900 && r <= 0xFAFF);
+    }).length;
+    return en + cjk;
   }
 
   static int? _usageInt(dynamic v) {
@@ -1164,10 +1350,16 @@ class StreamCompletionChunk {
   final String content;
   final ChatUsage usage;
 
+  /// 思考过程增量（reasoning_content / reasoning）
+  final String reasoning;
+
   const StreamCompletionChunk({
     this.content = '',
     this.usage = const ChatUsage(),
+    this.reasoning = '',
   });
+
+  bool get isEmpty => content.isEmpty && reasoning.isEmpty && usage.isEmpty;
 }
 
 /// 一次对话补全的 token 用量（来自 API 响应 usage 字段；字段缺失为 null）
@@ -1176,26 +1368,54 @@ class ChatUsage {
   final int? completionTokens; // 输出：AI 思考过程 + 最终回复
   final int? totalTokens; // prompt + completion
 
+  /// 思考过程 token（通常已含在 completionTokens 内）。
+  /// 优先取 API 的 completion_tokens_details.reasoning_tokens。
+  final int? reasoningTokens;
+
   const ChatUsage({
     this.promptTokens,
     this.completionTokens,
     this.totalTokens,
+    this.reasoningTokens,
   });
 
   bool get isEmpty =>
-      promptTokens == null && completionTokens == null && totalTokens == null;
+      promptTokens == null &&
+      completionTokens == null &&
+      totalTokens == null &&
+      reasoningTokens == null;
 }
 
-/// 对话补全结果：回复内容 + 真实 token 用量
+/// 对话补全结果：回复内容 + 真实 token 用量 + 思考过程
 class CompletionResult {
   final String content;
   final ChatUsage usage;
-  const CompletionResult(this.content, this.usage);
+
+  /// 思考过程原文（可能为空）
+  final String reasoningContent;
+
+  /// 思考耗时（毫秒），无思考时为 null
+  final int? reasoningDurationMs;
+
+  const CompletionResult(
+    this.content,
+    this.usage, {
+    this.reasoningContent = '',
+    this.reasoningDurationMs,
+  });
 }
 
-/// 角色回复结果：解析出的消息列表 + 本次请求的 token 用量
+/// 角色回复结果：解析出的消息列表 + 本次请求的 token 用量 + 思考过程
 class ProactiveResult {
   final List<String> messages;
   final ChatUsage usage;
-  const ProactiveResult(this.messages, this.usage);
+  final String reasoningContent;
+  final int? reasoningDurationMs;
+
+  const ProactiveResult(
+    this.messages,
+    this.usage, {
+    this.reasoningContent = '',
+    this.reasoningDurationMs,
+  });
 }

@@ -25,6 +25,7 @@ class ChatRecordsService {
   static Future<Uint8List> buildExportZip({
     required String characterName,
     required List<Message> messages,
+    bool includeReasoning = false,
   }) async {
     final archive = Archive();
     final exported = <Map<String, dynamic>>[];
@@ -47,6 +48,10 @@ class ChatRecordsService {
         'sticker_label': m.stickerLabel,
         'sticker_source': m.stickerSource,
       };
+      if (includeReasoning && m.hasReasoning) {
+        data['reasoning_content'] = m.reasoningContent;
+        data['reasoning_duration_ms'] = m.reasoningDurationMs;
+      }
       if (m.isForwardCard) {
         data['forwarded_items'] =
             m.forwardedItems.map((e) => e.toJson()).toList();

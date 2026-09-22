@@ -8,7 +8,9 @@ import '../providers/character_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../services/character_pack_service.dart';
 import '../utils/character_pack_picker.dart';
+import '../utils/character_search.dart';
 import '../utils/conversation_relink.dart';
+import '../utils/file_picker_helper.dart';
 import '../widgets/character_avatar.dart';
 import 'chat_detail_screen.dart';
 import 'character_import_screen.dart';
@@ -24,6 +26,33 @@ class CharacterManageScreen extends StatefulWidget {
 class _CharacterManageScreenState extends State<CharacterManageScreen> {
   final Set<String> _selected = {};
   bool _busy = false; // 正在解析/导出中
+
+  // 搜索状态：右上角放大镜开启后在导航栏下方展示搜索框
+  final TextEditingController _searchController = TextEditingController();
+  bool _searching = false;
+  String _keyword = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searching = !_searching;
+      if (!_searching) {
+        _searchController.clear();
+        _keyword = '';
+      }
+    });
+  }
+
+  void _onSearchChanged(String value) {
+    final kw = value.trim();
+    if (kw == _keyword) return;
+    setState(() => _keyword = kw);
+  }
 
   List<Character> get _selectedCharacters {
     final provider = context.read<CharacterProvider>();
@@ -107,34 +136,82 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
     const uuid = Uuid();
     var count = 0;
 
-    for (final entry in entries) {
-      if (entry.error != null) continue;
+    final usable = entries
+        .where((e) => e.error == null && e.character.name.trim().isNotEmpty)
+        .toList();
+    final conflicts = usable
+        .where((e) =>
+            provider.findCharacterByName(e.character.name.trim()) != null)
+        .map((e) => e.character.name.trim())
+        .toList();
+
+    // 批量：多个同名时一次确认，避免游戏包里逐个点覆盖
+    var overwriteAll = false;
+    var skipDuplicates = false;
+    if (conflicts.isNotEmpty) {
+      final choice = await showCupertinoDialog<String>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('已有同名角色'),
+          content: Text(
+            '有 ${conflicts.length} 个角色与本地重名：\n'
+            '${conflicts.length <= 6 ? conflicts.join('、') : '${conflicts.take(6).join('、')} 等'}\n\n'
+            '覆盖会替换资料与提示词，聊天记录保留。',
+            textAlign: TextAlign.left,
+            style: const TextStyle(fontSize: 13, height: 1.45),
+          ),
+          actions: [
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, 'cancel'),
+              child: const Text('取消'),
+            ),
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, 'skip'),
+              child: const Text('仅导入新角色'),
+            ),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx, 'all'),
+              child: const Text('全部覆盖'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null || choice == 'cancel' || !mounted) return;
+      overwriteAll = choice == 'all';
+      skipDuplicates = choice == 'skip';
+    }
+
+    for (final entry in usable) {
       final name = entry.character.name.trim();
-      if (name.isEmpty) continue;
 
       // 检查是否重名
       final existing = provider.findCharacterByName(name);
       if (existing != null) {
-        // 重名：弹窗确认覆盖
-        final overwrite = await showCupertinoDialog<bool>(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text('角色已存在'),
-            content: Text('已存在名为「$name」的角色，是否覆盖？'),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('跳过'),
-                onPressed: () => Navigator.pop(ctx, false),
-              ),
-              CupertinoDialogAction(
-                isDefaultAction: true,
-                child: const Text('覆盖'),
-                onPressed: () => Navigator.pop(ctx, true),
-              ),
-            ],
-          ),
-        );
-        if (overwrite != true || !mounted) continue;
+        if (skipDuplicates) continue;
+        if (!overwriteAll) {
+          // 仅剩单个冲突等场景：仍可逐个确认
+          final overwrite = await showCupertinoDialog<bool>(
+            context: context,
+            builder: (ctx) => CupertinoAlertDialog(
+              title: const Text('角色已存在'),
+              content: Text('已存在名为「$name」的角色，是否覆盖？'),
+              actions: [
+                CupertinoDialogAction(
+                  child: const Text('跳过'),
+                  onPressed: () => Navigator.pop(ctx, false),
+                ),
+                CupertinoDialogAction(
+                  isDefaultAction: true,
+                  child: const Text('覆盖'),
+                  onPressed: () => Navigator.pop(ctx, true),
+                ),
+              ],
+            ),
+          );
+          if (overwrite != true || !mounted) continue;
+        }
 
         // 覆盖：保留原 id，替换资料
         final json = entry.character.toJson()
@@ -172,7 +249,7 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
     _showTip(count > 0 ? '成功导入 $count 个角色' : '未导入任何角色');
   }
 
-  /// 导出选中的角色为 zip 角色包
+  /// 导出选中的角色为 zip 角色包（系统保存对话框选择位置）
   Future<void> _exportSelected() async {
     final list = _selectedCharacters;
     if (list.isEmpty || _busy) return;
@@ -183,18 +260,23 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
       final memoryByCharacter = {
         for (final c in list) c.id: memoryProvider.pointsFor(c.id),
       };
-      final path = await CharacterPackService.exportPack(
+      final packed = await CharacterPackService.encodeCharacterPack(
         list,
         memoryByCharacter: memoryByCharacter,
       );
       if (!mounted) return;
+      final savedName = await FilePickerHelper.saveFile(
+        suggestedName: packed.fileName,
+        mimeType: 'application/zip',
+        bytes: packed.bytes,
+      );
+      if (!mounted) return;
+      if (savedName == null) return; // 用户取消保存
       showCupertinoDialog(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
           title: const Text('导出成功'),
-          content: Text(
-            '已将 ${list.length} 个角色打包为 zip，可分享给他人：\n\n$path',
-          ),
+          content: Text('已将 ${list.length} 个角色打包并保存为：\n\n$savedName'),
           actions: [
             CupertinoDialogAction(
               isDefaultAction: true,
@@ -301,76 +383,115 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
   Widget build(BuildContext context) {
     final provider = context.watch<CharacterProvider>();
     final hasSelection = _selected.isNotEmpty;
+    // 搜索过滤：命中昵称/备注/签名等，或昵称拼音
+    final query = _keyword.toLowerCase();
+    final all = provider.manageableCharacters;
+    final characters = query.isEmpty
+        ? all
+        : all.where((c) => characterMatchesQuery(c, query)).toList();
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('管理角色'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _addCustomCharacter,
-          child: Text(
-            '添加',
-            style: TextStyle(
-              color: context.accentColor,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
+        trailing: _searching
+            ? CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: _toggleSearch,
+                child: const Text('取消'),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _toggleSearch,
+                    child: Icon(
+                      CupertinoIcons.search,
+                      size: 22,
+                      color: context.accentColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _addCustomCharacter,
+                    child: Text(
+                      '添加',
+                      style: TextStyle(
+                        color: context.accentColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
       ),
       child: Column(
         children: [
-          // 导入角色包入口
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const SizedBox.shrink(),
-            children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.archivebox,
-                  color: context.accentColor,
-                ),
-                title: const Text('导入角色包'),
-                subtitle: Text(
-                  '从 zip 文件导入角色',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: _busy
-                    ? const CupertinoActivityIndicator()
-                    : Icon(
-                        CupertinoIcons.chevron_right,
-                        size: 16,
-                        color: context.textSecondaryColor,
-                      ),
-                onTap: _pickAndImportPack,
+          // 搜索框（仅搜索状态显示，输入即过滤下方列表）
+          if (_searching)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: CupertinoSearchTextField(
+                controller: _searchController,
+                autofocus: true,
+                placeholder: '搜索角色（支持中文或拼音）',
+                onChanged: _onSearchChanged,
               ),
-            ],
-          ),
+            ),
+          // 导入角色包入口（搜索时隐藏，让结果更聚焦）
+          if (!_searching)
+            CupertinoListSection.insetGrouped(
+              backgroundColor: context.scaffoldColor,
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              header: const SizedBox.shrink(),
+              children: [
+                CupertinoListTile(
+                  leading: Icon(
+                    CupertinoIcons.archivebox,
+                    color: context.accentColor,
+                  ),
+                  title: const Text('导入角色包'),
+                  subtitle: Text(
+                    '从 zip 文件导入角色',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  trailing: _busy
+                      ? const CupertinoActivityIndicator()
+                      : Icon(
+                          CupertinoIcons.chevron_right,
+                          size: 16,
+                          color: context.textSecondaryColor,
+                        ),
+                  onTap: _pickAndImportPack,
+                ),
+              ],
+            ),
           // 角色列表（不含固定的"自己"账号）
           Expanded(
-            child: provider.manageableCharacters.isEmpty
+            child: characters.isEmpty
                 ? Center(
                     child: Text(
-                      '暂无角色',
+                      query.isEmpty ? '暂无角色' : '未找到匹配的角色',
                       style: TextStyle(color: context.textSecondaryColor),
                     ),
                   )
                 : ListView.separated(
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: provider.manageableCharacters.length,
+                    itemCount: characters.length,
                     separatorBuilder: (context, index) => Container(
                       height: 0.5,
                       margin: const EdgeInsets.only(left: 100),
                       color: context.separatorColor,
                     ),
                     itemBuilder: (context, index) {
-                      final character = provider.manageableCharacters[index];
+                      final character = characters[index];
                       final isSelected = _selected.contains(character.id);
                       final subtitle = character.signature.isEmpty
                           ? (character.description.isEmpty
