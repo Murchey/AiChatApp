@@ -28,11 +28,125 @@ void showUpdateAvailableDialog(
   UpdateInfo info, {
   required String proxyUrl,
 }) {
-  showCupertinoDialog(
+  showCupertinoModalPopup(
     context: context,
-    builder: (ctx) => _UpdateAvailableDialog(info: info, proxyUrl: proxyUrl),
+    builder: (ctx) => SafeArea(
+      top: false,
+      child: _UpdatePanelSurface(
+        child: _UpdateAvailableDialog(info: info, proxyUrl: proxyUrl),
+      ),
+    ),
   );
 }
+
+/// Vellum 风格的底部提示面板：圆角、拖拽条、滚动 Markdown 与底部操作。
+Future<void> showMarkdownUpdatePanel(
+  BuildContext context, {
+  required String title,
+  required String body,
+  String footer = '',
+}) => showCupertinoModalPopup<void>(
+  context: context,
+  builder: (ctx) => SafeArea(
+    top: false,
+    child: _UpdatePanelSurface(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _UpdatePanelHeader(title: title),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: MarkdownBody(
+                data: body,
+                styleSheet: _markdownStyle(ctx),
+              ),
+            ),
+          ),
+          if (footer.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Text(
+                footer,
+                style: TextStyle(fontSize: 12, color: ctx.textSecondaryColor),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: CupertinoButton.filled(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('知道了'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  ),
+);
+
+class _UpdatePanelSurface extends StatelessWidget {
+  const _UpdatePanelSurface({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * .76,
+          minHeight: 340,
+        ),
+        decoration: BoxDecoration(
+          color: context.listBgColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          border: Border.all(color: context.separatorColor),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      );
+}
+
+class _UpdatePanelHeader extends StatelessWidget {
+  const _UpdatePanelHeader({required this.title});
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 38,
+            height: 4,
+            decoration: BoxDecoration(
+              color: context.separatorColor,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title,
+                style: TextStyle(
+                  color: context.textPrimaryColor,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+}
+
+MarkdownStyleSheet _markdownStyle(BuildContext context) => MarkdownStyleSheet(
+      p: TextStyle(fontSize: 14, height: 1.5, color: context.textPrimaryColor),
+      h1: TextStyle(fontSize: 20, color: context.textPrimaryColor),
+      h2: TextStyle(fontSize: 17, color: context.textPrimaryColor),
+      h3: TextStyle(fontSize: 15, color: context.textPrimaryColor),
+      listBullet: TextStyle(color: context.textPrimaryColor),
+      blockquote: TextStyle(color: context.textSecondaryColor),
+    );
 
 class _UpdateAvailableDialog extends StatefulWidget {
   final UpdateInfo info;
@@ -95,9 +209,15 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
   @override
   Widget build(BuildContext context) {
     final both = _giteeAvailable && _githubAvailable;
-    return CupertinoAlertDialog(
-      title: Text('发现新版本 V${_info.latestVersion}'),
-      content: Column(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _UpdatePanelHeader(title: '发现新版本 V${_info.latestVersion}'),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+            child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -125,19 +245,23 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
 
           // ABI 选择区域
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
             decoration: BoxDecoration(
-              color: CupertinoColors.systemGrey6,
+              color: context.fieldBgColor,
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: context.separatorColor),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text(
+                Text(
                   '安装包类型：',
                   style: TextStyle(
-                      fontSize: 13, color: CupertinoColors.systemGrey),
+                    fontSize: 13,
+                    color: context.textSecondaryColor,
+                  ),
                 ),
+                const Spacer(),
                 GestureDetector(
                   onTap: () => _showAbiPicker(context),
                   child: Row(
@@ -145,17 +269,17 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
                     children: [
                       Text(
                         _selectedAbi,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: CupertinoColors.activeBlue,
+                          color: context.accentColor,
                         ),
                       ),
                       const SizedBox(width: 4),
-                      const Icon(
+                      Icon(
                         CupertinoIcons.chevron_down,
                         size: 14,
-                        color: CupertinoColors.activeBlue,
+                        color: context.accentColor,
                       ),
                     ],
                   ),
@@ -185,12 +309,21 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
               },
             )
           else
-            Text(
-              _giteeAvailable ? 'Gitee（推荐）' : 'GitHub',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: context.textPrimaryColor,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: context.fieldBgColor,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: context.separatorColor),
+              ),
+              child: Text(
+                _giteeAvailable ? 'Gitee（推荐）' : 'GitHub',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: context.textPrimaryColor,
+                ),
               ),
             ),
           // 选择 GitHub 源时显示"是否使用内置代理下载"复选框；
@@ -229,39 +362,64 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
           ],
         ],
       ),
-      actions: [
-        CupertinoDialogAction(
-          onPressed: () async {
-            // 记住忽略该版本，下次启动不再弹出
-            await UpdateService.ignoreVersion(_info.latestVersion);
-            if (context.mounted) Navigator.pop(context);
-          },
-          child: const Text('不再提醒（仅本版本）'),
-        ),
-        CupertinoDialogAction(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        CupertinoDialogAction(
-          isDefaultAction: true,
-          onPressed: () {
-            Navigator.pop(context);
-            showCupertinoDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (_) => _DownloadDialog(
-                info: _info,
-                source: _source,
-                proxyUrl: widget.proxyUrl,
-                useProxy: _useProxy,
-                selectedAbi: _selectedAbi,
+      ),
+    ),
+    const SizedBox(height: 4),
+    Container(height: 0.5, color: context.separatorColor),
+    Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CupertinoButton.filled(
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            onPressed: () {
+              Navigator.pop(context);
+              showCupertinoModalPopup(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => SafeArea(
+                  top: false,
+                  child: _UpdatePanelSurface(
+                    child: _DownloadDialog(
+                      info: _info,
+                      source: _source,
+                      proxyUrl: widget.proxyUrl,
+                      useProxy: _useProxy,
+                      selectedAbi: _selectedAbi,
+                    ),
+                  ),
+                ),
+              );
+            },
+            child: const Text('立即更新'),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: CupertinoButton(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  onPressed: () async {
+                    await UpdateService.ignoreVersion(_info.latestVersion);
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                  child: const Text('不再提醒'),
+                ),
               ),
-            );
-          },
-          child: const Text('立即更新'),
-        ),
-      ],
-    );
+              Expanded(
+                child: CupertinoButton(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('稍后'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  ],
+);
   }
 }
 
@@ -344,60 +502,68 @@ class _DownloadDialogState extends State<_DownloadDialog> {
   @override
   Widget build(BuildContext context) {
     final percent = (_progress * 100).round();
-    return CupertinoAlertDialog(
-      title: Text(
-        _failed ? '下载失败' : '正在从 $_sourceLabel 下载 V${widget.info.latestVersion}',
-      ),
-      content: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: _failed
-            ? const Text('下载失败，请检查网络或切换下载源后重试')
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: context.separatorColor,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: _progress,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: context.accentColor,
-                          borderRadius: BorderRadius.circular(2),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _UpdatePanelHeader(
+          title: _failed
+              ? '下载失败'
+              : '正在从 $_sourceLabel 下载 V${widget.info.latestVersion}',
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: _failed
+              ? Text(
+                  '下载失败，请检查网络或切换下载源后重试',
+                  style: TextStyle(color: context.textSecondaryColor),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: context.separatorColor,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: _progress,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: context.accentColor,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '$percent%',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: context.textSecondaryColor,
+                    const SizedBox(height: 8),
+                    Text(
+                      '$percent%',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '下载过程中请勿退出后台，避免下载中断；按下系统返回键取消下载。',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: context.textSecondaryColor,
+                    const SizedBox(height: 8),
+                    Text(
+                      '下载过程中请勿退出后台，避免下载中断；按下系统返回键取消下载。',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-      ),
-      actions: [
+                  ],
+                ),
+        ),
         if (_failed)
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(context),
-            child: const Text('确定'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: CupertinoButton.filled(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('确定'),
+            ),
           ),
       ],
     );

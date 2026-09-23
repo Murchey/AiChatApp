@@ -185,6 +185,11 @@ class CharacterPackService {
       greeting: str('greeting'),
       systemPrompt: systemPrompt,
       userRelationship: str('user_relationship'),
+      voiceId: (data['voice'] as Map<String, dynamic>?)?['voice_id'] as String? ??
+          str('voice_id'),
+      voiceInstructions:
+          (data['voice'] as Map<String, dynamic>?)?['instructions'] as String? ??
+              str('voice_instructions'),
       activeStart: str('active_start'),
       activeEnd: str('active_end'),
       modelId: str('model_id'),
@@ -405,6 +410,12 @@ class CharacterPackService {
         'personality': c.personality,
         'greeting': c.greeting,
         'user_relationship': c.userRelationship,
+        if (c.voiceId.isNotEmpty || c.voiceInstructions.isNotEmpty)
+          'voice': {
+            if (c.voiceId.isNotEmpty) 'voice_id': c.voiceId,
+            if (c.voiceInstructions.isNotEmpty)
+              'instructions': c.voiceInstructions,
+          },
         'tags': c.tags,
         // 活跃时段（"HH:mm"，仅写入已设置的字段）
         if (c.activeStart.isNotEmpty) 'active_start': c.activeStart,

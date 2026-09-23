@@ -1,7 +1,7 @@
 name: ai_chat
 description: AiChat - 角色扮演类微信聊天APP
 publish_to: 'none'
-version: 1.5.2
+version: 1.5.3
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -28,6 +28,8 @@ dependencies:
   image: ^4.1.7
   flutter_markdown: ^0.7.7
   xml: ^6.5.0
+  file_picker: ^10.3.8
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:

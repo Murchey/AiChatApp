@@ -1,8 +1,8 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
-import '../models/workshop_asset.dart';
+
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/auto_moment_provider.dart';
@@ -21,6 +21,7 @@ import '../services/workshop_service.dart';
 import '../utils/app_toast.dart';
 import '../widgets/update_dialogs.dart';
 import 'bubble_style_screen.dart';
+import 'bubble_font_screen.dart';
 import 'memory_pool_manager_screen.dart';
 import 'splash_icon_screen.dart';
 import 'storage_manage_screen.dart';
@@ -149,8 +150,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    // 尝试获取 release body / COS Note
-    showAppToast('正在获取仓库更新内容...');
+    // 读取当前所选仓库的真实最新发布 / COS Note，不构造测试文案。
+    showAppToast('正在获取仓库最新更新内容...');
     final String? body;
     final String emptyTip;
     if (notifyRepo.isCos) {
@@ -160,11 +161,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       emptyTip = '未找到 Note/*.md 或内容为空';
     } else {
-      body = await WorkshopService.fetchReleaseBody(
-        notifyRepo.url,
-        kUpdateNotifyTag,
-      );
-      emptyTip = '未找到 V1.2.0 tag 或内容为空';
+      final release = await WorkshopService.fetchLatestRelease(notifyRepo.url);
+      body = release?.body;
+      emptyTip = '未找到最新正式 Release 或内容为空';
     }
 
     if (!mounted) return;
@@ -188,25 +187,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       proxyUrl: settings.updateProxyUrl,
       giteeRepoUrl: settings.updateGiteeRepoUrl,
       githubRepoUrl: settings.updateGitHubRepoUrl,
+      includeCurrentRelease: true,
     );
 
     if (!mounted) return;
 
-    // 如果没有检测到更新，创建一个模拟的更新信息用于测试
-    info ??= const UpdateInfo(
-      latestVersion: '99.0.0',
-      releaseNotes: '# 模拟更新内容\n\n'
-          '这是一条**开发者测试**用的模拟更新通知。\n\n'
-          '## 更新内容\n'
-          '- 新增功能 A\n'
-          '- 优化体验 B\n'
-          '- 修复问题 C\n\n'
-          '> 此为测试弹窗，实际更新请关注正式版本发布',
-      giteeDownloadUrl:
-          'https://gitee.com/Murchey/AiChatApp/releases/download/v99.0.0/AiChat-V99.0.0.apk',
-      githubDownloadUrl:
-          'https://github.com/Niriko-mu/AiChat/releases/download/v99.0.0/AiChat-V99.0.0.apk',
-    );
+    if (info == null) {
+      showAppToast('当前设置的更新仓库未找到可用 Release');
+      return;
+    }
 
     // 显示更新弹窗
     showUpdateAvailableDialog(
@@ -217,65 +206,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showUpdateNotification(String body) {
-    showCupertinoDialog(
+    showMarkdownUpdatePanel(
+      context,
+      title: '角色仓库有更新',
+      body: body,
+      footer: '开发者模式快速测试',
+    );
+  }
+
+  Future<void> _showBubbleFontSizePicker(
+      BuildContext context, SettingsProvider settings) async {
+    var size = settings.bubbleFontSize;
+    final selected = await showCupertinoModalPopup<double>(
       context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              CupertinoIcons.news,
-              size: 22,
-              color: CupertinoColors.activeBlue,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, update) => SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: ctx.scaffoldColor,
+              borderRadius: BorderRadius.circular(12),
             ),
-            SizedBox(width: 8),
-            Text('角色仓库有更新'),
-          ],
-        ),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 200),
-                child: SingleChildScrollView(
-                  child: MarkdownBody(
-                    data: body,
-                    styleSheet: MarkdownStyleSheet(
-                      p: const TextStyle(fontSize: 13, height: 1.4),
-                      h1: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                      h2: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold),
-                      h3: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.bold),
-                      listBullet: const TextStyle(fontSize: 13),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('调整气泡内字体大小', textAlign: TextAlign.center),
+                  const SizedBox(height: 16),
+                  for (final isUser in [false, true])
+                    Align(
+                      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: ctx.bubbleBgColor(isUser),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(isUser ? '我方气泡预览 Aa 123' : '对方气泡预览 Aa 123',
+                          style: TextStyle(fontSize: size,
+                            color: ctx.bubbleTextColor(isUser),
+                            fontFamily: ctx.bubbleFontFamily(isUser))),
+                      ),
                     ),
+                  Text('${size.round()}（默认 16）', textAlign: TextAlign.center),
+                  CupertinoSlider(
+                    value: size, min: 12, max: 24, divisions: 12,
+                    onChanged: (value) => update(() => size = value),
                   ),
-                ),
+                  CupertinoButton(
+                    onPressed: () => update(() => size = 16),
+                    child: const Text('恢复默认'),
+                  ),
+                  CupertinoButton.filled(
+                    onPressed: () => Navigator.pop(ctx, size),
+                    child: const Text('保存'),
+                  ),
+                  CupertinoButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('取消'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              const Text(
-                '开发者模式快速测试',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: CupertinoColors.systemGrey,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('知道了'),
-          ),
-        ],
       ),
     );
+    if (selected != null) await settings.setBubbleFontSize(selected);
   }
 
   /// 弹出深浅色选择（下拉选项框）
@@ -794,6 +794,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context,
                   CupertinoPageRoute(builder: (_) => const SplashIconScreen()),
                 ),
+              ),
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.textformat_alt,
+                  color: context.accentColor,
+                ),
+                title: const Text('气泡字体'),
+                subtitle: Text(
+                  '分别设置我方与对方聊天正文，可导入 TTF 文件',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(builder: (_) => const BubbleFontScreen()),
+                ),
+              ),
+              CupertinoListTile(
+                leading: Icon(CupertinoIcons.textformat_size,
+                    color: context.accentColor),
+                title: const Text('调整气泡内字体大小'),
+                subtitle: Text(
+                  '${settings.bubbleFontSize.round()}（默认 16）',
+                  style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+                ),
+                trailing: Icon(CupertinoIcons.chevron_right,
+                    size: 16, color: context.textSecondaryColor),
+                onTap: () => _showBubbleFontSizePicker(context, settings),
               ),
               // 自定义气泡颜色仅在经典样式下可用（崩铁样式使用自带配色）
               if (settings.bubbleStyle == BubbleStyle.classic)

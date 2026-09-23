@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'imported_font_storage.dart';
 
 /// 占用空间条目：一个可独立查看 / 删除的存储分类。
 class StorageItem {
@@ -97,6 +98,7 @@ class StorageManagerService {
   static const _chatDirs = ['chat_backgrounds'];
   static const _chatPrefixes = ['chat_import_'];
   static const _stickerDirs = ['stickers'];
+  static const _fontDirs = ['imported_fonts'];
 
   // 引擎/系统运行时目录（非用户数据、非缓存，排除出占用统计与删除）
   // 例如 debug 模式下 Flutter 引擎落盘的 flutter_assets（kernel_blob 等）
@@ -119,6 +121,7 @@ class StorageManagerService {
       await _chatItem(prefs),
       await _stickerItem(),
       await _characterItem(prefs),
+      await _fontItem(),
       _notificationItem(prefs),
       _profileItem(prefs),
       await _downloadCacheItem(),
@@ -165,6 +168,18 @@ class StorageManagerService {
       id: 'character',
       title: '角色与朋友圈数据',
       subtitle: '自定义角色、朋友圈动态与图片，含头像/背景；删除后恢复默认角色',
+      isUserData: true,
+      sizeBytes: bytes,
+      deletable: bytes > 0,
+    );
+  }
+
+  static Future<StorageItem> _fontItem() async {
+    final bytes = await const ImportedFontStorage().totalBytes();
+    return StorageItem(
+      id: 'fonts',
+      title: '显示字体文件',
+      subtitle: '已导入的 TTF 气泡字体；删除后聊天气泡恢复系统默认字体',
       isUserData: true,
       sizeBytes: bytes,
       deletable: bytes > 0,
@@ -274,6 +289,8 @@ class StorageManagerService {
   static Future<int> clearStickerFiles() async {
     return _deleteDocDirs(names: _stickerDirs, prefixes: const []);
   }
+
+  static Future<int> clearImportedFonts() => const ImportedFontStorage().clear();
 
   /// 删除发布/导入的朋友圈图片目录（user_moments、moment_import_*）
   static Future<int> clearCharacterFiles() async {
@@ -422,6 +439,7 @@ class StorageManagerService {
       _chatDirs.contains(name) ||
       _chatPrefixes.any((p) => name.startsWith(p)) ||
       _stickerDirs.contains(name) ||
+      _fontDirs.contains(name) ||
       _systemDirs.contains(name);
 
   /// 文件是否属于安全可删类型（图片/压缩包/临时文件）

@@ -8,6 +8,29 @@ import '../models/workshop_asset.dart';
 import '../models/workshop_repository.dart';
 import 'cos_auth.dart';
 
+/// 仓库最新正式 Release 的可展示信息，用于通知预览而非资源包分类。
+class LatestRepositoryRelease {
+  const LatestRepositoryRelease({required this.tag, required this.body});
+
+  final String tag;
+  final String body;
+}
+
+/// 从官方 API 返回的 Release 列表中选择最靠前的正式发布。
+LatestRepositoryRelease? latestPublishedReleaseFromJson(List<dynamic> releases) {
+  for (final item in releases) {
+    if (item is! Map) continue;
+    final map = item.cast<String, dynamic>();
+    if (map['draft'] == true || map['prerelease'] == true) continue;
+    final tag = (map['tag_name'] as String? ?? '').trim();
+    if (tag.isEmpty) continue;
+    final body = (map['body'] as String? ?? '').trim();
+    final name = (map['name'] as String? ?? '').trim();
+    return LatestRepositoryRelease(tag: tag, body: body.isEmpty ? name : body);
+  }
+  return null;
+}
+
 /// 创意工坊仓库服务：检查仓库 Release tag 可用性、拉取资产 zip、下载 zip。
 ///
 /// 创意工坊仓库约定（[kCharacterPackTag] / [kGamePackTag] / [kStickerPackTag]）：
@@ -700,6 +723,21 @@ class WorkshopService {
       }
     }
     return null;
+  }
+
+  /// 获取仓库最新正式 Release，用于开发者预览真实的仓库更新提示。
+  static Future<LatestRepositoryRelease?> fetchLatestRelease(String path) async {
+    final parsed = parseRepoPath(path);
+    if (parsed == null) return null;
+    final apiUrl = parsed.isGitee
+        ? 'https://gitee.com/api/v5/repos/${parsed.owner}/${parsed.repo}/releases'
+        : 'https://api.github.com/repos/${parsed.owner}/${parsed.repo}/releases';
+    final resp = await http.get(Uri.parse(apiUrl), headers: {
+      'Accept': 'application/json',
+    }).timeout(const Duration(seconds: 15));
+    if (resp.statusCode != 200) return null;
+    final decoded = jsonDecode(utf8.decode(resp.bodyBytes));
+    return decoded is List ? latestPublishedReleaseFromJson(decoded) : null;
   }
 
   /// 防止空名 / '.' / '..' 等非法文件名

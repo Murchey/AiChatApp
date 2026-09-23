@@ -28,7 +28,9 @@ import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
 import '../services/prompt_builder.dart';
 import '../services/memory_pool_builder.dart';
+import '../services/tts_service.dart';
 import '../utils/file_picker_helper.dart';
+import '../utils/app_toast.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/chat_title_bar.dart';
 import '../widgets/character_avatar.dart';
@@ -1981,6 +1983,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // ─── 角色主动发消息 ───────────────────────────────────────
 
+  Future<void> _speakMessage(Message message) async {
+    if (message.isFromUser || message.content.trim().isEmpty) return;
+    final api = context.read<ApiProvider>();
+    final model = api.getModelById(api.ttsModelId);
+    if (model == null) {
+      if (mounted) showAppToast('请先在「API 设置」中选择语音模型');
+      return;
+    }
+    final conversation = context.read<ChatProvider>().conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    final character = conversation == null
+        ? null
+        : context.read<CharacterProvider>().getCharacterById(conversation.characterId);
+    try {
+      await TtsService.speak(
+        model: model,
+        text: message.content,
+        voice: character?.voiceId ?? '',
+        instructions: character?.voiceInstructions ?? '',
+      );
+    } catch (e) {
+      if (mounted) showAppToast(e.toString());
+    }
+  }
+
   /// 触发"角色主动发消息/回复"：组装参数后交给 [ChatProvider.runProactiveReply]
   /// 在应用级单例中执行——即使此时退出聊天界面，AI 回复也会继续生成并完整入库。
   ///
@@ -2089,6 +2117,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           );
     debugPrint(
         '[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');
+    if (conversation?.autoRead == true && messages.isNotEmpty) {
+      final latest = chatProvider.getMessages(widget.conversationId)
+          .where((m) => !m.isFromUser && m.content.trim().isNotEmpty)
+          .lastOrNull;
+      if (latest != null) await _speakMessage(latest);
+    }
     if (!mounted) return;
     // 流式语C在同一次正文回复中携带候选项；非流式接口保留二次请求作为兼容兜底。
     if (isRoleplayMode &&
@@ -2489,6 +2523,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       ),
                                       onFileTap:
                                           _selectMode ? null : _openFileMessage,
+                                      onSpeak: _selectMode
+                                          ? null
+                                          : () => _speakMessage(msg),
                                       onLongPress: (message, bubbleKey) =>
                                           _showBubbleMenu(message, bubbleKey),
                                     ),

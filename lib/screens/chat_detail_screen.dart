@@ -81,6 +81,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     String? userRelationship,
     String? activeStart,
     String? activeEnd,
+    String? voiceId,
+    String? voiceInstructions,
   }) async {
     final charProvider = context.read<CharacterProvider>();
     final chatProvider = context.read<ChatProvider>();
@@ -96,6 +98,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           : PromptBuilder.sanitize(userRelationship),
       activeStart: activeStart,
       activeEnd: activeEnd,
+      voiceId: voiceId,
+      voiceInstructions: voiceInstructions,
     );
     final updated = charProvider.getCharacterById(characterId);
     if (updated != null) {
@@ -749,6 +753,33 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           ),
           _separator(),
           _infoTile(
+            icon: CupertinoIcons.waveform,
+            label: '角色音色 ID',
+            value: character?.voiceId ?? '',
+            placeholder: '未设置（如 Cherry / alloy）',
+            onTap: () => _editField(
+              title: '角色音色 ID',
+              initial: character?.voiceId ?? '',
+              hint: '填写 TTS 提供商的 voice，例如 Cherry、alloy',
+              onSave: (v) => _saveField(voiceId: v),
+            ),
+          ),
+          _separator(),
+          _infoTile(
+            icon: CupertinoIcons.text_bubble,
+            label: '音色描述',
+            value: character?.voiceInstructions ?? '',
+            placeholder: '未设置',
+            onTap: () => _editField(
+              title: '音色描述',
+              initial: character?.voiceInstructions ?? '',
+              hint: '例如：温柔、清晰、语速偏慢，带有亲近感',
+              multiline: true,
+              onSave: (v) => _saveField(voiceInstructions: v),
+            ),
+          ),
+          _separator(),
+          _infoTile(
             icon: CupertinoIcons.chat_bubble_2,
             label: '使用的模型',
             value: modelLabel,
@@ -1319,6 +1350,29 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       ),
       child: Column(
         children: [
+          Builder(builder: (context) {
+            final conversation = context.read<ChatProvider>().conversations
+                .where((c) => c.id == widget.conversationId)
+                .firstOrNull;
+            return CupertinoListTile(
+              leading: Icon(CupertinoIcons.speaker_3_fill,
+                  color: context.accentColor),
+              title: Text('自动朗读',
+                  style: TextStyle(color: context.textPrimaryColor)),
+              subtitle: Text('角色生成回复后自动播放语音',
+                  style: TextStyle(fontSize: 12, color: context.textSecondaryColor)),
+              trailing: CupertinoSwitch(
+                value: conversation?.autoRead ?? false,
+                onChanged: (value) => context.read<ChatProvider>()
+                    .setConversationAutoRead(widget.conversationId, value),
+              ),
+            );
+          }),
+          Container(
+            height: 0.5,
+            margin: const EdgeInsets.only(left: 16),
+            color: context.separatorColor,
+          ),
           // ── 聊天背景设置入口 ──
           CupertinoListTile(
             leading: const Icon(

@@ -1551,6 +1551,15 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// 设置当前会话是否在角色回复完成后自动朗读。
+  Future<void> setConversationAutoRead(String conversationId, bool value) async {
+    final index = _conversations.indexWhere((c) => c.id == conversationId);
+    if (index == -1) return;
+    _conversations[index] = _conversations[index].copyWith(autoRead: value);
+    notifyListeners();
+    await _persist();
+  }
+
   void deleteConversation(String conversationId) {
     _conversations.removeWhere((c) => c.id == conversationId);
     _messagesMap.remove(conversationId);

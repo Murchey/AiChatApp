@@ -261,6 +261,7 @@ CharactersImport/
 | `personality` | 性格特征 | 可选 |
 | `greeting` | 开场白 | 可选 |
 | `user_relationship` | 与用户的关系 | 可选 |
+| `voice` | 角色音色卡对象：`voice_id` 为 TTS 提供商音色名（如 `Cherry` / `alloy`），`instructions` 为语气、音色描述；语音模型在 API 设置中统一选择 | 可选 |
 | `active_start` / `active_end` | 活跃时段，值为 `"HH:mm"`（如 `"09:00"`）；两者同时设置并生效后，在该时间段内聊天角色不会主动道别、说晚安，保持活跃；任一为空表示未设置 | 可选 |
 | `tags` | 标签数组，如 `["鸣潮","电子幽灵"]` | 可选 |
 | `avatar` | 内嵌头像（base64 字符串，存在时优先于图片文件） | 可选 |
@@ -275,6 +276,10 @@ CharactersImport/
     "location": "拉海洛·星炬学院",
     "gender": "女",
     "signature": "关注飞行雪绒喵~",
+    "voice": {
+        "voice_id": "Cherry",
+        "instructions": "明亮、亲近、语速自然，带一点俏皮感"
+    },
     "active_start": "00:00",
     "active_end": "23:59"
 }
@@ -1258,10 +1263,10 @@ flutter build apk --release --split-per-abi
 
 - **版本检查（双源）**：
   1. 优先 Gitee：默认 `https://gitee.com/Murchey/AiChatApp`（国内直连）；
-  2. 备用 GitHub：默认 `https://github.com/Niriko-mu/AiChat`（可叠加加速代理）。
+  2. 备用 GitHub：默认 `https://github.com/Murchey/AiChatApp`（可叠加加速代理）。
   检测仓库可在 **设置 → 更新 → Gitee / GitHub 更新仓库** 中分别自定义（支持完整 URL 或 `owner/repo`，持久化保存）。
   对比 `tag_name` 与本地版本号，取 Gitee 优先的版本与更新说明；下载链接随所配置的仓库同步变化；
-- **下载源选项卡**：发现新版本弹窗内提供「下载源」选项卡，**默认首选 Gitee**、其次 GitHub；GitHub 源可叠加加速代理下载；
+- **下载源选项卡**：发现新版本弹窗内提供「下载源」选项卡，**默认首选 Gitee**、其次 GitHub；GitHub 源可叠加加速代理下载；默认 GitHub 更新仓库为 `https://github.com/Murchey/AiChatApp`；
 - **APK 资产命名标准**：`AiChat-V1.0.0.apk`（`AiChat-V<版本号>.apk`），检测时优先取符合标准的资产，无资产时按此命名拼接下载直链；
 - **安装**：下载到应用外部目录 `updates/`，通过原生 FileProvider + 系统安装器安装（需授权「安装未知应用」）；
 - 入口：
@@ -1284,6 +1289,25 @@ flutter build apk --release --split-per-abi
 - 为每个模型配置**上下文长度**，作为会话压缩 70% 阈值的基准；
 - **压缩会话使用的模型**：单独指定用于压缩的模型（默认跟随聊天模型）；
 - **朋友圈互动模型**：单独指定用于朋友圈互动（自动发帖/点赞评论）的模型。
+- **语音模型（当前支持范围）**：API 设置中的语音模型目前明确支持两类：① Qwen DashScope 原生 TTS（模型需为 Qwen TTS，使用 DashScope 原生接口）；② 返回音频二进制的 OpenAI 兼容 `POST /audio/speech` 服务。不同厂商的 TTS 协议不统一，MiMo 的 `mimo-v2.5-tts` 当前暂未适配，不应选择 `https://api.xiaomimimo.com/v1` 作为语音模型，否则会得到 HTTP 404。后续将按厂商单独适配。
+
+### 语音朗读
+
+- 角色回复气泡下方的扬声器按钮可手动朗读该条角色消息；朗读使用 API 设置中选择的「语音模型」。
+- 在会话右上角的资料卡 / 聊天管理中开启「自动朗读」后，角色生成回复完成会自动播放。
+- 角色的音色属于角色卡的一部分，可在资料卡中编辑「角色音色 ID」与「音色描述」。
+- `Profile.json` 使用以下可选结构：
+
+```json
+{
+    "voice": {
+        "voice_id": "Cherry",
+        "instructions": "温柔、清晰、语速偏慢"
+    }
+}
+```
+
+`voice_id` 原样传给 TTS 提供商；不同提供商支持的音色名称不同，应以对应平台文档为准。Qwen-TTS 会使用 DashScope 原生请求体中的 `input.voice` 与 `input.instructions`；通用 OpenAI 兼容服务则使用 `voice` 与 `instructions`。
 
 ### 会话压缩（【我】→ 聊天设置 → 压缩会话）
 

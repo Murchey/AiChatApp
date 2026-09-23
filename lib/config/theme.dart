@@ -327,6 +327,15 @@ extension AppThemeX on BuildContext {
     return isUser ? bubbleTextSelfColor : bubbleTextOtherColor;
   }
 
+  /// 气泡内文字字体：分别由显示设置中的我方/对方选择决定；空值交给系统默认字体。
+  String? bubbleFontFamily(bool isUser) {
+    final family = read<SettingsProvider>().bubbleFontFamily(isUser);
+    return family.isEmpty ? null : family;
+  }
+
+  /// 气泡内文字字号，由显示设置统一控制。
+  double get bubbleFontSize => read<SettingsProvider>().bubbleFontSize;
+
   /// 气泡轮廓描边色：仅 zmd 样式我方气泡在深色模式使用黑色描边
   /// （浅色模式无描边，白底气泡与浅色聊天背景自然融合），其余样式无描边
   Color? bubbleBorderColor(bool isUser) {

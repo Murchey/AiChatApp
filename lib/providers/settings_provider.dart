@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/theme.dart';
+import '../services/imported_font_storage.dart';
 import '../services/update_service.dart';
 
 /// 明暗模式：跟随系统 / 浅色 / 深色
@@ -153,6 +155,11 @@ class SettingsProvider extends ChangeNotifier {
   UiStyle _uiStyle = UiStyle.classic;
   // 自定义开屏图标本地持久化路径（未设置时为空字符串）
   String _splashIconPath = '';
+  // 气泡字体分别绑定我方与对方；空串使用系统默认字体。
+  String _selfBubbleFontName = '';
+  String _otherBubbleFontName = '';
+  double _bubbleFontSize = 16;
+  final ImportedFontStorage _fontStorage = const ImportedFontStorage();
 
   AppThemeMode get themeMode => _themeMode;
   Color get accentColor => _accentColor;
@@ -170,6 +177,14 @@ class SettingsProvider extends ChangeNotifier {
   UiStyle get uiStyle => _uiStyle;
   String get splashIconPath => _splashIconPath;
   bool get hasSplashIcon => _splashIconPath.isNotEmpty;
+  String get selfBubbleFontName => _selfBubbleFontName;
+  String get otherBubbleFontName => _otherBubbleFontName;
+  double get bubbleFontSize => _bubbleFontSize;
+
+  String bubbleFontFamily(bool isUser) {
+    final name = isUser ? _selfBubbleFontName : _otherBubbleFontName;
+    return name.isEmpty ? '' : importedFontFamily(name);
+  }
 
   Color bubbleColor(BubbleColorSlot slot) =>
       _bubbleColors[slot] ?? slot.defaultColor;
@@ -220,6 +235,11 @@ class SettingsProvider extends ChangeNotifier {
         prefs.getString('update_gitee_repo_url') ?? kGiteeRepoUrl;
     _updateGitHubRepoUrl =
         prefs.getString('update_github_repo_url') ?? kGitHubRepoUrl;
+    // 将早期内置仓库地址迁移到当前官方仓库；用户自定义的其他地址不覆盖。
+    if (_updateGitHubRepoUrl == 'https://github.com/Niriko-mu/AiChat') {
+      _updateGitHubRepoUrl = kGitHubRepoUrl;
+      await prefs.setString('update_github_repo_url', kGitHubRepoUrl);
+    }
     _unreadNotify = prefs.getBool('unread_notify') ?? true;
     _developerMode = prefs.getBool('developer_mode') ?? false;
     _allowStickerSend = prefs.getBool('allow_sticker_send') ?? true;
@@ -240,6 +260,76 @@ class SettingsProvider extends ChangeNotifier {
       orElse: () => UiStyle.classic,
     );
     _splashIconPath = prefs.getString('splash_icon_path') ?? '';
+    _selfBubbleFontName = prefs.getString('bubble_font_self') ?? '';
+    _otherBubbleFontName = prefs.getString('bubble_font_other') ?? '';
+    _bubbleFontSize = (prefs.getDouble('bubble_font_size') ?? 16)
+        .clamp(12, 24)
+        .toDouble();
+    await _restoreBubbleFonts(prefs);
+    notifyListeners();
+  }
+
+  Future<void> _restoreBubbleFonts(SharedPreferences prefs) async {
+    final selfLoaded = await _loadBubbleFont(_selfBubbleFontName);
+    if (!selfLoaded && _selfBubbleFontName.isNotEmpty) {
+      _selfBubbleFontName = '';
+      await prefs.remove('bubble_font_self');
+    }
+    final otherLoaded = await _loadBubbleFont(_otherBubbleFontName);
+    if (!otherLoaded && _otherBubbleFontName.isNotEmpty) {
+      _otherBubbleFontName = '';
+      await prefs.remove('bubble_font_other');
+    }
+  }
+
+  Future<bool> _loadBubbleFont(String name) async {
+    if (name.isEmpty) return true;
+    final Uint8List? bytes = await _fontStorage.loadFont(name);
+    if (bytes == null) return false;
+    final loader = FontLoader(importedFontFamily(name))
+      ..addFont(Future.value(ByteData.sublistView(bytes)));
+    await loader.load();
+    return true;
+  }
+
+  /// 设置我方或对方气泡的字体；空名称恢复系统默认字体。
+  Future<void> setBubbleFont({required bool isUser, required String name}) async {
+    if (name.isNotEmpty && !await _loadBubbleFont(name)) {
+      throw StateError('字体文件不存在或无法加载');
+    }
+    if (isUser) {
+      _selfBubbleFontName = name;
+    } else {
+      _otherBubbleFontName = name;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(isUser ? 'bubble_font_self' : 'bubble_font_other', name);
+    notifyListeners();
+  }
+
+  /// 设置双方聊天气泡正文的字号，范围 12~24 logical pixels。
+  Future<void> setBubbleFontSize(double value) async {
+    _bubbleFontSize = value.clamp(12, 24).toDouble();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('bubble_font_size', _bubbleFontSize);
+    notifyListeners();
+  }
+
+  /// 删除字体后清除引用，防止下次启动时保留失效选择。
+  Future<void> clearDeletedBubbleFont(String name) async {
+    var changed = false;
+    if (_selfBubbleFontName == name) {
+      _selfBubbleFontName = '';
+      changed = true;
+    }
+    if (_otherBubbleFontName == name) {
+      _otherBubbleFontName = '';
+      changed = true;
+    }
+    if (!changed) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (_selfBubbleFontName.isEmpty) await prefs.remove('bubble_font_self');
+    if (_otherBubbleFontName.isEmpty) await prefs.remove('bubble_font_other');
     notifyListeners();
   }
 

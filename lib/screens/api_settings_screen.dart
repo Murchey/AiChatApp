@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/api_provider.dart';
+import '../services/tts_service.dart';
 import 'chat_settings_screen.dart';
 import 'model_edit_screen.dart';
 import 'provider_preset_screen.dart';
@@ -34,6 +35,110 @@ class ApiSettingsScreen extends StatelessWidget {
     final model = api.getModelById(api.momentModelId);
     if (model == null) return '未设置';
     return '${model.displayName}（${model.modelName}）';
+  }
+
+  String _ttsModelLabel(ApiProvider api) {
+    if (api.ttsModelId == null) return '未设置';
+    final model = api.getModelById(api.ttsModelId);
+    if (model == null) return '未设置';
+    return '${model.displayName}（${model.modelName}）';
+  }
+
+  void _showTtsModelPicker(BuildContext context) {
+    final api = context.read<ApiProvider>();
+    final items = <({String? id, String label})>[
+      (id: null, label: '未设置'),
+      for (final model in api.models)
+        if (TtsService.isSupportedModel(model))
+          (id: model.id, label: model.displayName),
+    ];
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.6,
+          ),
+          margin: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+          decoration: BoxDecoration(
+            color: context.scaffoldColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  children: [
+                    Text(
+                      '选择语音模型',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: context.textPrimaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '当前支持：Qwen DashScope 原生 TTS、OpenAI 兼容 /audio/speech；MiMo 暂未适配',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(height: 0.5, color: context.separatorColor),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final item in items)
+                      CupertinoListTile(
+                        onTap: () {
+                          api.setTtsModel(item.id);
+                          Navigator.pop(ctx);
+                        },
+                        title: Text(
+                          item.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                        trailing: item.id == api.ttsModelId
+                            ? Icon(
+                                CupertinoIcons.check_mark,
+                                color: context.accentColor,
+                              )
+                            : null,
+                      ),
+                  ],
+                ),
+              ),
+              Container(height: 0.5, color: context.separatorColor),
+              CupertinoButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  '取消',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// 弹出朋友圈互动模型的选取（未设置 / 已配置模型）
@@ -443,6 +548,30 @@ class ApiSettingsScreen extends StatelessWidget {
                   color: context.textSecondaryColor,
                 ),
                 onTap: () => _showMomentModelPicker(context),
+              ),
+            ],
+          ),
+          // 语音合成专用模型
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('语音合成'),
+            children: [
+              CupertinoListTile(
+                leading: Icon(CupertinoIcons.waveform, color: context.accentColor),
+                title: const Text('语音模型'),
+                subtitle: Text(
+                  _ttsModelLabel(api),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+                ),
+                trailing: Icon(CupertinoIcons.chevron_right,
+                    size: 16, color: context.textSecondaryColor),
+                onTap: () => _showTtsModelPicker(context),
               ),
             ],
           ),

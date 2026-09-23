@@ -191,7 +191,7 @@ class CharacterProvider extends ChangeNotifier {
     await _persistCharacters();
   }
 
-  /// 更新角色资料信息（昵称/备注/个性签名/定位地区/关系/活跃时段）并持久化
+  /// 更新角色资料信息（含音色卡）并持久化
   Future<void> updateCharacterInfo(
     String id, {
     String? name,
@@ -199,6 +199,8 @@ class CharacterProvider extends ChangeNotifier {
     String? signature,
     String? region,
     String? userRelationship,
+    String? voiceId,
+    String? voiceInstructions,
     String? activeStart,
     String? activeEnd,
   }) async {
@@ -210,6 +212,8 @@ class CharacterProvider extends ChangeNotifier {
       signature: signature,
       region: region,
       userRelationship: userRelationship,
+      voiceId: voiceId,
+      voiceInstructions: voiceInstructions,
       activeStart: activeStart,
       activeEnd: activeEnd,
     );

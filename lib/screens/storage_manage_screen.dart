@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/moment_notification_provider.dart';
+import '../providers/settings_provider.dart';
 import '../providers/sticker_provider.dart';
 import '../services/storage_manager_service.dart';
 import '../services/workshop_service.dart';
@@ -77,6 +78,8 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
         return '将清除用户资料中的头像、签名、地区与性别，昵称和账号保留。确定继续吗？';
       case 'download_cache':
         return '将删除创意工坊下载后残留的角色资源包 zip 与临时文件，不影响已导入的角色数据和朋友圈图片。确定继续吗？';
+      case 'fonts':
+        return '将删除全部已导入的 TTF 字体文件；使用这些字体的聊天气泡会恢复系统默认字体。确定继续吗？';
       case 'temp':
         return '将删除系统临时目录中的缓存文件，不影响已保存的数据。确定继续吗？';
       case 'other':
@@ -107,6 +110,7 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
     final notificationProvider = context.read<MomentNotificationProvider>();
     final authProvider = context.read<AuthProvider>();
     final stickerProvider = context.read<StickerProvider>();
+    final settingsProvider = context.read<SettingsProvider>();
 
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
@@ -160,6 +164,13 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
       case 'download_cache':
         await WorkshopService.clearDownloadCache();
         await StorageManagerService.clearUpdateApks();
+        break;
+      case 'fonts':
+        final selfFont = settingsProvider.selfBubbleFontName;
+        final otherFont = settingsProvider.otherBubbleFontName;
+        await StorageManagerService.clearImportedFonts();
+        await settingsProvider.clearDeletedBubbleFont(selfFont);
+        await settingsProvider.clearDeletedBubbleFont(otherFont);
         break;
       case 'temp':
         await StorageManagerService.clearTempFiles();

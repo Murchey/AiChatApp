@@ -114,6 +114,7 @@ TextSpan _buildMessageSpan(
   BuildContext context,
   String content,
   Color baseColor,
+  bool isUser,
 ) {
   final text = _renderEmoji(content);
   final spans = <TextSpan>[];
@@ -136,7 +137,12 @@ TextSpan _buildMessageSpan(
   }
   return TextSpan(
     children: spans,
-    style: TextStyle(fontSize: 16, height: 1.4, color: baseColor),
+    style: TextStyle(
+      fontSize: context.bubbleFontSize,
+      height: 1.4,
+      color: baseColor,
+      fontFamily: context.bubbleFontFamily(isUser),
+    ),
   );
 }
 
@@ -161,6 +167,7 @@ class ChatBubble extends StatefulWidget {
 
   /// 点击文件消息卡片时回调（参数为文件路径，用于打开文件）
   final Future<void> Function(String filePath)? onFileTap;
+  final VoidCallback? onSpeak;
 
   /// 点击"我"的头像时回调（进入自己的空间页）
   final VoidCallback? onUserAvatarTap;
@@ -180,6 +187,7 @@ class ChatBubble extends StatefulWidget {
     this.onTap,
     this.onForwardTap,
     this.onFileTap,
+    this.onSpeak,
     this.onUserAvatarTap,
     this.onCharacterAvatarTap,
   });
@@ -317,6 +325,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                                 context,
                                 message.content,
                                 context.bubbleTextColor(isUser),
+                                isUser,
                               ),
                             ),
                           ],
@@ -324,6 +333,20 @@ class _ChatBubbleState extends State<ChatBubble> {
                       ),
                     ),
                   ),
+                  if (!isUser && !isImage && !isFile && widget.onSpeak != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: CupertinoButton(
+                        padding: const EdgeInsets.fromLTRB(2, 2, 8, 0),
+                        minimumSize: const Size(24, 24),
+                        onPressed: widget.onSpeak,
+                        child: Icon(
+                          CupertinoIcons.volume_up,
+                          size: 16,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

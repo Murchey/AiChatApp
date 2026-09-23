@@ -63,10 +63,12 @@ class ApiProvider extends ChangeNotifier {
   static const _storageKey = 'api_models_v1';
   static const _compressModelKey = 'api_compress_model';
   static const _momentModelKey = 'api_moment_model';
+  static const _ttsModelKey = 'api_tts_model';
   static const _visionKey = 'model_vision_v1'; // 模型 id → 是否支持图片（视觉）
   List<ApiModel> _models = [];
   String? _compressionModelId; // 会话压缩专用模型（null 表示跟随聊天模型）
   String? _momentModelId; // 朋友圈互动（读取点赞/评论）专用模型（null 表示未设置）
+  String? _ttsModelId; // 语音合成专用模型（null 表示未设置）
   final Map<String, bool> _visionSupport = {}; // 模型图片能力检测结果缓存
 
   List<ApiModel> get models => List.unmodifiable(_models);
@@ -74,6 +76,8 @@ class ApiProvider extends ChangeNotifier {
   String? get compressionModelId => _compressionModelId;
 
   String? get momentModelId => _momentModelId;
+
+  String? get ttsModelId => _ttsModelId;
 
   ApiModel? getModelById(String? id) {
     if (id == null) return null;
@@ -126,6 +130,7 @@ class ApiProvider extends ChangeNotifier {
     }
     _compressionModelId = prefs.getString(_compressModelKey);
     _momentModelId = prefs.getString(_momentModelKey);
+    _ttsModelId = prefs.getString(_ttsModelKey);
     // 加载图片能力检测结果缓存
     try {
       final visionStr = prefs.getString(_visionKey);
@@ -160,6 +165,18 @@ class ApiProvider extends ChangeNotifier {
       await prefs.remove(_momentModelKey);
     } else {
       await prefs.setString(_momentModelKey, modelId);
+    }
+  }
+
+  /// 设置语音合成模型；复用同一套 API 地址、模型名称与密钥配置。
+  Future<void> setTtsModel(String? modelId) async {
+    _ttsModelId = modelId;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (modelId == null) {
+      await prefs.remove(_ttsModelKey);
+    } else {
+      await prefs.setString(_ttsModelKey, modelId);
     }
   }
 
@@ -206,6 +223,7 @@ class ApiProvider extends ChangeNotifier {
     // 若删除的是当前选中的压缩/朋友圈模型，同步重置选择
     if (_compressionModelId == id) _compressionModelId = null;
     if (_momentModelId == id) _momentModelId = null;
+    if (_ttsModelId == id) _ttsModelId = null;
     notifyListeners();
     await _persist();
     await _persistVision();
@@ -244,6 +262,11 @@ class ApiProvider extends ChangeNotifier {
       await prefs.remove(_momentModelKey);
     } else {
       await prefs.setString(_momentModelKey, _momentModelId!);
+    }
+    if (_ttsModelId == null) {
+      await prefs.remove(_ttsModelKey);
+    } else {
+      await prefs.setString(_ttsModelKey, _ttsModelId!);
     }
   }
 }

@@ -13,9 +13,9 @@ const String kGiteeRepo = 'AiChatApp';
 const String kGiteeRepoUrl = 'https://gitee.com/Murchey/AiChatApp';
 
 /// GitHub 仓库信息（备用下载源）
-const String kGitHubOwner = 'Niriko-mu';
-const String kGitHubRepo = 'AiChat';
-const String kGitHubRepoUrl = 'https://github.com/Niriko-mu/AiChat';
+const String kGitHubOwner = 'Murchey';
+const String kGitHubRepo = 'AiChatApp';
+const String kGitHubRepoUrl = 'https://github.com/Murchey/AiChatApp';
 
 /// 角色卡社区项目地址（【我】页面底部展示）
 const String kCharacterCommunityUrl =
@@ -78,6 +78,7 @@ class UpdateService {
     String proxyUrl = '',
     String? giteeRepoUrl,
     String? githubRepoUrl,
+    bool includeCurrentRelease = false,
   }) async {
     try {
       final packageInfo = await PackageInfo.fromPlatform();
@@ -113,9 +114,14 @@ class UpdateService {
           ? githubRelease!.notes
           : (giteeRelease?.notes ?? '');
 
-      if (!_isNewerVersion(latestVersion, currentVersion)) return null;
+      if (!includeCurrentRelease &&
+          !_isNewerVersion(latestVersion, currentVersion)) {
+        return null;
+      }
       // 用户点过「不再提醒」的版本不再弹出
-      if (await _isVersionIgnored(latestVersion)) return null;
+      if (!includeCurrentRelease && await _isVersionIgnored(latestVersion)) {
+        return null;
+      }
       return UpdateInfo(
         latestVersion: latestVersion,
         releaseNotes: releaseNotes,

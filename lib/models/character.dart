@@ -14,6 +14,10 @@ class Character {
   final String systemPrompt;
   final String userRelationship; // 用户与角色的关系
 
+  /// 角色音色卡：voice_id 对应 TTS 提供商的 voice，instructions 为音色/语气描述。
+  final String voiceId;
+  final String voiceInstructions;
+
   /// 活跃时段（"HH:mm"，start/end 任一为空表示未设置）：
   /// 在该时间段内聊天时，角色不会主动道别/说晚安，保持活跃
   final String activeStart;
@@ -41,6 +45,8 @@ class Character {
     this.greeting = '',
     this.systemPrompt = '',
     this.userRelationship = '',
+    this.voiceId = '',
+    this.voiceInstructions = '',
     this.activeStart = '',
     this.activeEnd = '',
     this.modelId = '',
@@ -66,6 +72,11 @@ class Character {
       greeting: json['greeting'] as String? ?? '',
       systemPrompt: json['system_prompt'] as String? ?? '',
       userRelationship: json['user_relationship'] as String? ?? '',
+      voiceId: (json['voice'] as Map<String, dynamic>?)?['voice_id'] as String? ??
+          json['voice_id'] as String? ?? '',
+      voiceInstructions:
+          (json['voice'] as Map<String, dynamic>?)?['instructions'] as String? ??
+              json['voice_instructions'] as String? ?? '',
       activeStart: json['active_start'] as String? ?? '',
       activeEnd: json['active_end'] as String? ?? '',
       modelId: json['model_id'] as String? ?? '',
@@ -92,6 +103,11 @@ class Character {
       'greeting': greeting,
       'system_prompt': systemPrompt,
       'user_relationship': userRelationship,
+      if (voiceId.isNotEmpty || voiceInstructions.isNotEmpty)
+        'voice': {
+          if (voiceId.isNotEmpty) 'voice_id': voiceId,
+          if (voiceInstructions.isNotEmpty) 'instructions': voiceInstructions,
+        },
       'active_start': activeStart,
       'active_end': activeEnd,
       'model_id': modelId,
@@ -113,6 +129,8 @@ class Character {
     String? greeting,
     String? systemPrompt,
     String? userRelationship,
+    String? voiceId,
+    String? voiceInstructions,
     String? activeStart,
     String? activeEnd,
     String? modelId,
@@ -133,6 +151,8 @@ class Character {
       greeting: greeting ?? this.greeting,
       systemPrompt: systemPrompt ?? this.systemPrompt,
       userRelationship: userRelationship ?? this.userRelationship,
+      voiceId: voiceId ?? this.voiceId,
+      voiceInstructions: voiceInstructions ?? this.voiceInstructions,
       activeStart: activeStart ?? this.activeStart,
       activeEnd: activeEnd ?? this.activeEnd,
       modelId: modelId ?? this.modelId,
