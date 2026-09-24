@@ -11,6 +11,7 @@ class Conversation {
   final bool pinned;
   final bool autoRead;
   final bool continuousRead;
+  final bool showSpeakerIcon;
 
   Conversation({
     required this.id,
@@ -23,6 +24,7 @@ class Conversation {
     this.pinned = false,
     this.autoRead = false,
     this.continuousRead = false,
+    this.showSpeakerIcon = false,
   }) : lastMessageTime = lastMessageTime ?? DateTime.now();
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
@@ -39,6 +41,7 @@ class Conversation {
       pinned: json['pinned'] as bool? ?? false,
       autoRead: json['auto_read'] as bool? ?? false,
       continuousRead: json['continuous_read'] as bool? ?? false,
+      showSpeakerIcon: json['show_speaker_icon'] as bool? ?? false,
     );
   }
 
@@ -54,6 +57,7 @@ class Conversation {
       'pinned': pinned,
       'auto_read': autoRead,
       'continuous_read': continuousRead,
+      'show_speaker_icon': showSpeakerIcon,
     };
   }
 
@@ -67,6 +71,7 @@ class Conversation {
     bool? pinned,
     bool? autoRead,
     bool? continuousRead,
+    bool? showSpeakerIcon,
   }) {
     return Conversation(
       id: id,
@@ -79,6 +84,7 @@ class Conversation {
       pinned: pinned ?? this.pinned,
       autoRead: autoRead ?? this.autoRead,
       continuousRead: continuousRead ?? this.continuousRead,
+      showSpeakerIcon: showSpeakerIcon ?? this.showSpeakerIcon,
     );
   }
 }

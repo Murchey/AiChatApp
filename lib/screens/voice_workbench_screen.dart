@@ -267,25 +267,22 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
     if (selected == null || !mounted) return;
     final provider = context.read<CharacterProvider>();
     final sampleFile = File(samplePath);
+    final ext = samplePath.toLowerCase().endsWith('.wav') ? 'wav' : 'mp3';
     final sampleName =
-        'voice_${selected.id}_${DateTime.now().millisecondsSinceEpoch}'
-        '${samplePath.toLowerCase().endsWith('.wav') ? '.wav' : '.mp3'}';
+        'voice_${selected.id}_${DateTime.now().millisecondsSinceEpoch}.$ext';
     final storageDir = await _voiceStorageDir();
     final destPath = '${storageDir.path}/$sampleName';
     await sampleFile.copy(destPath);
 
-    final updated = selected.copyWith(
-      voiceType: 'clone',
-      voiceSampleFile: destPath,
-      voiceMimeType: _sampleMime ?? 'audio/mpeg',
-    );
+    // 同时写入 voiceTemplatePath，使角色资料卡能直接显示音频路径
     provider.updateCharacterInfo(
       selected.id,
-      voiceType: updated.voiceType,
-      voiceSampleFile: updated.voiceSampleFile,
-      voiceMimeType: updated.voiceMimeType,
+      voiceType: 'clone',
+      voiceSampleFile: destPath,
+      voiceTemplatePath: destPath,
+      voiceMimeType: ext == 'wav' ? 'audio/wav' : 'audio/mpeg',
     );
-    setState(() => _status = '已保存到角色「${selected.displayName}」');
+    setState(() => _status = '已保存到角色「${selected.displayName}」，路径：$destPath');
   }
 
   Future<Directory> _voiceStorageDir() async {
@@ -500,7 +497,33 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
                                 : context.textSecondaryColor,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
+                        // 重播按钮：始终从头播放当前音频
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(44, 44),
+                          onPressed: !hasAudio
+                              ? null
+                              : () {
+                                  final path = playback.currentAudioPath;
+                                  if (path != null) {
+                                    playback.playAudio(
+                                      TtsAudioData(
+                                        File(path).readAsBytesSync(),
+                                        path.split('.').last,
+                                      ),
+                                    );
+                                  }
+                                },
+                          child: Icon(
+                            CupertinoIcons.gobackward,
+                            size: 28,
+                            color: hasAudio
+                                ? context.accentColor
+                                : context.textSecondaryColor,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             hasAudio

@@ -494,8 +494,7 @@ class ChatProvider extends ChangeNotifier {
       includeRoleplayChoices: includeChoices,
     );
     final history = _buildHistory(conversationId, contextCount);
-    final systemPromptTokens =
-        _estimateTextTokens(prompt) +
+    final systemPromptTokens = _estimateTextTokens(prompt) +
         _estimateTextTokens(instruction) +
         kPerMessageJsonTokens * 2;
     _systemTokens[conversationId] = systemPromptTokens;
@@ -557,8 +556,9 @@ class ChatProvider extends ChangeNotifier {
               history.fold<int>(
                 0,
                 (sum, item) =>
-                    sum + _estimateTextTokens(item['content'] ?? '') +
-                        kPerMessageJsonTokens,
+                    sum +
+                    _estimateTextTokens(item['content'] ?? '') +
+                    kPerMessageJsonTokens,
               );
       // completion 已含思考；网关未给 reasoning_tokens 时按思考正文估算
       final reasoningTokens = streamUsage.reasoningTokens ??
@@ -869,12 +869,9 @@ class ChatProvider extends ChangeNotifier {
         addProactiveMessage(
           conversationId,
           visibleContent,
-          reasoningContent: reasoningAttached
-              ? ''
-              : result.reasoningContent,
-          reasoningDurationMs: reasoningAttached
-              ? null
-              : result.reasoningDurationMs,
+          reasoningContent: reasoningAttached ? '' : result.reasoningContent,
+          reasoningDurationMs:
+              reasoningAttached ? null : result.reasoningDurationMs,
         );
         if (result.reasoningContent.trim().isNotEmpty) reasoningAttached = true;
         displayedMessages.add(visibleContent);
@@ -927,10 +924,8 @@ class ChatProvider extends ChangeNotifier {
     // 发送输入预算（系统提示词 + 摘要起历史）+ 系统提示词一起判断是否达到压缩阈值
     // （手动压缩时跳过）。与进度条展示的上下文使用量同口径。
     if (!force &&
-        _estimateRequestInputBudget(
-                conversationId,
-                contextCount: contextCount,
-                systemTokens: systemPromptTokens) <
+        _estimateRequestInputBudget(conversationId,
+                contextCount: contextCount, systemTokens: systemPromptTokens) <
             contextLength * threshold) {
       return false;
     }
@@ -1076,7 +1071,9 @@ class ChatProvider extends ChangeNotifier {
     final historyTokens = history.fold<int>(
       0,
       (sum, item) =>
-          sum + _estimateTextTokens(item['content'] ?? '') + kPerMessageJsonTokens,
+          sum +
+          _estimateTextTokens(item['content'] ?? '') +
+          kPerMessageJsonTokens,
     );
     return sys + historyTokens;
   }
@@ -1416,8 +1413,7 @@ class ChatProvider extends ChangeNotifier {
     String newCharacterAvatar = '',
   }) async {
     final source = _messagesMap[sourceConversationId] ?? const <Message>[];
-    final branchIndex =
-        source.indexWhere((m) => m.id == throughMessageId);
+    final branchIndex = source.indexWhere((m) => m.id == throughMessageId);
     if (branchIndex < 0) {
       throw StateError('分支点消息不存在');
     }
@@ -1552,7 +1548,8 @@ class ChatProvider extends ChangeNotifier {
   }
 
   /// 设置当前会话是否在角色回复完成后自动朗读。
-  Future<void> setConversationAutoRead(String conversationId, bool value) async {
+  Future<void> setConversationAutoRead(
+      String conversationId, bool value) async {
     final index = _conversations.indexWhere((c) => c.id == conversationId);
     if (index == -1) return;
     _conversations[index] = _conversations[index].copyWith(autoRead: value);
@@ -1566,6 +1563,16 @@ class ChatProvider extends ChangeNotifier {
     if (index == -1) return;
     _conversations[index] =
         _conversations[index].copyWith(continuousRead: value);
+    notifyListeners();
+    await _persist();
+  }
+
+  Future<void> setConversationShowSpeakerIcon(
+      String conversationId, bool value) async {
+    final index = _conversations.indexWhere((c) => c.id == conversationId);
+    if (index == -1) return;
+    _conversations[index] =
+        _conversations[index].copyWith(showSpeakerIcon: value);
     notifyListeners();
     await _persist();
   }

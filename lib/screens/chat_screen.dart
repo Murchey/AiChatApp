@@ -2488,6 +2488,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         final conversation = chatProvider.conversations
                             .where((c) => c.id == widget.conversationId)
                             .firstOrNull;
+                        final showSpeakerIcon =
+                            conversation?.showSpeakerIcon ?? false;
                         if (conversation != null) {
                           final character = context
                               .read<CharacterProvider>()
@@ -2615,9 +2617,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                           onFileTap: _selectMode
                                               ? null
                                               : _openFileMessage,
-                                          onSpeak: _selectMode
-                                              ? null
-                                              : () => _speakMessage(msg),
+                                          onSpeak:
+                                              (_selectMode || !showSpeakerIcon)
+                                                  ? null
+                                                  : () => _speakMessage(msg),
                                           onLongPress: (message, bubbleKey) =>
                                               _showBubbleMenu(
                                                   message, bubbleKey),

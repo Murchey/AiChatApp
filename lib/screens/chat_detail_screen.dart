@@ -145,78 +145,186 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-  /// 选择音频使用模式：语音提示词 / 音频克隆。
-  void _showVoiceModePicker() {
+  /// 音频与声音设置：把音频使用模式、音色 ID、克隆模板音频、音色描述
+  /// 集中在一个底部 Panel 内（当前不主推，收进抽屉避免挤占资料卡主字段）。
+  void _showVoiceDrawer(BuildContext context) {
     final characterId = _characterId;
     if (characterId.isEmpty) return;
-    final currentType = context
-            .read<CharacterProvider>()
-            .getCharacterById(characterId)
-            ?.voiceType ??
-        'preset';
     showCupertinoModalPopup(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: ctx.scaffoldColor,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  '音频使用模式',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: ctx.textPrimaryColor,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, update) {
+          final character =
+              context.read<CharacterProvider>().getCharacterById(characterId);
+          final voiceType = character?.voiceType ?? 'preset';
+          final isClone = voiceType == 'clone';
+          return SafeArea(
+            child: Container(
+              margin: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: ctx.scaffoldColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('音频与声音',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 16),
+                    // 模式切换
+                    CupertinoSlidingSegmentedControl<String>(
+                      groupValue: voiceType,
+                      children: const {
+                        'preset': Text('语音提示词'),
+                        'clone': Text('音频克隆'),
+                      },
+                      onValueChanged: (v) {
+                        if (v == null) return;
+                        context.read<CharacterProvider>().updateCharacterInfo(
+                              characterId,
+                              voiceType: v,
+                            );
+                        update(() {});
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    if (!isClone) ...[
+                      // 语音提示词模式
+                      _voiceDrawerTile(
+                        ctx,
+                        icon: CupertinoIcons.waveform,
+                        label: '角色音色 ID',
+                        value: character?.voiceId ?? '',
+                        placeholder: '如 Cherry / 茉莉',
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _editField(
+                            title: '角色音色 ID',
+                            initial: character?.voiceId ?? '',
+                            hint: '填写 TTS 提供商的 voice',
+                            onSave: (v) => _saveField(voiceId: v),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      _voiceDrawerTile(
+                        ctx,
+                        icon: CupertinoIcons.text_bubble,
+                        label: '音色描述',
+                        value: character?.voiceInstructions ?? '',
+                        placeholder: '如：温柔、清晰、语速偏慢',
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _editField(
+                            title: '音色描述',
+                            initial: character?.voiceInstructions ?? '',
+                            hint: '例如：温柔、清晰、语速偏慢，带有亲近感',
+                            multiline: true,
+                            onSave: (v) => _saveField(voiceInstructions: v),
+                          );
+                        },
+                      ),
+                    ] else ...[
+                      // 音频克隆模式
+                      _voiceDrawerTile(
+                        ctx,
+                        icon: CupertinoIcons.folder,
+                        label: '克隆模板音频',
+                        value: character?.voiceTemplatePath ?? '',
+                        placeholder: '点击选取 mp3 / wav',
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _pickVoiceTemplate();
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      _voiceDrawerTile(
+                        ctx,
+                        icon: CupertinoIcons.text_bubble,
+                        label: '音色描述（风格指令）',
+                        value: character?.voiceInstructions ?? '',
+                        placeholder: '如：温柔、克制、语速稍慢',
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _editField(
+                            title: '音色描述',
+                            initial: character?.voiceInstructions ?? '',
+                            hint: '例如：温柔、清晰、语速偏慢，带有亲近感',
+                            multiline: true,
+                            onSave: (v) => _saveField(voiceInstructions: v),
+                          );
+                        },
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    CupertinoButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('关闭'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _voiceDrawerTile(
+    BuildContext ctx, {
+    required IconData icon,
+    required String label,
+    required String value,
+    required String placeholder,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: ctx.listBgColor,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: ctx.accentColor),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: TextStyle(
+                          fontSize: 13,
+                          color:
+                              CupertinoColors.secondaryLabel.resolveFrom(ctx))),
+                  const SizedBox(height: 2),
+                  Text(
+                    value.isNotEmpty ? value : placeholder,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: value.isNotEmpty
+                          ? CupertinoColors.label.resolveFrom(ctx)
+                          : CupertinoColors.tertiaryLabel.resolveFrom(ctx),
+                    ),
                   ),
-                ),
+                ],
               ),
-              CupertinoListTile(
-                title: const Text('语音提示词'),
-                subtitle: Text(
-                  '使用预置音色 ID 或文字描述控制音色',
-                  style: TextStyle(fontSize: 12, color: ctx.textSecondaryColor),
-                ),
-                trailing: currentType != 'clone'
-                    ? Icon(CupertinoIcons.check_mark, color: ctx.accentColor)
-                    : null,
-                onTap: () {
-                  context.read<CharacterProvider>().updateCharacterInfo(
-                        characterId,
-                        voiceType: 'preset',
-                      );
-                  Navigator.pop(ctx);
-                },
-              ),
-              CupertinoListTile(
-                title: const Text('音频克隆'),
-                subtitle: Text(
-                  '使用音频样本复刻声音（需选取模板音频）',
-                  style: TextStyle(fontSize: 12, color: ctx.textSecondaryColor),
-                ),
-                trailing: currentType == 'clone'
-                    ? Icon(CupertinoIcons.check_mark, color: ctx.accentColor)
-                    : null,
-                onTap: () {
-                  context.read<CharacterProvider>().updateCharacterInfo(
-                        characterId,
-                        voiceType: 'clone',
-                      );
-                  Navigator.pop(ctx);
-                },
-              ),
-              CupertinoButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('取消'),
-              ),
-            ],
-          ),
+            ),
+            Icon(CupertinoIcons.chevron_right,
+                size: 14,
+                color: CupertinoColors.tertiaryLabel.resolveFrom(ctx)),
+          ],
         ),
       ),
     );
@@ -869,51 +977,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           _separator(),
           _infoTile(
             icon: CupertinoIcons.waveform,
-            label: '音频使用模式',
+            label: '音频与声音',
             value: (character?.voiceType ?? 'preset') == 'clone'
                 ? '音频克隆'
-                : '语音提示词',
-            placeholder: '语音提示词',
-            onTap: () => _showVoiceModePicker(),
-          ),
-          _separator(),
-          if ((character?.voiceType ?? 'preset') != 'clone')
-            _infoTile(
-              icon: CupertinoIcons.waveform,
-              label: '角色音色 ID',
-              value: character?.voiceId ?? '',
-              placeholder: '未设置（如 Cherry / alloy）',
-              onTap: () => _editField(
-                title: '角色音色 ID',
-                initial: character?.voiceId ?? '',
-                hint: '填写 TTS 提供商的 voice，例如 Cherry、alloy',
-                onSave: (v) => _saveField(voiceId: v),
-              ),
-            ),
-          if ((character?.voiceType ?? 'preset') != 'clone') _separator(),
-          _infoTile(
-            icon: CupertinoIcons.folder,
-            label: '克隆模板音频',
-            value: character?.voiceTemplatePath == null ||
-                    character!.voiceTemplatePath.isEmpty
-                ? ''
-                : character.voiceTemplatePath.split('/').last,
-            placeholder: '未设置（点击选取 mp3 / wav）',
-            onTap: () => _pickVoiceTemplate(),
-          ),
-          _separator(),
-          _infoTile(
-            icon: CupertinoIcons.text_bubble,
-            label: '音色描述',
-            value: character?.voiceInstructions ?? '',
+                : (character?.voiceId.isNotEmpty == true ||
+                        character?.voiceInstructions.isNotEmpty == true)
+                    ? '语音提示词'
+                    : '未设置',
             placeholder: '未设置',
-            onTap: () => _editField(
-              title: '音色描述',
-              initial: character?.voiceInstructions ?? '',
-              hint: '例如：温柔、清晰、语速偏慢，带有亲近感',
-              multiline: true,
-              onSave: (v) => _saveField(voiceInstructions: v),
-            ),
+            onTap: () => _showVoiceDrawer(context),
           ),
           _separator(),
           _infoTile(
@@ -1526,6 +1598,27 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 onChanged: (value) => context
                     .read<ChatProvider>()
                     .setConversationContinuousRead(
+                        widget.conversationId, value),
+              ),
+            );
+          }),
+          Consumer<ChatProvider>(builder: (context, chatProvider, _) {
+            final conversation = chatProvider.conversations
+                .where((c) => c.id == widget.conversationId)
+                .firstOrNull;
+            return CupertinoListTile(
+              leading:
+                  Icon(CupertinoIcons.speaker_1, color: context.accentColor),
+              title: Text('显示小喇叭图标',
+                  style: TextStyle(color: context.textPrimaryColor)),
+              subtitle: Text('角色气泡下方显示朗读按钮（默认关闭）',
+                  style: TextStyle(
+                      fontSize: 12, color: context.textSecondaryColor)),
+              trailing: CupertinoSwitch(
+                value: conversation?.showSpeakerIcon ?? false,
+                onChanged: (value) => context
+                    .read<ChatProvider>()
+                    .setConversationShowSpeakerIcon(
                         widget.conversationId, value),
               ),
             );
