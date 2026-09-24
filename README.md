@@ -1315,6 +1315,7 @@ flutter build apk --release --split-per-abi
     "voice": {
         "type": "clone",
         "sample_file": "voice/sample.mp3",
+        "template_path": "voice/sample.mp3",
         "mime_type": "audio/mpeg",
         "instructions": "语速稍慢，温柔、克制"
     }
@@ -1329,8 +1330,15 @@ character-pack.zip
 ├── Prompt.txt
 ├── avatar.png
 └── voice/
-    └── sample.mp3    ← 克隆样本（mp3 或 wav，Base64 后 ≤ 10 MB）
+    └── sample.mp3    ← 克隆模板音频（mp3 或 wav，Base64 后 ≤ 10 MB）
 ```
+
+`voice/` 文件夹说明：
+
+- 专门存放克隆模板音频，角色资料卡中可直接选取。
+- `sample_file` 为角色包内相对路径（如 `voice/sample.mp3`），导入导出自动携带。
+- `template_path` 为本地绝对路径（应用内部使用），角色包导出时以 `sample_file` 为准。
+- 播放缓存只保留最近 5 条音频，播放完成自动清理，减少内存占用。
 
 `voice_id` 原样传给 TTS 提供商；不同提供商支持的音色名称不同，应以对应平台文档为准。OpenAI 兼容服务使用 `voice` 与受支持模型的 `instructions`；MiMo 使用 `audio.voice`，并把音色描述作为可选 `user` 消息；MiniMax 使用 `voice_setting.voice_id`；Qwen 使用 `input.voice`，仅 Instruct 模型传入 `input.instructions`。`type` 为 `clone` 时，应用读取 `sample_file` 指向的音频样本，组装 Data URI 后通过 MiMo `mimo-v2.5-tts-voiceclone` 模型复刻音色。
 

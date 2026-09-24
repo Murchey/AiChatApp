@@ -30,6 +30,8 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
   int _sampleSize = 0;
   bool _busy = false;
   String? _status;
+  String? _designModelId;
+  String? _cloneModelId;
 
   @override
   void dispose() {
@@ -39,15 +41,77 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
     super.dispose();
   }
 
-  ApiModel? get _mimoTtsModel {
+  /// 可选的语音模型列表（含 TTS 标识的模型 + 当前已选语音模型）。
+  List<ApiModel> get _availableModels {
     final api = context.read<ApiProvider>();
-    for (final m in api.models) {
-      if (m.modelName.toLowerCase().contains('mimo') &&
-          m.modelName.toLowerCase().contains('tts')) {
-        return m;
+    final models = <ApiModel>[
+      for (final m in api.models)
+        if (TtsService.isSupportedModel(m)) m,
+    ];
+    return models;
+  }
+
+  ApiModel? _selectedModel(String? id) {
+    final models = _availableModels;
+    if (id != null) {
+      for (final m in models) {
+        if (m.id == id) return m;
       }
     }
-    return api.getModelById(api.ttsModelId);
+    return models.firstOrNull;
+  }
+
+  Future<void> _pickModel({required bool forClone}) async {
+    final models = _availableModels;
+    if (models.isEmpty) {
+      setState(() => _status = '请先在 API 设置中添加语音模型');
+      return;
+    }
+    final selected = await showCupertinoModalPopup<ApiModel>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.5,
+          ),
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: ctx.scaffoldColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final m in models)
+                CupertinoListTile(
+                  title: Text(m.displayName),
+                  subtitle: Text(
+                    m.modelName,
+                    style:
+                        TextStyle(fontSize: 12, color: ctx.textSecondaryColor),
+                  ),
+                  trailing: (forClone ? _cloneModelId : _designModelId) == m.id
+                      ? Icon(CupertinoIcons.check_mark, color: ctx.accentColor)
+                      : null,
+                  onTap: () => Navigator.pop(ctx, m),
+                ),
+              CupertinoButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected == null) return;
+    setState(() {
+      if (forClone) {
+        _cloneModelId = selected.id;
+      } else {
+        _designModelId = selected.id;
+      }
+    });
   }
 
   Future<void> _pickSample() async {
@@ -70,11 +134,11 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
   }
 
   Future<void> _previewDesign() async {
-    final model = _mimoTtsModel;
+    final model = _selectedModel(_designModelId);
     final prompt = _designPromptCtrl.text.trim();
     final text = _designTextCtrl.text.trim();
     if (model == null) {
-      setState(() => _status = '请先在 API 设置中配置 MiMo TTS 模型');
+      setState(() => _status = '请先选择音色设计模型');
       return;
     }
     if (prompt.isEmpty || text.isEmpty) {
@@ -87,7 +151,7 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
     });
     try {
       final audio = await TtsService.synthesize(
-        model: model.copyWith(modelName: 'mimo-v2.5-tts-voicedesign'),
+        model: model,
         text: text,
         voice: '',
         instructions: prompt,
@@ -102,11 +166,11 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
   }
 
   Future<void> _previewClone() async {
-    final model = _mimoTtsModel;
+    final model = _selectedModel(_cloneModelId);
     final text = _cloneTextCtrl.text.trim();
     final samplePath = _samplePath;
     if (model == null) {
-      setState(() => _status = '请先在 API 设置中配置 MiMo TTS 模型');
+      setState(() => _status = '请先选择声音克隆模型');
       return;
     }
     if (samplePath == null || text.isEmpty) {
@@ -121,7 +185,7 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
       final bytes = await File(samplePath).readAsBytes();
       final dataUri = 'data:$_sampleMime;base64,${base64Encode(bytes)}';
       final audio = await TtsService.synthesize(
-        model: model.copyWith(modelName: 'mimo-v2.5-tts-voiceclone'),
+        model: model,
         text: text,
         voice: dataUri,
         instructions: '',
@@ -137,6 +201,26 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
 
   void _enqueuePreview(TtsAudioData audio, {required String messageId}) {
     TtsPlaybackController.instance.playAudio(audio, messageId: messageId);
+  }
+
+  Future<void> _saveAudioAs() async {
+    final playback = TtsPlaybackController.instance;
+    final path = playback.currentAudioPath;
+    if (path == null) return;
+    try {
+      final result = await FilePicker.platform.saveFile(
+        dialogTitle: '另存为测试音频',
+        fileName: 'voice_preview_${DateTime.now().millisecondsSinceEpoch}'
+            '.${path.split('.').last}',
+      );
+      if (result == null) return;
+      final ok = await playback.saveCurrentAudio(result);
+      setState(() {
+        _status = ok ? '已另存到 $result' : '另存失败';
+      });
+    } catch (e) {
+      setState(() => _status = '另存失败：$e');
+    }
   }
 
   Future<void> _saveToCharacter() async {
@@ -224,7 +308,7 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              '使用 MiMo TTS 设计音色或复刻声音，并保存到角色卡。',
+              '选择 TTS 模型设计音色或复刻声音，并保存到角色卡。',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.5,
@@ -241,6 +325,22 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
             ),
             header: const Text('音色设计'),
             children: [
+              CupertinoListTile(
+                title: Text(
+                    _selectedModel(_designModelId)?.displayName ?? '选择设计模型'),
+                subtitle: Text(
+                  _selectedModel(_designModelId)?.modelName ??
+                      '点击选择用于音色设计的 TTS 模型',
+                  style: TextStyle(
+                      fontSize: 12, color: context.textSecondaryColor),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 14,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: _busy ? null : () => _pickModel(forClone: false),
+              ),
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
@@ -284,6 +384,22 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
             ),
             header: const Text('声音克隆'),
             children: [
+              CupertinoListTile(
+                title: Text(
+                    _selectedModel(_cloneModelId)?.displayName ?? '选择克隆模型'),
+                subtitle: Text(
+                  _selectedModel(_cloneModelId)?.modelName ??
+                      '点击选择用于声音克隆的 TTS 模型',
+                  style: TextStyle(
+                      fontSize: 12, color: context.textSecondaryColor),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 14,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: _busy ? null : () => _pickModel(forClone: true),
+              ),
               CupertinoListTile(
                 title: Text(_samplePath == null
                     ? '选择音频样本（mp3 / wav）'
@@ -329,6 +445,92 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
                 ),
               ),
             ],
+          ),
+          // ── 试听播放器 ──
+          ListenableBuilder(
+            listenable: TtsPlaybackController.instance,
+            builder: (context, _) {
+              final playback = TtsPlaybackController.instance;
+              final hasAudio = playback.currentAudioPath != null;
+              final isPlaying =
+                  playback.snapshot.phase == TtsPlaybackPhase.playing;
+              final isPaused = playback.isPaused;
+              return CupertinoListSection.insetGrouped(
+                backgroundColor: context.scaffoldColor,
+                decoration: BoxDecoration(
+                  color: context.listBgColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                header: const Text('试听播放器'),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(44, 44),
+                          onPressed: !hasAudio
+                              ? null
+                              : () {
+                                  if (isPaused) {
+                                    playback.resume();
+                                  } else if (isPlaying) {
+                                    playback.pause();
+                                  } else {
+                                    // 播放结束后重新播放当前文件
+                                    final path = playback.currentAudioPath;
+                                    if (path != null) {
+                                      playback.playAudio(
+                                        TtsAudioData(
+                                          File(path).readAsBytesSync(),
+                                          path.split('.').last,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                          child: Icon(
+                            isPaused || !isPlaying
+                                ? CupertinoIcons.play_fill
+                                : CupertinoIcons.pause_fill,
+                            size: 32,
+                            color: hasAudio
+                                ? context.accentColor
+                                : context.textSecondaryColor,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            hasAudio
+                                ? (isPlaying
+                                    ? (isPaused ? '已暂停' : '播放中…')
+                                    : '播放结束')
+                                : '暂无音频，请先生成试听',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: context.textSecondaryColor,
+                            ),
+                          ),
+                        ),
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: !hasAudio ? null : () => _saveAudioAs(),
+                          child: Icon(
+                            CupertinoIcons.square_arrow_down,
+                            size: 24,
+                            color: hasAudio
+                                ? context.accentColor
+                                : context.textSecondaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           // ── 已保存声音 ──
           CupertinoListSection.insetGrouped(

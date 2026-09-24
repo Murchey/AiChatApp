@@ -99,6 +99,7 @@ class StorageManagerService {
   static const _chatPrefixes = ['chat_import_'];
   static const _stickerDirs = ['stickers'];
   static const _fontDirs = ['imported_fonts'];
+  static const _voiceDirs = ['voice', 'voice_samples'];
 
   // 引擎/系统运行时目录（非用户数据、非缓存，排除出占用统计与删除）
   // 例如 debug 模式下 Flutter 引擎落盘的 flutter_assets（kernel_blob 等）
@@ -122,6 +123,7 @@ class StorageManagerService {
       await _stickerItem(),
       await _characterItem(prefs),
       await _fontItem(),
+      await _voiceCacheItem(),
       _notificationItem(prefs),
       _profileItem(prefs),
       await _downloadCacheItem(),
@@ -181,6 +183,28 @@ class StorageManagerService {
       title: '显示字体文件',
       subtitle: '已导入的 TTF 气泡字体；删除后聊天气泡恢复系统默认字体',
       isUserData: true,
+      sizeBytes: bytes,
+      deletable: bytes > 0,
+    );
+  }
+
+  /// 音频缓冲：TTS 播放缓存（aichat_tts_*）+ 角色克隆模板音频（voice/、voice_samples/）
+  static Future<StorageItem> _voiceCacheItem() async {
+    var bytes = await _docDirsSize(names: _voiceDirs, prefixes: const []);
+    // TTS 播放缓存文件（aichat_tts_*）在临时目录
+    try {
+      final tmp = await getTemporaryDirectory();
+      for (final e in tmp.listSync()) {
+        if (e is File && _basename(e.path).startsWith('aichat_tts_')) {
+          bytes += e.lengthSync();
+        }
+      }
+    } catch (_) {}
+    return StorageItem(
+      id: 'voice_cache',
+      title: '音频缓冲',
+      subtitle: 'TTS 播放缓存与角色克隆模板音频；删除后需重新生成/选取',
+      isUserData: false,
       sizeBytes: bytes,
       deletable: bytes > 0,
     );
@@ -290,7 +314,28 @@ class StorageManagerService {
     return _deleteDocDirs(names: _stickerDirs, prefixes: const []);
   }
 
-  static Future<int> clearImportedFonts() => const ImportedFontStorage().clear();
+  static Future<int> clearImportedFonts() =>
+      const ImportedFontStorage().clear();
+
+  /// 清除音频缓冲：TTS 播放缓存 + 角色克隆模板音频
+  static Future<int> clearVoiceCache() async {
+    var freed = 0;
+    // 1. TTS 播放缓存文件
+    try {
+      final tmp = await getTemporaryDirectory();
+      for (final e in tmp.listSync()) {
+        if (e is File && _basename(e.path).startsWith('aichat_tts_')) {
+          try {
+            freed += e.lengthSync();
+            e.deleteSync();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    // 2. 角色克隆模板音频目录
+    freed += await _deleteDocDirs(names: _voiceDirs, prefixes: const []);
+    return freed;
+  }
 
   /// 删除发布/导入的朋友圈图片目录（user_moments、moment_import_*）
   static Future<int> clearCharacterFiles() async {
@@ -440,6 +485,7 @@ class StorageManagerService {
       _chatPrefixes.any((p) => name.startsWith(p)) ||
       _stickerDirs.contains(name) ||
       _fontDirs.contains(name) ||
+      _voiceDirs.contains(name) ||
       _systemDirs.contains(name);
 
   /// 文件是否属于安全可删类型（图片/压缩包/临时文件）

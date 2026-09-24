@@ -24,6 +24,9 @@ class Character {
   /// 克隆样本在角色包内的相对路径（如 voice/sample.mp3）。
   final String voiceSampleFile;
 
+  /// 克隆模板音频的本地绝对路径（用户在资料卡中选取）。
+  final String voiceTemplatePath;
+
   /// 克隆样本 MIME：audio/mpeg、audio/mp3、audio/wav。
   final String voiceMimeType;
 
@@ -58,6 +61,7 @@ class Character {
     this.voiceInstructions = '',
     this.voiceType = 'preset',
     this.voiceSampleFile = '',
+    this.voiceTemplatePath = '',
     this.voiceMimeType = '',
     this.activeStart = '',
     this.activeEnd = '',
@@ -98,6 +102,10 @@ class Character {
           (json['voice'] as Map<String, dynamic>?)?['sample_file'] as String? ??
               json['voice_sample_file'] as String? ??
               '',
+      voiceTemplatePath: (json['voice']
+              as Map<String, dynamic>?)?['template_path'] as String? ??
+          json['voice_template_path'] as String? ??
+          '',
       voiceMimeType:
           (json['voice'] as Map<String, dynamic>?)?['mime_type'] as String? ??
               json['voice_mime_type'] as String? ??
@@ -137,6 +145,7 @@ class Character {
           if (voiceInstructions.isNotEmpty) 'instructions': voiceInstructions,
           if (voiceType != 'preset') 'type': voiceType,
           if (voiceSampleFile.isNotEmpty) 'sample_file': voiceSampleFile,
+          if (voiceTemplatePath.isNotEmpty) 'template_path': voiceTemplatePath,
           if (voiceMimeType.isNotEmpty) 'mime_type': voiceMimeType,
         },
       'active_start': activeStart,
@@ -164,6 +173,7 @@ class Character {
     String? voiceInstructions,
     String? voiceType,
     String? voiceSampleFile,
+    String? voiceTemplatePath,
     String? voiceMimeType,
     String? activeStart,
     String? activeEnd,
@@ -189,6 +199,7 @@ class Character {
       voiceInstructions: voiceInstructions ?? this.voiceInstructions,
       voiceType: voiceType ?? this.voiceType,
       voiceSampleFile: voiceSampleFile ?? this.voiceSampleFile,
+      voiceTemplatePath: voiceTemplatePath ?? this.voiceTemplatePath,
       voiceMimeType: voiceMimeType ?? this.voiceMimeType,
       activeStart: activeStart ?? this.activeStart,
       activeEnd: activeEnd ?? this.activeEnd,

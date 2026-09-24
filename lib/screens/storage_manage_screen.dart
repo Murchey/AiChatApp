@@ -82,6 +82,8 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
         return '将删除全部已导入的 TTF 字体文件；使用这些字体的聊天气泡会恢复系统默认字体。确定继续吗？';
       case 'temp':
         return '将删除系统临时目录中的缓存文件，不影响已保存的数据。确定继续吗？';
+      case 'voice_cache':
+        return '将删除 TTS 播放缓存与角色克隆模板音频；删除后需重新生成/选取。确定继续吗？';
       case 'other':
         return '将删除可安全清理的残留文件（如导出包、临时文件）；无法确认安全性的未分类目录会保留。确定继续吗？';
       default:
@@ -174,6 +176,9 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
         break;
       case 'temp':
         await StorageManagerService.clearTempFiles();
+        break;
+      case 'voice_cache':
+        await StorageManagerService.clearVoiceCache();
         break;
     }
     await _scan();

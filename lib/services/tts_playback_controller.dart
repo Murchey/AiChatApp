@@ -65,6 +65,12 @@ class TtsPlaybackController extends ChangeNotifier {
   bool _processing = false;
   bool _cancelled = false;
 
+  /// 保留的音频缓存文件队列（最多 5 个，超出自动删除最旧的）。
+  final List<String> _audioCache = [];
+
+  /// 当前已暂停（供工作台播放/暂停按钮使用）。
+  bool _paused = false;
+
   AudioPlayer get _audioPlayer => _player ??= AudioPlayer();
 
   TtsPlaybackSnapshot get snapshot => TtsPlaybackSnapshot(
@@ -222,7 +228,50 @@ class TtsPlaybackController extends ChangeNotifier {
     return _playBytes(audio.bytes, extension: audio.extension);
   }
 
+  /// 暂停当前播放。
+  Future<void> pause() async {
+    if (_player == null) return;
+    _paused = true;
+    await _audioPlayer.pause();
+    _notify();
+  }
+
+  /// 继续播放。
+  Future<void> resume() async {
+    if (_player == null) return;
+    _paused = false;
+    await _audioPlayer.resume();
+    _notify();
+  }
+
+  bool get isPaused => _paused;
+
+  /// 当前播放的音频文件路径（供「另存为」使用）。
+  String? get currentAudioPath => _currentFile;
+
+  /// 将当前音频另存为到目标路径。
+  Future<bool> saveCurrentAudio(String targetPath) async {
+    final src = _currentFile;
+    if (src == null) return false;
+    try {
+      await File(src).copy(targetPath);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   StreamSubscription<PlayerState>? _playerSub;
+
+  /// 清理音频缓存：只保留最近 5 个文件，删除更旧的。
+  void _trimAudioCache() {
+    while (_audioCache.length > 5) {
+      final oldest = _audioCache.removeAt(0);
+      try {
+        File(oldest).deleteSync();
+      } catch (_) {}
+    }
+  }
 
   Future<void> _playBytes(Uint8List data, {required String extension}) async {
     if (data.isEmpty) {
@@ -234,13 +283,10 @@ class TtsPlaybackController extends ChangeNotifier {
     );
     await file.writeAsBytes(data, flush: true);
     await _audioPlayer.stop();
-    final previous = _currentFile;
     _currentFile = file.path;
-    if (previous != null && previous != file.path) {
-      try {
-        await File(previous).delete();
-      } catch (_) {}
-    }
+    _audioCache.add(file.path);
+    _trimAudioCache();
+    _paused = false;
     _phase = TtsPlaybackPhase.playing;
     _notify();
     final completion = Completer<void>();
@@ -257,6 +303,10 @@ class TtsPlaybackController extends ChangeNotifier {
     );
     await _playerSub?.cancel();
     _playerSub = null;
+    _paused = false;
+    // 播放完成后立即删除本次音频（缓存列表里保留的除外）
+    // _trimAudioCache 已保证最多 5 个，这里不额外删当前文件，
+    // 让「另存为」在播放结束后仍可短暂访问。
   }
 
   void _notify() => notifyListeners();
