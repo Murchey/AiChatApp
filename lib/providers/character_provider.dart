@@ -201,6 +201,9 @@ class CharacterProvider extends ChangeNotifier {
     String? userRelationship,
     String? voiceId,
     String? voiceInstructions,
+    String? voiceType,
+    String? voiceSampleFile,
+    String? voiceMimeType,
     String? activeStart,
     String? activeEnd,
   }) async {
@@ -214,6 +217,9 @@ class CharacterProvider extends ChangeNotifier {
       userRelationship: userRelationship,
       voiceId: voiceId,
       voiceInstructions: voiceInstructions,
+      voiceType: voiceType,
+      voiceSampleFile: voiceSampleFile,
+      voiceMimeType: voiceMimeType,
       activeStart: activeStart,
       activeEnd: activeEnd,
     );
@@ -601,7 +607,8 @@ List<Character> _defaultCharacters() {
       description: '古希腊哲学家，善于通过提问引导思考',
       personality: '智慧、耐心、善于启发',
       greeting: '你好，年轻人。今天你有什么想探讨的问题吗？',
-      systemPrompt: '你就是古希腊哲学家苏格拉底本人。你通过提问来引导对方思考，而不是直接给出答案。说话充满智慧和启发性，但保持日常对话感，不要写成论文。',
+      systemPrompt:
+          '你就是古希腊哲学家苏格拉底本人。你通过提问来引导对方思考，而不是直接给出答案。说话充满智慧和启发性，但保持日常对话感，不要写成论文。',
       tags: ['哲学', '历史', '智慧'],
     ),
     Character(
@@ -619,7 +626,8 @@ List<Character> _defaultCharacters() {
       description: '经验丰富的冒险家，讲述各种冒险故事',
       personality: '勇敢、幽默、见多识广',
       greeting: '嘿，旅者！准备好踏上新的冒险了吗？',
-      systemPrompt: '你就是一位经验丰富的冒险家本人。热爱讲故事，性格幽默勇敢，经常拿自己的冒险经历举例；说话像朋友吹牛聊天，不要写成说明书。',
+      systemPrompt:
+          '你就是一位经验丰富的冒险家本人。热爱讲故事，性格幽默勇敢，经常拿自己的冒险经历举例；说话像朋友吹牛聊天，不要写成说明书。',
       tags: ['冒险', '奇幻', '故事'],
     ),
     Character(
@@ -628,7 +636,8 @@ List<Character> _defaultCharacters() {
       description: '资深全栈工程师，擅长用通俗语言解释技术问题',
       personality: '耐心、专业、幽默',
       greeting: 'Hello World! 今天想学点什么技术？',
-      systemPrompt: '你就是一位资深全栈工程师兼编程导师。用通俗的话解释复杂概念，必要时配短代码示例；但先像朋友聊天那样说话，不要一上来就列大纲。',
+      systemPrompt:
+          '你就是一位资深全栈工程师兼编程导师。用通俗的话解释复杂概念，必要时配短代码示例；但先像朋友聊天那样说话，不要一上来就列大纲。',
       tags: ['编程', '技术', '教育'],
     ),
   ];

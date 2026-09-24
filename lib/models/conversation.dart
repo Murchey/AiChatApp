@@ -10,6 +10,7 @@ class Conversation {
   /// 是否置顶（置顶会话在首页会话列表排最前）
   final bool pinned;
   final bool autoRead;
+  final bool continuousRead;
 
   Conversation({
     required this.id,
@@ -21,6 +22,7 @@ class Conversation {
     this.unreadCount = 0,
     this.pinned = false,
     this.autoRead = false,
+    this.continuousRead = false,
   }) : lastMessageTime = lastMessageTime ?? DateTime.now();
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
@@ -36,6 +38,7 @@ class Conversation {
       unreadCount: json['unread_count'] as int? ?? 0,
       pinned: json['pinned'] as bool? ?? false,
       autoRead: json['auto_read'] as bool? ?? false,
+      continuousRead: json['continuous_read'] as bool? ?? false,
     );
   }
 
@@ -50,6 +53,7 @@ class Conversation {
       'unread_count': unreadCount,
       'pinned': pinned,
       'auto_read': autoRead,
+      'continuous_read': continuousRead,
     };
   }
 
@@ -62,6 +66,7 @@ class Conversation {
     int? unreadCount,
     bool? pinned,
     bool? autoRead,
+    bool? continuousRead,
   }) {
     return Conversation(
       id: id,
@@ -73,6 +78,7 @@ class Conversation {
       unreadCount: unreadCount ?? this.unreadCount,
       pinned: pinned ?? this.pinned,
       autoRead: autoRead ?? this.autoRead,
+      continuousRead: continuousRead ?? this.continuousRead,
     );
   }
 }

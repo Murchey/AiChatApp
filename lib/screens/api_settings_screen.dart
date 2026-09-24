@@ -83,7 +83,7 @@ class ApiSettingsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '当前支持：Qwen DashScope 原生 TTS、OpenAI 兼容 /audio/speech；MiMo 暂未适配',
+                      '当前支持：OpenAI、MiMo、MiniMax、Qwen 非流式 TTS',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 12,
@@ -561,13 +561,15 @@ class ApiSettingsScreen extends StatelessWidget {
             header: const Text('语音合成'),
             children: [
               CupertinoListTile(
-                leading: Icon(CupertinoIcons.waveform, color: context.accentColor),
+                leading:
+                    Icon(CupertinoIcons.waveform, color: context.accentColor),
                 title: const Text('语音模型'),
                 subtitle: Text(
                   _ttsModelLabel(api),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+                  style: TextStyle(
+                      fontSize: 12, color: context.textSecondaryColor),
                 ),
                 trailing: Icon(CupertinoIcons.chevron_right,
                     size: 16, color: context.textSecondaryColor),

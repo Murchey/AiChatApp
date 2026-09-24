@@ -28,7 +28,7 @@ import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
 import '../services/prompt_builder.dart';
 import '../services/memory_pool_builder.dart';
-import '../services/tts_service.dart';
+import '../services/tts_playback_controller.dart';
 import '../utils/file_picker_helper.dart';
 import '../utils/app_toast.dart';
 import '../widgets/chat_bubble.dart';
@@ -579,13 +579,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (!settings.showThinkingDuration) return const SizedBox.shrink();
         return Padding(
           // 与 ChatBubble 行内对齐：页边 12 + 头像 40 + 间距 8
-          padding: const EdgeInsets.only(top: 0, bottom: 6, left: 60, right: 48),
+          padding:
+              const EdgeInsets.only(top: 0, bottom: 6, left: 60, right: 48),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: context.textSecondaryColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
@@ -1189,9 +1189,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static const double _menuCellHeight = 46;
   static const double _menuSpacing = 4;
   static const double _menuPadding = 8;
+
   /// Border.all 的线宽；Container 会把它计入内边距（decoration.padding），
   /// 尺寸公式必须预留，否则 Positioned 约束会比面板固有宽高各窄 1dp（debug 溢出黄条）。
   static const double _menuBorder = 0.5;
+
   /// 单行最多按钮数（再宽会超出手机屏宽）
   static const int _menuMaxColumns = 3;
 
@@ -1991,22 +1993,66 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (mounted) showAppToast('请先在「API 设置」中选择语音模型');
       return;
     }
-    final conversation = context.read<ChatProvider>().conversations
+    final conversation = context
+        .read<ChatProvider>()
+        .conversations
         .where((c) => c.id == widget.conversationId)
         .firstOrNull;
     final character = conversation == null
         ? null
-        : context.read<CharacterProvider>().getCharacterById(conversation.characterId);
-    try {
-      await TtsService.speak(
-        model: model,
-        text: message.content,
-        voice: character?.voiceId ?? '',
-        instructions: character?.voiceInstructions ?? '',
-      );
-    } catch (e) {
-      if (mounted) showAppToast(e.toString());
+        : context
+            .read<CharacterProvider>()
+            .getCharacterById(conversation.characterId);
+
+    // 连续播放：从点击的消息开始，只播本轮（到下一条用户消息为止）的 AI 回复。
+    if (conversation?.continuousRead == true) {
+      final all = context
+          .read<ChatProvider>()
+          .getMessages(widget.conversationId)
+          .toList();
+      final startIndex = all.indexWhere((m) => m.id == message.id);
+      if (startIndex < 0) {
+        TtsPlaybackController.instance.enqueue(TtsPlaybackEntry(
+          messageId: message.id,
+          model: model,
+          text: message.content,
+          voice: character?.voiceId ?? '',
+          instructions: character?.voiceInstructions ?? '',
+        ));
+        return;
+      }
+      // 找到本轮边界：startIndex 之后第一条用户消息之前
+      var endIndex = all.length;
+      for (var i = startIndex + 1; i < all.length; i++) {
+        if (all[i].isFromUser) {
+          endIndex = i;
+          break;
+        }
+      }
+      final entries = all
+          .sublist(startIndex, endIndex)
+          .where((m) => !m.isFromUser && m.content.trim().isNotEmpty)
+          .map((m) => TtsPlaybackEntry(
+                messageId: m.id,
+                model: model,
+                text: m.content,
+                voice: character?.voiceId ?? '',
+                instructions: character?.voiceInstructions ?? '',
+              ))
+          .toList();
+      if (entries.isNotEmpty) {
+        TtsPlaybackController.instance.playSequence(entries);
+      }
+      return;
     }
+
+    TtsPlaybackController.instance.enqueue(TtsPlaybackEntry(
+      messageId: message.id,
+      model: model,
+      text: message.content,
+      voice: character?.voiceId ?? '',
+      instructions: character?.voiceInstructions ?? '',
+    ));
   }
 
   /// 触发"角色主动发消息/回复"：组装参数后交给 [ChatProvider.runProactiveReply]
@@ -2118,10 +2164,40 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     debugPrint(
         '[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');
     if (conversation?.autoRead == true && messages.isNotEmpty) {
-      final latest = chatProvider.getMessages(widget.conversationId)
-          .where((m) => !m.isFromUser && m.content.trim().isNotEmpty)
-          .lastOrNull;
-      if (latest != null) await _speakMessage(latest);
+      if (!mounted) return;
+      final ttsModel = context.read<ApiProvider>().getModelById(
+            context.read<ApiProvider>().ttsModelId,
+          );
+      if (ttsModel != null) {
+        final characterVoice = conversation == null
+            ? null
+            : context
+                .read<CharacterProvider>()
+                .getCharacterById(conversation.characterId);
+        final replyMessages = chatProvider
+            .getMessages(widget.conversationId)
+            .where((m) => !m.isFromUser && m.content.trim().isNotEmpty)
+            .toList();
+        final roundMessages = replyMessages.length >= messages.length
+            ? replyMessages.sublist(replyMessages.length - messages.length)
+            : replyMessages;
+        final entries = roundMessages
+            .map((m) => TtsPlaybackEntry(
+                  messageId: m.id,
+                  model: ttsModel,
+                  text: m.content,
+                  voice: characterVoice?.voiceId ?? '',
+                  instructions: characterVoice?.voiceInstructions ?? '',
+                ))
+            .toList();
+        if (entries.isNotEmpty) {
+          if (conversation?.continuousRead == true && entries.length > 1) {
+            TtsPlaybackController.instance.playSequence(entries);
+          } else {
+            TtsPlaybackController.instance.enqueue(entries.last);
+          }
+        }
+      }
     }
     if (!mounted) return;
     // 流式语C在同一次正文回复中携带候选项；非流式接口保留二次请求作为兼容兜底。
@@ -2501,33 +2577,52 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   children: [
                                     if (showTime)
                                       _buildTimeLabel(msg.createdAt),
-                                    ChatBubble(
-                                      message: msg,
-                                      userAvatar: userAvatar,
-                                      characterAvatar: characterAvatar,
-                                      selectMode: _selectMode,
-                                      selected: _selectedIds.contains(msg.id),
-                                      // 点击头像进入对应空间页（多选模式下禁用，避免误触）
-                                      onUserAvatarTap:
-                                          _selectMode ? null : _openSelfSpace,
-                                      onCharacterAvatarTap: _selectMode
-                                          ? null
-                                          : _openCharacterSpace,
-                                      onTap: _selectMode
-                                          ? () => _toggleSelect(msg)
-                                          : null,
-                                      onForwardTap: () => _openForwardDetail(
-                                        msg,
-                                        userAvatar: userAvatar,
-                                        characterAvatar: characterAvatar,
-                                      ),
-                                      onFileTap:
-                                          _selectMode ? null : _openFileMessage,
-                                      onSpeak: _selectMode
-                                          ? null
-                                          : () => _speakMessage(msg),
-                                      onLongPress: (message, bubbleKey) =>
-                                          _showBubbleMenu(message, bubbleKey),
+                                    ListenableBuilder(
+                                      listenable:
+                                          TtsPlaybackController.instance,
+                                      builder: (context, _) {
+                                        final playback =
+                                            TtsPlaybackController.instance;
+                                        return ChatBubble(
+                                          message: msg,
+                                          userAvatar: userAvatar,
+                                          characterAvatar: characterAvatar,
+                                          selectMode: _selectMode,
+                                          selected:
+                                              _selectedIds.contains(msg.id),
+                                          playbackPhase:
+                                              playback.phaseFor(msg.id),
+                                          playbackQueuedCount:
+                                              playback.queuedCountFor(msg.id),
+                                          onCancelPlayback: () =>
+                                              playback.cancelMessage(msg.id),
+                                          // 点击头像进入对应空间页（多选模式下禁用，避免误触）
+                                          onUserAvatarTap: _selectMode
+                                              ? null
+                                              : _openSelfSpace,
+                                          onCharacterAvatarTap: _selectMode
+                                              ? null
+                                              : _openCharacterSpace,
+                                          onTap: _selectMode
+                                              ? () => _toggleSelect(msg)
+                                              : null,
+                                          onForwardTap: () =>
+                                              _openForwardDetail(
+                                            msg,
+                                            userAvatar: userAvatar,
+                                            characterAvatar: characterAvatar,
+                                          ),
+                                          onFileTap: _selectMode
+                                              ? null
+                                              : _openFileMessage,
+                                          onSpeak: _selectMode
+                                              ? null
+                                              : () => _speakMessage(msg),
+                                          onLongPress: (message, bubbleKey) =>
+                                              _showBubbleMenu(
+                                                  message, bubbleKey),
+                                        );
+                                      },
                                     ),
                                     // 思考时长：角色气泡下方，左对齐气泡列
                                     if (!msg.isFromUser)

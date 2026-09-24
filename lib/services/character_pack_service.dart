@@ -185,11 +185,20 @@ class CharacterPackService {
       greeting: str('greeting'),
       systemPrompt: systemPrompt,
       userRelationship: str('user_relationship'),
-      voiceId: (data['voice'] as Map<String, dynamic>?)?['voice_id'] as String? ??
-          str('voice_id'),
-      voiceInstructions:
-          (data['voice'] as Map<String, dynamic>?)?['instructions'] as String? ??
-              str('voice_instructions'),
+      voiceId:
+          (data['voice'] as Map<String, dynamic>?)?['voice_id'] as String? ??
+              str('voice_id'),
+      voiceInstructions: (data['voice']
+              as Map<String, dynamic>?)?['instructions'] as String? ??
+          str('voice_instructions'),
+      voiceType: (data['voice'] as Map<String, dynamic>?)?['type'] as String? ??
+          'preset',
+      voiceSampleFile:
+          (data['voice'] as Map<String, dynamic>?)?['sample_file'] as String? ??
+              '',
+      voiceMimeType:
+          (data['voice'] as Map<String, dynamic>?)?['mime_type'] as String? ??
+              '',
       activeStart: str('active_start'),
       activeEnd: str('active_end'),
       modelId: str('model_id'),
@@ -385,8 +394,8 @@ class CharacterPackService {
     String? saveDirectory,
     Map<String, List<MemoryPoint>>? memoryByCharacter,
   }) async {
-    final packed =
-        await encodeCharacterPack(characters, memoryByCharacter: memoryByCharacter);
+    final packed = await encodeCharacterPack(characters,
+        memoryByCharacter: memoryByCharacter);
     final dir = saveDirectory ?? await _defaultSaveDirectory();
     final file = File('$dir/${packed.fileName}');
     await file.writeAsBytes(packed.bytes);
@@ -410,11 +419,17 @@ class CharacterPackService {
         'personality': c.personality,
         'greeting': c.greeting,
         'user_relationship': c.userRelationship,
-        if (c.voiceId.isNotEmpty || c.voiceInstructions.isNotEmpty)
+        if (c.voiceId.isNotEmpty ||
+            c.voiceInstructions.isNotEmpty ||
+            c.voiceType != 'preset' ||
+            c.voiceSampleFile.isNotEmpty)
           'voice': {
             if (c.voiceId.isNotEmpty) 'voice_id': c.voiceId,
             if (c.voiceInstructions.isNotEmpty)
               'instructions': c.voiceInstructions,
+            if (c.voiceType != 'preset') 'type': c.voiceType,
+            if (c.voiceSampleFile.isNotEmpty) 'sample_file': c.voiceSampleFile,
+            if (c.voiceMimeType.isNotEmpty) 'mime_type': c.voiceMimeType,
           },
         'tags': c.tags,
         // 活跃时段（"HH:mm"，仅写入已设置的字段）

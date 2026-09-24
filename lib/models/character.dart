@@ -18,6 +18,15 @@ class Character {
   final String voiceId;
   final String voiceInstructions;
 
+  /// 音色类型：preset（预置）/ design（文本设计）/ clone（样本复刻）。
+  final String voiceType;
+
+  /// 克隆样本在角色包内的相对路径（如 voice/sample.mp3）。
+  final String voiceSampleFile;
+
+  /// 克隆样本 MIME：audio/mpeg、audio/mp3、audio/wav。
+  final String voiceMimeType;
+
   /// 活跃时段（"HH:mm"，start/end 任一为空表示未设置）：
   /// 在该时间段内聊天时，角色不会主动道别/说晚安，保持活跃
   final String activeStart;
@@ -47,6 +56,9 @@ class Character {
     this.userRelationship = '',
     this.voiceId = '',
     this.voiceInstructions = '',
+    this.voiceType = 'preset',
+    this.voiceSampleFile = '',
+    this.voiceMimeType = '',
     this.activeStart = '',
     this.activeEnd = '',
     this.modelId = '',
@@ -72,11 +84,24 @@ class Character {
       greeting: json['greeting'] as String? ?? '',
       systemPrompt: json['system_prompt'] as String? ?? '',
       userRelationship: json['user_relationship'] as String? ?? '',
-      voiceId: (json['voice'] as Map<String, dynamic>?)?['voice_id'] as String? ??
-          json['voice_id'] as String? ?? '',
-      voiceInstructions:
-          (json['voice'] as Map<String, dynamic>?)?['instructions'] as String? ??
-              json['voice_instructions'] as String? ?? '',
+      voiceId:
+          (json['voice'] as Map<String, dynamic>?)?['voice_id'] as String? ??
+              json['voice_id'] as String? ??
+              '',
+      voiceInstructions: (json['voice']
+              as Map<String, dynamic>?)?['instructions'] as String? ??
+          json['voice_instructions'] as String? ??
+          '',
+      voiceType: (json['voice'] as Map<String, dynamic>?)?['type'] as String? ??
+          'preset',
+      voiceSampleFile:
+          (json['voice'] as Map<String, dynamic>?)?['sample_file'] as String? ??
+              json['voice_sample_file'] as String? ??
+              '',
+      voiceMimeType:
+          (json['voice'] as Map<String, dynamic>?)?['mime_type'] as String? ??
+              json['voice_mime_type'] as String? ??
+              '',
       activeStart: json['active_start'] as String? ?? '',
       activeEnd: json['active_end'] as String? ?? '',
       modelId: json['model_id'] as String? ?? '',
@@ -103,10 +128,16 @@ class Character {
       'greeting': greeting,
       'system_prompt': systemPrompt,
       'user_relationship': userRelationship,
-      if (voiceId.isNotEmpty || voiceInstructions.isNotEmpty)
+      if (voiceId.isNotEmpty ||
+          voiceInstructions.isNotEmpty ||
+          voiceType != 'preset' ||
+          voiceSampleFile.isNotEmpty)
         'voice': {
           if (voiceId.isNotEmpty) 'voice_id': voiceId,
           if (voiceInstructions.isNotEmpty) 'instructions': voiceInstructions,
+          if (voiceType != 'preset') 'type': voiceType,
+          if (voiceSampleFile.isNotEmpty) 'sample_file': voiceSampleFile,
+          if (voiceMimeType.isNotEmpty) 'mime_type': voiceMimeType,
         },
       'active_start': activeStart,
       'active_end': activeEnd,
@@ -131,6 +162,9 @@ class Character {
     String? userRelationship,
     String? voiceId,
     String? voiceInstructions,
+    String? voiceType,
+    String? voiceSampleFile,
+    String? voiceMimeType,
     String? activeStart,
     String? activeEnd,
     String? modelId,
@@ -153,6 +187,9 @@ class Character {
       userRelationship: userRelationship ?? this.userRelationship,
       voiceId: voiceId ?? this.voiceId,
       voiceInstructions: voiceInstructions ?? this.voiceInstructions,
+      voiceType: voiceType ?? this.voiceType,
+      voiceSampleFile: voiceSampleFile ?? this.voiceSampleFile,
+      voiceMimeType: voiceMimeType ?? this.voiceMimeType,
       activeStart: activeStart ?? this.activeStart,
       activeEnd: activeEnd ?? this.activeEnd,
       modelId: modelId ?? this.modelId,

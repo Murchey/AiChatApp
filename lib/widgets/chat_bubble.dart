@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import '../config/theme.dart';
 import '../models/message.dart';
 import '../providers/settings_provider.dart';
+import '../services/tts_playback_controller.dart';
 import 'character_avatar.dart';
 
 /// 微信表情代码 → emoji 映射：AI 按输出规则会携带表情包文字（如 [捂脸]），
@@ -168,6 +169,11 @@ class ChatBubble extends StatefulWidget {
   /// 点击文件消息卡片时回调（参数为文件路径，用于打开文件）
   final Future<void> Function(String filePath)? onFileTap;
   final VoidCallback? onSpeak;
+  final VoidCallback? onCancelPlayback;
+
+  /// 当前消息的播放状态；null 表示未关联播放。
+  final TtsPlaybackPhase? playbackPhase;
+  final int playbackQueuedCount;
 
   /// 点击"我"的头像时回调（进入自己的空间页）
   final VoidCallback? onUserAvatarTap;
@@ -188,6 +194,9 @@ class ChatBubble extends StatefulWidget {
     this.onForwardTap,
     this.onFileTap,
     this.onSpeak,
+    this.onCancelPlayback,
+    this.playbackPhase,
+    this.playbackQueuedCount = 0,
     this.onUserAvatarTap,
     this.onCharacterAvatarTap,
   });
@@ -211,12 +220,14 @@ class _ChatBubbleState extends State<ChatBubble> {
 
     // 系统事件消息（如群成员加入/移除）：居中灰色小气泡。
     // 语C剧情行动虽然使用相同的视觉样式，但仍需支持用户长按后的编辑/撤回菜单。
-    if (message.type == MessageType.system || message.type == MessageType.narration) {
+    if (message.type == MessageType.system ||
+        message.type == MessageType.narration) {
       final narration = message.type == MessageType.narration;
       return GestureDetector(
-        onLongPress: narration && !widget.selectMode && widget.onLongPress != null
-            ? () => widget.onLongPress!(message, _bubbleKey)
-            : null,
+        onLongPress:
+            narration && !widget.selectMode && widget.onLongPress != null
+                ? () => widget.onLongPress!(message, _bubbleKey)
+                : null,
         onTap: narration && widget.selectMode ? widget.onTap : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
@@ -229,9 +240,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                narration
-                    ? '剧情行动\n${message.content}'
-                    : message.content,
+                narration ? '剧情行动\n${message.content}' : message.content,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 12,
@@ -334,19 +343,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                     ),
                   ),
                   if (!isUser && !isImage && !isFile && widget.onSpeak != null)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: CupertinoButton(
-                        padding: const EdgeInsets.fromLTRB(2, 2, 8, 0),
-                        minimumSize: const Size(24, 24),
-                        onPressed: widget.onSpeak,
-                        child: Icon(
-                          CupertinoIcons.volume_up,
-                          size: 16,
-                          color: context.textSecondaryColor,
-                        ),
-                      ),
-                    ),
+                    _buildSpeakButton(context),
                 ],
               ),
             ),
@@ -358,6 +355,64 @@ class _ChatBubbleState extends State<ChatBubble> {
             _buildAvatar(context, avatar, onTap: widget.onUserAvatarTap),
           ],
         ],
+      ),
+    );
+  }
+
+  /// 播放控件：idle=扬声器；synthesizing=波形脉冲；playing=停止；排队=角标；error=重试。
+  Widget _buildSpeakButton(BuildContext context) {
+    final phase = widget.playbackPhase ?? TtsPlaybackPhase.idle;
+    final queued = widget.playbackQueuedCount;
+    final isBusy = phase == TtsPlaybackPhase.synthesizing ||
+        phase == TtsPlaybackPhase.playing;
+    final Color color = switch (phase) {
+      TtsPlaybackPhase.error => CupertinoColors.systemRed,
+      TtsPlaybackPhase.playing ||
+      TtsPlaybackPhase.synthesizing =>
+        context.accentColor,
+      TtsPlaybackPhase.idle =>
+        queued > 0 ? context.accentColor : context.textSecondaryColor,
+    };
+    final IconData icon = switch (phase) {
+      TtsPlaybackPhase.synthesizing => CupertinoIcons.waveform,
+      TtsPlaybackPhase.playing => CupertinoIcons.speaker_2_fill,
+      TtsPlaybackPhase.error => CupertinoIcons.exclamationmark_bubble,
+      TtsPlaybackPhase.idle => CupertinoIcons.volume_up,
+    };
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: CupertinoButton(
+        padding: EdgeInsets.zero,
+        minimumSize: const Size(44, 44),
+        onPressed:
+            isBusy || queued > 0 ? widget.onCancelPlayback : widget.onSpeak,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(icon, size: 18, color: color),
+            if (queued > 0)
+              Positioned(
+                right: -8,
+                top: -6,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: context.accentColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    queued > 9 ? '×9+' : '×$queued',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: CupertinoColors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

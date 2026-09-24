@@ -16,6 +16,7 @@ import 'moments_manage_screen.dart';
 import 'profile_edit_screen.dart';
 import 'settings_screen.dart';
 import 'token_usage_screen.dart';
+import 'voice_workbench_screen.dart';
 import 'workshop_screen.dart';
 
 /// 用户头像解码缓存：同一个 base64 只解码一次，并复用同一个 [MemoryImage]。
@@ -189,6 +190,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         context,
                         CupertinoPageRoute(
                           builder: (_) => const WorkshopScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  CupertinoListTile(
+                    leading: Icon(
+                      CupertinoIcons.waveform,
+                      color: context.accentColor,
+                    ),
+                    title: const Text('声音工作台'),
+                    trailing: Icon(
+                      CupertinoIcons.chevron_right,
+                      size: 16,
+                      color: context.textSecondaryColor,
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => const VoiceWorkbenchScreen(),
                         ),
                       );
                     },

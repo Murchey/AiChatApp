@@ -1289,7 +1289,7 @@ flutter build apk --release --split-per-abi
 - 为每个模型配置**上下文长度**，作为会话压缩 70% 阈值的基准；
 - **压缩会话使用的模型**：单独指定用于压缩的模型（默认跟随聊天模型）；
 - **朋友圈互动模型**：单独指定用于朋友圈互动（自动发帖/点赞评论）的模型。
-- **语音模型（当前支持范围）**：API 设置中的语音模型目前明确支持两类：① Qwen DashScope 原生 TTS（模型需为 Qwen TTS，使用 DashScope 原生接口）；② 返回音频二进制的 OpenAI 兼容 `POST /audio/speech` 服务。不同厂商的 TTS 协议不统一，MiMo 的 `mimo-v2.5-tts` 当前暂未适配，不应选择 `https://api.xiaomimimo.com/v1` 作为语音模型，否则会得到 HTTP 404。后续将按厂商单独适配。
+- **语音模型（当前支持范围）**：API 设置中的语音模型支持 OpenAI、MiMo、MiniMax、Qwen 四类非流式 TTS 协议。OpenAI 及未知域名的兼容服务使用 `POST /audio/speech`；MiMo 官方域名使用 `POST /chat/completions` 并读取 Base64 WAV；MiniMax 官方域名使用 `POST /v1/t2a_v2` 并读取十六进制音频；Qwen 官方域名使用多模态生成接口并读取音频 URL 或 Base64。语音模型名称必须明确包含 `tts`、以 `speech-` 开头，或属于 `MiniMax-Speech`，普通聊天模型不会显示在语音模型列表中。
 
 ### 语音朗读
 
@@ -1307,7 +1307,7 @@ flutter build apk --release --split-per-abi
 }
 ```
 
-`voice_id` 原样传给 TTS 提供商；不同提供商支持的音色名称不同，应以对应平台文档为准。Qwen-TTS 会使用 DashScope 原生请求体中的 `input.voice` 与 `input.instructions`；通用 OpenAI 兼容服务则使用 `voice` 与 `instructions`。
+`voice_id` 原样传给 TTS 提供商；不同提供商支持的音色名称不同，应以对应平台文档为准。OpenAI 兼容服务使用 `voice` 与受支持模型的 `instructions`；MiMo 使用 `audio.voice`，并把音色描述作为可选 `user` 消息；MiniMax 使用 `voice_setting.voice_id`；Qwen 使用 `input.voice`，仅 Instruct 模型传入 `input.instructions`。
 
 ### 会话压缩（【我】→ 聊天设置 → 压缩会话）
 

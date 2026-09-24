@@ -19,4 +19,15 @@ void main() {
     expect(character.voiceId, isEmpty);
     expect(character.voiceInstructions, isEmpty);
   });
+
+  test('legacy top-level voice fields remain compatible', () {
+    final character = Character.fromJson({
+      'id': 'c1',
+      'name': '角色',
+      'voice_id': 'Cherry',
+      'voice_instructions': '温柔、明亮',
+    });
+    expect(character.voiceId, 'Cherry');
+    expect(character.voiceInstructions, '温柔、明亮');
+  });
 }

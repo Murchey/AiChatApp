@@ -1368,6 +1368,24 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
             );
           }),
+          Consumer<ChatProvider>(builder: (context, chatProvider, _) {
+            final conversation = chatProvider.conversations
+                .where((c) => c.id == widget.conversationId)
+                .firstOrNull;
+            return CupertinoListTile(
+              leading: Icon(CupertinoIcons.play_circle,
+                  color: context.accentColor),
+              title: Text('连续播放回复',
+                  style: TextStyle(color: context.textPrimaryColor)),
+              subtitle: Text('一轮多条角色回复按顺序连续播放',
+                  style: TextStyle(fontSize: 12, color: context.textSecondaryColor)),
+              trailing: CupertinoSwitch(
+                value: conversation?.continuousRead ?? false,
+                onChanged: (value) => context.read<ChatProvider>()
+                    .setConversationContinuousRead(widget.conversationId, value),
+              ),
+            );
+          }),
           Container(
             height: 0.5,
             margin: const EdgeInsets.only(left: 16),
