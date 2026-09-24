@@ -261,7 +261,7 @@ CharactersImport/
 | `personality` | 性格特征 | 可选 |
 | `greeting` | 开场白 | 可选 |
 | `user_relationship` | 与用户的关系 | 可选 |
-| `voice` | 角色音色卡对象：`voice_id` 为 TTS 提供商音色名（如 `Cherry` / `alloy`），`instructions` 为语气、音色描述；语音模型在 API 设置中统一选择 | 可选 |
+| `voice` | 角色音色卡对象：`type` 为音色类型（`preset` 预置 / `design` 文本设计 / `clone` 声音克隆，省略时默认 `preset`）；`voice_id` 为预置音色名（如 `Cherry` / `茉莉`）；`instructions` 为语气、音色描述；`sample_file` 为克隆样本在角色包内的相对路径（如 `voice/sample.mp3`）；`mime_type` 为样本 MIME（`audio/mpeg` / `audio/wav`）。语音模型在 API 设置中统一选择 | 可选 |
 | `active_start` / `active_end` | 活跃时段，值为 `"HH:mm"`（如 `"09:00"`）；两者同时设置并生效后，在该时间段内聊天角色不会主动道别、说晚安，保持活跃；任一为空表示未设置 | 可选 |
 | `tags` | 标签数组，如 `["鸣潮","电子幽灵"]` | 可选 |
 | `avatar` | 内嵌头像（base64 字符串，存在时优先于图片文件） | 可选 |
@@ -1301,13 +1301,38 @@ flutter build apk --release --split-per-abi
 ```json
 {
     "voice": {
+        "type": "preset",
         "voice_id": "Cherry",
         "instructions": "温柔、清晰、语速偏慢"
     }
 }
 ```
 
-`voice_id` 原样传给 TTS 提供商；不同提供商支持的音色名称不同，应以对应平台文档为准。OpenAI 兼容服务使用 `voice` 与受支持模型的 `instructions`；MiMo 使用 `audio.voice`，并把音色描述作为可选 `user` 消息；MiniMax 使用 `voice_setting.voice_id`；Qwen 使用 `input.voice`，仅 Instruct 模型传入 `input.instructions`。
+声音克隆时，角色包内附带样本文件，`Profile.json` 引用：
+
+```json
+{
+    "voice": {
+        "type": "clone",
+        "sample_file": "voice/sample.mp3",
+        "mime_type": "audio/mpeg",
+        "instructions": "语速稍慢，温柔、克制"
+    }
+}
+```
+
+角色包 ZIP 结构：
+
+```text
+character-pack.zip
+├── Profile.json
+├── Prompt.txt
+├── avatar.png
+└── voice/
+    └── sample.mp3    ← 克隆样本（mp3 或 wav，Base64 后 ≤ 10 MB）
+```
+
+`voice_id` 原样传给 TTS 提供商；不同提供商支持的音色名称不同，应以对应平台文档为准。OpenAI 兼容服务使用 `voice` 与受支持模型的 `instructions`；MiMo 使用 `audio.voice`，并把音色描述作为可选 `user` 消息；MiniMax 使用 `voice_setting.voice_id`；Qwen 使用 `input.voice`，仅 Instruct 模型传入 `input.instructions`。`type` 为 `clone` 时，应用读取 `sample_file` 指向的音频样本，组装 Data URI 后通过 MiMo `mimo-v2.5-tts-voiceclone` 模型复刻音色。
 
 ### 会话压缩（【我】→ 聊天设置 → 压缩会话）
 
