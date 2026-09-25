@@ -45,45 +45,47 @@ Future<void> showMarkdownUpdatePanel(
   required String title,
   required String body,
   String footer = '',
-}) => showCupertinoModalPopup<void>(
-  context: context,
-  builder: (ctx) => SafeArea(
-    top: false,
-    child: _UpdatePanelSurface(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _UpdatePanelHeader(title: title),
-          Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-              child: MarkdownBody(
-                data: body,
-                styleSheet: _markdownStyle(ctx),
+}) =>
+    showCupertinoModalPopup<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: _UpdatePanelSurface(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _UpdatePanelHeader(title: title),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                  child: MarkdownBody(
+                    data: body,
+                    styleSheet: _markdownStyle(ctx),
+                  ),
+                ),
               ),
-            ),
-          ),
-          if (footer.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-              child: Text(
-                footer,
-                style: TextStyle(fontSize: 12, color: ctx.textSecondaryColor),
+              if (footer.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                  child: Text(
+                    footer,
+                    style:
+                        TextStyle(fontSize: 12, color: ctx.textSecondaryColor),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: CupertinoButton.filled(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('知道了'),
+                ),
               ),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: CupertinoButton.filled(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('知道了'),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
-    ),
-  ),
-);
+    );
 
 class _UpdatePanelSurface extends StatelessWidget {
   const _UpdatePanelSurface({required this.child});
@@ -110,32 +112,40 @@ class _UpdatePanelHeader extends StatelessWidget {
   final String title;
 
   @override
-  Widget build(BuildContext context) => Column(
-        children: [
-          const SizedBox(height: 12),
-          Container(
-            width: 38,
-            height: 4,
-            decoration: BoxDecoration(
-              color: context.separatorColor,
-              borderRadius: BorderRadius.circular(2),
+  Widget build(BuildContext context) => GestureDetector(
+        onVerticalDragEnd: (details) {
+          if (details.primaryVelocity != null &&
+              details.primaryVelocity! > 300) {
+            Navigator.pop(context);
+          }
+        },
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 38,
+              height: 4,
+              decoration: BoxDecoration(
+                color: context.separatorColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                title,
-                style: TextStyle(
-                  color: context.textPrimaryColor,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: context.textPrimaryColor,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
 }
 
@@ -218,208 +228,236 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
             child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 200),
-            child: SingleChildScrollView(
-              child: MarkdownBody(
-                data: _info.releaseNotes.isEmpty
-                    ? '有新版本可用，立即更新体验吧'
-                    : _info.releaseNotes,
-                styleSheet: MarkdownStyleSheet(
-                  p: const TextStyle(fontSize: 13, height: 1.4),
-                  h1: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold),
-                  h2: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
-                  h3: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.bold),
-                  listBullet: const TextStyle(fontSize: 13),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // ABI 选择区域
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-            decoration: BoxDecoration(
-              color: context.fieldBgColor,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: context.separatorColor),
-            ),
-            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 200),
+                  child: SingleChildScrollView(
+                    child: MarkdownBody(
+                      data: _info.releaseNotes.isEmpty
+                          ? '有新版本可用，立即更新体验吧'
+                          : _info.releaseNotes,
+                      styleSheet: MarkdownStyleSheet(
+                        p: const TextStyle(fontSize: 13, height: 1.4),
+                        h1: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                        h2: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
+                        h3: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.bold),
+                        listBullet: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // ABI 选择区域：整块可点击
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _showAbiPicker(context),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 10, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: context.fieldBgColor,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: context.separatorColor),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          '安装包类型：',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _selectedAbi,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: context.accentColor,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          CupertinoIcons.chevron_down,
+                          size: 14,
+                          color: context.accentColor,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
                 Text(
-                  '安装包类型：',
+                  '下载源',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 12,
                     color: context.textSecondaryColor,
                   ),
                 ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => _showAbiPicker(context),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _selectedAbi,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: context.accentColor,
+                const SizedBox(height: 6),
+                if (both)
+                  SizedBox(
+                    width: double.infinity,
+                    child: CupertinoSlidingSegmentedControl<UpdateSource>(
+                      groupValue: _source,
+                      backgroundColor: context.fieldBgColor,
+                      thumbColor: context.listBgColor,
+                      padding: const EdgeInsets.all(2),
+                      onValueChanged: (v) {
+                        if (v != null) setState(() => _source = v);
+                      },
+                      children: {
+                        UpdateSource.gitee: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Text(
+                            'Gitee（推荐）',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: _source == UpdateSource.gitee
+                                  ? context.textPrimaryColor
+                                  : context.textSecondaryColor,
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        CupertinoIcons.chevron_down,
-                        size: 14,
-                        color: context.accentColor,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 12),
-          Text(
-            '下载源',
-            style: TextStyle(
-              fontSize: 12,
-              color: context.textSecondaryColor,
-            ),
-          ),
-          const SizedBox(height: 6),
-          if (both)
-            CupertinoSlidingSegmentedControl<UpdateSource>(
-              groupValue: _source,
-              onValueChanged: (v) {
-                if (v != null) setState(() => _source = v);
-              },
-              children: const {
-                UpdateSource.gitee: Text('Gitee（推荐）'),
-                UpdateSource.github: Text('GitHub'),
-              },
-            )
-          else
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: context.fieldBgColor,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: context.separatorColor),
-              ),
-              child: Text(
-                _giteeAvailable ? 'Gitee（推荐）' : 'GitHub',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: context.textPrimaryColor,
-                ),
-              ),
-            ),
-          // 选择 GitHub 源时显示"是否使用内置代理下载"复选框；
-          // 不勾选则直连 GitHub 源头下载，勾选则走已配置的加速代理
-          if (_source == UpdateSource.github) ...[
-            const SizedBox(height: 12),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _useProxy = !_useProxy),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _useProxy
-                          ? CupertinoIcons.checkmark_square_fill
-                          : CupertinoIcons.square,
-                      size: 20,
-                      color: _useProxy
-                          ? context.accentColor
-                          : context.textSecondaryColor,
+                        UpdateSource.github: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Text(
+                            'GitHub',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: _source == UpdateSource.github
+                                  ? context.textPrimaryColor
+                                  : context.textSecondaryColor,
+                            ),
+                          ),
+                        ),
+                      },
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '使用内置代理下载',
+                  )
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: context.fieldBgColor,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: context.separatorColor),
+                    ),
+                    child: Text(
+                      _giteeAvailable ? 'Gitee（推荐）' : 'GitHub',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                         color: context.textPrimaryColor,
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-      ),
-    ),
-    const SizedBox(height: 4),
-    Container(height: 0.5, color: context.separatorColor),
-    Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          CupertinoButton.filled(
-            padding: const EdgeInsets.symmetric(vertical: 13),
-            onPressed: () {
-              Navigator.pop(context);
-              showCupertinoModalPopup(
-                context: context,
-                barrierDismissible: false,
-                builder: (_) => SafeArea(
-                  top: false,
-                  child: _UpdatePanelSurface(
-                    child: _DownloadDialog(
-                      info: _info,
-                      source: _source,
-                      proxyUrl: widget.proxyUrl,
-                      useProxy: _useProxy,
-                      selectedAbi: _selectedAbi,
+                  ),
+                // 选择 GitHub 源时显示"是否使用内置代理下载"复选框；
+                // 不勾选则直连 GitHub 源头下载，勾选则走已配置的加速代理
+                if (_source == UpdateSource.github) ...[
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _useProxy = !_useProxy),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _useProxy
+                                ? CupertinoIcons.checkmark_square_fill
+                                : CupertinoIcons.square,
+                            size: 20,
+                            color: _useProxy
+                                ? context.accentColor
+                                : context.textSecondaryColor,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '使用内置代理下载',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: context.textPrimaryColor,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
-            child: const Text('立即更新'),
+                ],
+              ],
+            ),
           ),
-          Row(
+        ),
+        const SizedBox(height: 4),
+        Container(height: 0.5, color: context.separatorColor),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: CupertinoButton(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  onPressed: () async {
-                    await UpdateService.ignoreVersion(_info.latestVersion);
-                    if (context.mounted) Navigator.pop(context);
-                  },
-                  child: const Text('不再提醒'),
-                ),
+              CupertinoButton.filled(
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                onPressed: () {
+                  Navigator.pop(context);
+                  showCupertinoModalPopup(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => SafeArea(
+                      top: false,
+                      child: _UpdatePanelSurface(
+                        child: _DownloadDialog(
+                          info: _info,
+                          source: _source,
+                          proxyUrl: widget.proxyUrl,
+                          useProxy: _useProxy,
+                          selectedAbi: _selectedAbi,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('立即更新'),
               ),
-              Expanded(
-                child: CupertinoButton(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('稍后'),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: CupertinoButton(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      onPressed: () async {
+                        await UpdateService.ignoreVersion(_info.latestVersion);
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      child: const Text('不再提醒'),
+                    ),
+                  ),
+                  Expanded(
+                    child: CupertinoButton(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('稍后'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
-    ),
-  ],
-);
+        ),
+      ],
+    );
   }
 }
 

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 
 import 'package:provider/provider.dart';
@@ -233,11 +235,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('调整气泡内字体大小', textAlign: TextAlign.center),
+                  Text(
+                    '调整气泡内字体大小',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: CupertinoColors.label.resolveFrom(ctx),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   for (final isUser in [false, true])
                     Align(
-                      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                      alignment:
+                          isUser ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(12),
@@ -246,14 +257,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(isUser ? '我方气泡预览 Aa 123' : '对方气泡预览 Aa 123',
-                          style: TextStyle(fontSize: size,
-                            color: ctx.bubbleTextColor(isUser),
-                            fontFamily: ctx.bubbleFontFamily(isUser))),
+                            style: TextStyle(
+                                fontSize: size,
+                                color: ctx.bubbleTextColor(isUser),
+                                fontFamily: ctx.bubbleFontFamily(isUser))),
                       ),
                     ),
                   Text('${size.round()}（默认 16）', textAlign: TextAlign.center),
                   CupertinoSlider(
-                    value: size, min: 12, max: 24, divisions: 12,
+                    value: size,
+                    min: 12,
+                    max: 24,
+                    divisions: 12,
                     onChanged: (value) => update(() => size = value),
                   ),
                   CupertinoButton(
@@ -372,8 +387,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             CupertinoTextField(
               controller: controller,
               placeholder: defaultUrl,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             ),
             const SizedBox(height: 8),
             Text(
@@ -824,7 +838,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('调整气泡内字体大小'),
                 subtitle: Text(
                   '${settings.bubbleFontSize.round()}（默认 16）',
-                  style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+                  style: TextStyle(
+                      fontSize: 12, color: context.textSecondaryColor),
                 ),
                 trailing: Icon(CupertinoIcons.chevron_right,
                     size: 16, color: context.textSecondaryColor),
@@ -1519,46 +1534,6 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
   late HSVColor _hsv;
   late TextEditingController _hexController;
 
-  // 预设颜色网格（色相 × 亮度）
-  static const _colorGrid = [
-    [
-      Color(0xFFF44336),
-      Color(0xFFE91E63),
-      Color(0xFF9C27B0),
-      Color(0xFF673AB7)
-    ],
-    [
-      Color(0xFF3F51B5),
-      Color(0xFF2196F3),
-      Color(0xFF03A9F4),
-      Color(0xFF00BCD4)
-    ],
-    [
-      Color(0xFF009688),
-      Color(0xFF4CAF50),
-      Color(0xFF8BC34A),
-      Color(0xFFCDDC39)
-    ],
-    [
-      Color(0xFFFFEB3B),
-      Color(0xFFFFC107),
-      Color(0xFFFF9800),
-      Color(0xFFFF5722)
-    ],
-    [
-      Color(0xFF795548),
-      Color(0xFF9E9E9E),
-      Color(0xFF607D8B),
-      Color(0xFF000000)
-    ],
-    [
-      Color(0xFFFFFFFF),
-      Color(0xFFF5F5F5),
-      Color(0xFFE0E0E0),
-      Color(0xFFBDBDBD)
-    ],
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -1625,8 +1600,37 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 颜色网格快速选择
-          _buildColorGrid(),
+          // HSV 取色盘：拖动选择色相与饱和度
+          Center(
+            child: GestureDetector(
+              onPanUpdate: (details) {
+                final dx = details.localPosition.dx - 110;
+                final dy = details.localPosition.dy - 110;
+                final r = math.sqrt(dx * dx + dy * dy);
+                if (r > 110) return;
+                final hue = (math.atan2(dy, dx) * 180 / math.pi + 360) % 360;
+                final sat = (r / 110).clamp(0.0, 1.0);
+                _update(hue: hue, saturation: sat);
+              },
+              child: CustomPaint(
+                size: const Size(220, 220),
+                painter: _ColorWheelPainter(
+                  hue: _hsv.hue,
+                  saturation: _hsv.saturation,
+                  value: _hsv.value,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // 亮度滑块
+          _buildSlider(
+            label: '亮度',
+            value: _hsv.value,
+            activeColor:
+                HSVColor.fromAHSV(1, _hsv.hue, _hsv.saturation, 1).toColor(),
+            onChanged: (v) => _update(value: v),
+          ),
           const SizedBox(height: 12),
           // 预览 + HEX 输入
           Row(
@@ -1668,64 +1672,68 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
             ],
           ),
           const SizedBox(height: 12),
-          // HSV 滑块
-          _buildSlider(
-            label: '色相',
-            value: _hsv.hue / 360,
-            activeColor: HSVColor.fromAHSV(1, _hsv.hue, 1, 1).toColor(),
-            onChanged: (v) => _update(hue: v * 360),
-          ),
-          _buildSlider(
-            label: '饱和度',
-            value: _hsv.saturation,
-            activeColor:
-                HSVColor.fromAHSV(1, _hsv.hue, 1, _hsv.value).toColor(),
-            onChanged: (v) => _update(saturation: v),
-          ),
-          _buildSlider(
-            label: '亮度',
-            value: _hsv.value,
-            activeColor:
-                HSVColor.fromAHSV(1, _hsv.hue, _hsv.saturation, 1).toColor(),
-            onChanged: (v) => _update(value: v),
-          ),
+          // 快捷色板
+          _buildQuickColors(),
         ],
       ),
     );
   }
 
-  Widget _buildColorGrid() {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.separatorColor),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: _colorGrid.map((row) {
-          return Row(
-            children: row.map((color) {
-              final isSelected = color.toARGB32() == _hsv.toColor().toARGB32();
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => _updateFromColor(color),
-                  child: Container(
-                    height: 36,
-                    color: color,
-                    child: isSelected
-                        ? const Icon(
-                            CupertinoIcons.check_mark,
-                            size: 16,
-                            color: CupertinoColors.white,
-                          )
-                        : null,
-                  ),
-                ),
-              );
-            }).toList(),
-          );
-        }).toList(),
-      ),
+  Widget _buildQuickColors() {
+    const colors = [
+      Color(0xFFF44336),
+      Color(0xFFE91E63),
+      Color(0xFF9C27B0),
+      Color(0xFF673AB7),
+      Color(0xFF3F51B5),
+      Color(0xFF2196F3),
+      Color(0xFF03A9F4),
+      Color(0xFF00BCD4),
+      Color(0xFF009688),
+      Color(0xFF4CAF50),
+      Color(0xFF8BC34A),
+      Color(0xFFCDDC39),
+      Color(0xFFFFEB3B),
+      Color(0xFFFFC107),
+      Color(0xFFFF9800),
+      Color(0xFFFF5722),
+      Color(0xFF795548),
+      Color(0xFF9E9E9E),
+      Color(0xFF607D8B),
+      Color(0xFF000000),
+      Color(0xFFFFFFFF),
+    ];
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: colors.map((color) {
+        final isSelected = color.toARGB32() == _hsv.toColor().toARGB32();
+        return GestureDetector(
+          onTap: () => _updateFromColor(color),
+          child: Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color:
+                    isSelected ? context.accentColor : context.separatorColor,
+                width: isSelected ? 2.5 : 1,
+              ),
+            ),
+            child: isSelected
+                ? Icon(
+                    CupertinoIcons.check_mark,
+                    size: 12,
+                    color: color.computeLuminance() > 0.5
+                        ? CupertinoColors.black
+                        : CupertinoColors.white,
+                  )
+                : null,
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -1757,4 +1765,110 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
       ],
     );
   }
+}
+
+/// HSV 取色盘画笔：外圈色相环，内部从白到纯色再到黑色的饱和度/亮度渐变。
+class _ColorWheelPainter extends CustomPainter {
+  final double hue;
+  final double saturation;
+  final double value;
+
+  _ColorWheelPainter({
+    required this.hue,
+    required this.saturation,
+    required this.value,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    // 绘制 HSV 色环（hue）
+    const segments = 360;
+    for (var i = 0; i < segments; i++) {
+      final startAngle = i * 2 * math.pi / segments;
+      const sweepAngle = 2 * math.pi / segments + 0.01;
+      final color = HSVColor.fromAHSV(1, i.toDouble(), 1, 1).toColor();
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 28
+        ..color = color;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius - 14),
+        startAngle,
+        sweepAngle,
+        false,
+        paint,
+      );
+    }
+
+    // 绘制内部饱和度渐变（从中心白色到边缘纯色）
+    const innerSegments = 64;
+    for (var i = 0; i < innerSegments; i++) {
+      final r = radius - 28;
+      final startAngle = i * 2 * math.pi / innerSegments;
+      const sweepAngle = 2 * math.pi / innerSegments + 0.01;
+      for (var j = 0; j < 20; j++) {
+        final innerR = r * j / 20;
+        final outerR = r * (j + 1) / 20;
+        final sat = j / 20.0;
+        final color = HSVColor.fromAHSV(1, hue, sat, value).toColor();
+        final paint = Paint()
+          ..style = PaintingStyle.fill
+          ..color = color;
+        canvas.drawArc(
+          Rect.fromCircle(center: center, radius: outerR),
+          startAngle,
+          sweepAngle,
+          true,
+          paint,
+        );
+        // 清除内圈重叠部分（用更大半径的 arc 覆盖）
+        if (j > 0) {
+          final clearPaint = Paint()
+            ..style = PaintingStyle.fill
+            ..color =
+                HSVColor.fromAHSV(1, hue, (j - 1) / 20.0, value).toColor();
+          canvas.drawArc(
+            Rect.fromCircle(center: center, radius: innerR),
+            startAngle,
+            sweepAngle,
+            true,
+            clearPaint,
+          );
+        }
+      }
+    }
+
+    // 绘制选择指示点
+    final markerR = radius - 28;
+    final angle = hue * math.pi / 180;
+    final dist = saturation * markerR;
+    final markerCenter = Offset(
+      center.dx + dist * math.cos(angle),
+      center.dy + dist * math.sin(angle),
+    );
+    canvas.drawCircle(
+      markerCenter,
+      8,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5
+        ..color = CupertinoColors.white,
+    );
+    canvas.drawCircle(
+      markerCenter,
+      5,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..color = HSVColor.fromAHSV(1, hue, saturation, value).toColor(),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ColorWheelPainter oldDelegate) =>
+      oldDelegate.hue != hue ||
+      oldDelegate.saturation != saturation ||
+      oldDelegate.value != value;
 }
