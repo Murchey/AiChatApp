@@ -136,14 +136,14 @@ class GroupChatProvider extends ChangeNotifier {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
+    _groups.clear();
+    _messages.clear();
     try {
       final groupsStr = prefs.getString(_groupsKey);
       if (groupsStr != null) {
         final list = jsonDecode(groupsStr) as List<dynamic>;
-        _groups
-          ..clear()
-          ..addAll(
-              list.map((e) => GroupChat.fromJson(e as Map<String, dynamic>)));
+        _groups.addAll(
+            list.map((e) => GroupChat.fromJson(e as Map<String, dynamic>)));
       }
     } catch (e) {
       debugPrint('[GroupChatProvider] 加载群聊失败: $e');
@@ -152,7 +152,6 @@ class GroupChatProvider extends ChangeNotifier {
       final messagesStr = prefs.getString(_messagesKey);
       if (messagesStr != null) {
         final map = jsonDecode(messagesStr) as Map<String, dynamic>;
-        _messages.clear();
         map.forEach((groupId, msgs) {
           _messages[groupId] = (msgs as List<dynamic>)
               .map((e) => Message.fromJson(e as Map<String, dynamic>))

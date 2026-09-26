@@ -46,6 +46,13 @@ class TokenUsageProvider extends ChangeNotifier {
     return _loading ??= _load();
   }
 
+  /// 备份恢复后强制从磁盘重新加载（忽略已加载标记）。
+  Future<void> reload() {
+    _loaded = false;
+    _loading = null;
+    return init();
+  }
+
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();

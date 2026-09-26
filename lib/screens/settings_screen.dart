@@ -22,6 +22,7 @@ import '../services/update_service.dart';
 import '../services/workshop_service.dart';
 import '../utils/app_toast.dart';
 import '../widgets/update_dialogs.dart';
+import 'backup_screen.dart';
 import 'bubble_style_screen.dart';
 import 'bubble_font_screen.dart';
 import 'memory_pool_manager_screen.dart';
@@ -1139,6 +1140,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             header: const Text('存储'),
             children: [
+              CupertinoListTile(
+                leading: Icon(
+                  CupertinoIcons.arrow_2_circlepath,
+                  color: context.accentColor,
+                ),
+                title: const Text('数据备份'),
+                subtitle: Text(
+                  '导出或恢复全部聊天、角色与设置',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                trailing: Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: context.textSecondaryColor,
+                ),
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const BackupScreen(),
+                  ),
+                ),
+              ),
               CupertinoListTile(
                 title: const Text('管理占用空间'),
                 subtitle: Text(

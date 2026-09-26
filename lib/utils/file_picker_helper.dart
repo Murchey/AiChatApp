@@ -42,6 +42,24 @@ class FilePickerHelper {
     return map['name'] as String? ?? suggestedName;
   }
 
+  /// 从本地文件路径保存到系统"保存文件"选择器（ACTION_CREATE_DOCUMENT）。
+  /// 大文件场景替代 [saveFile]，避免字节经 Binder 传输触发大小限制。
+  /// 返回保存的文件名；用户取消返回 null。
+  static Future<String?> saveFileFromPath({
+    required String suggestedName,
+    required String sourcePath,
+    String mimeType = 'application/octet-stream',
+  }) async {
+    final result = await _channel.invokeMethod('saveFileFromPath', {
+      'suggestedName': suggestedName,
+      'sourcePath': sourcePath,
+      'mimeType': mimeType,
+    });
+    if (result == null) return null;
+    final map = result as Map<dynamic, dynamic>;
+    return map['name'] as String? ?? suggestedName;
+  }
+
   /// 调用系统"打开方式"打开本地文件（Android ACTION_VIEW + FileProvider）。
   /// 返回 null 表示打开成功（已交给其他应用），否则返回错误提示信息。
   static Future<String?> openFile(String path) async {

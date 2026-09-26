@@ -101,6 +101,9 @@ class StorageManagerService {
   static const _fontDirs = ['imported_fonts'];
   static const _voiceDirs = ['voice', 'voice_samples'];
 
+  // 本地数据备份目录（数据备份页管理，清理时不删除）
+  static const _backupDirs = ['backups'];
+
   // 引擎/系统运行时目录（非用户数据、非缓存，排除出占用统计与删除）
   // 例如 debug 模式下 Flutter 引擎落盘的 flutter_assets（kernel_blob 等）
   static const _systemDirs = ['flutter_assets'];
@@ -486,6 +489,7 @@ class StorageManagerService {
       _stickerDirs.contains(name) ||
       _fontDirs.contains(name) ||
       _voiceDirs.contains(name) ||
+      _backupDirs.contains(name) ||
       _systemDirs.contains(name);
 
   /// 文件是否属于安全可删类型（图片/压缩包/临时文件）

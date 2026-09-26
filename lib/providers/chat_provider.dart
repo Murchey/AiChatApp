@@ -243,14 +243,13 @@ class ChatProvider extends ChangeNotifier {
         ..addAll(decoded.systemTokens);
     }
     try {
+      _roleplayChoices.clear();
       final rawChoices = prefs.getString(_roleplayChoicesKey);
       if (rawChoices != null && rawChoices.isNotEmpty) {
         final decodedChoices = jsonDecode(rawChoices) as Map<String, dynamic>;
-        _roleplayChoices
-          ..clear()
-          ..addAll(decodedChoices.map(
-            (id, values) => MapEntry(id, List<String>.from(values as List)),
-          ));
+        _roleplayChoices.addAll(decodedChoices.map(
+          (id, values) => MapEntry(id, List<String>.from(values as List)),
+        ));
       }
     } catch (e) {
       debugPrint('[ChatProvider] 语C候选行动加载失败: $e');

@@ -24,7 +24,13 @@ class MemoryPointProvider extends ChangeNotifier {
 
   Future<void> init() async {
     if (_loaded) return;
+    await reload();
+  }
+
+  /// 备份恢复后强制从磁盘重新加载。
+  Future<void> reload() async {
     _loaded = true;
+    _pointsByCharacter.clear();
     final prefs = await SharedPreferences.getInstance();
     final keys = prefs.getKeys().where((k) => k.startsWith(_prefix)).toList();
     for (final key in keys) {
@@ -40,6 +46,7 @@ class MemoryPointProvider extends ChangeNotifier {
         debugPrint('[MemoryPoint] 解析失败 $characterId: $e');
       }
     }
+    notifyListeners();
   }
 
   /// 为角色添加一条记忆点（批量去重：内容相同的只保留一条）

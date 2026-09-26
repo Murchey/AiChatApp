@@ -25,6 +25,12 @@ class ChatBackgroundProvider extends ChangeNotifier {
   /// 会话 id → 背景设置（懒加载缓存）
   final Map<String, ChatBackgroundInfo> _cache = {};
 
+  /// 备份恢复后清空缓存，下次访问重新从 SharedPreferences 读取。
+  void clearCache() {
+    _cache.clear();
+    notifyListeners();
+  }
+
   static const _imageKeyPrefix = 'chat_bg_image_';
   static const _blurKeyPrefix = 'chat_bg_blur_';
 

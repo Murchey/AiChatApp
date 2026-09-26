@@ -127,18 +127,19 @@ class ApiProvider extends ChangeNotifier {
       } catch (_) {
         _models = [];
       }
+    } else {
+      _models = [];
     }
     _compressionModelId = prefs.getString(_compressModelKey);
     _momentModelId = prefs.getString(_momentModelKey);
     _ttsModelId = prefs.getString(_ttsModelKey);
     // 加载图片能力检测结果缓存
+    _visionSupport.clear();
     try {
       final visionStr = prefs.getString(_visionKey);
       if (visionStr != null) {
         final map = jsonDecode(visionStr) as Map<String, dynamic>;
-        _visionSupport
-          ..clear()
-          ..addAll(map.map((k, v) => MapEntry(k, v as bool)));
+        _visionSupport.addAll(map.map((k, v) => MapEntry(k, v as bool)));
       }
     } catch (_) {}
     notifyListeners();

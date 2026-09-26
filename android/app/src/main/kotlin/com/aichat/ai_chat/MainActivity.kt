@@ -20,11 +20,13 @@ class MainActivity : FlutterActivity() {
         private const val WIDGET_CHANNEL = "com.aichat.ai_chat/widget"
         private const val REQUEST_PICK_FILE = 0x1101
         private const val REQUEST_SAVE_FILE = 0x1102
+        private const val REQUEST_SAVE_FROM_PATH = 0x1103
     }
 
     private var pendingResult: MethodChannel.Result? = null
     private var pendingSaveName: String = ""
     private var pendingSaveBytes: ByteArray? = null
+    private var pendingSaveSourcePath: String? = null
     private var navigationChannel: MethodChannel? = null
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -125,6 +127,31 @@ class MainActivity : FlutterActivity() {
                             } catch (e: Exception) {
                                 pendingResult = null
                                 pendingSaveBytes = null
+                                result.error("LAUNCH_FAILED", e.message, null)
+                            }
+                        }
+                    }
+                    "saveFileFromPath" -> {
+                        val suggestedName = call.argument<String>("suggestedName") ?: "export.zip"
+                        val mimeType = call.argument<String>("mimeType") ?: "application/octet-stream"
+                        val sourcePath = call.argument<String>("sourcePath")
+                        val source = sourcePath?.let { File(it) }
+                        if (source == null || !source.exists()) {
+                            result.error("FILE_NOT_FOUND", "source file not found: $sourcePath", null)
+                        } else {
+                            pendingResult = result
+                            pendingSaveName = suggestedName
+                            pendingSaveSourcePath = source.absolutePath
+                            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = mimeType
+                                putExtra(Intent.EXTRA_TITLE, suggestedName)
+                            }
+                            try {
+                                startActivityForResult(intent, REQUEST_SAVE_FROM_PATH)
+                            } catch (e: Exception) {
+                                pendingResult = null
+                                pendingSaveSourcePath = null
                                 result.error("LAUNCH_FAILED", e.message, null)
                             }
                         }
@@ -253,6 +280,30 @@ class MainActivity : FlutterActivity() {
                 }
             } else {
                 // 用户取消保存
+                pending?.success(null)
+            }
+        } else if (requestCode == REQUEST_SAVE_FROM_PATH) {
+            val pending = pendingResult
+            pendingResult = null
+            val sourcePath = pendingSaveSourcePath
+            val name = pendingSaveName
+            pendingSaveSourcePath = null
+            if (resultCode == RESULT_OK && sourcePath != null) {
+                val uri = data?.data
+                if (uri != null) {
+                    try {
+                        val source = File(sourcePath)
+                        contentResolver.openOutputStream(uri)?.use { out ->
+                            source.inputStream().use { it.copyTo(out) }
+                        }
+                        pending?.success(mapOf("name" to name))
+                    } catch (e: Exception) {
+                        pending?.error("WRITE_FAILED", e.message, null)
+                    }
+                } else {
+                    pending?.success(null)
+                }
+            } else {
                 pending?.success(null)
             }
         } else {
