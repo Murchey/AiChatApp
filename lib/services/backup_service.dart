@@ -10,6 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'backup_crypto.dart';
 
+/// 备份/恢复过程进度回调：[progress] 0~1，[stage] 为阶段说明。
+typedef BackupProgressCallback = void Function(double progress, String stage);
+
 /// 本地导出结果
 class LocalExport {
   final Uint8List bytes;
@@ -89,15 +92,21 @@ class BackupService {
 
   /// 生成全量备份字节；[password] 非空则 AES-GCM 加密整包。
   /// [fileNamePrefix] 用于区分自动 / 手动备份文件名（默认手动）。
+  /// [onProgress] 可选进度回调（打包过程按文件推进）。
   static Future<LocalExport> exportBackupZip({
     String? password,
     String fileNamePrefix = 'aichat_backup',
+    BackupProgressCallback? onProgress,
   }) async {
+    void report(double p, String stage) => onProgress?.call(p.clamp(0, 1), stage);
+
+    report(0.02, '准备导出');
     final docDir = await getApplicationDocumentsDirectory();
     final prefs = await SharedPreferences.getInstance();
     final encrypted = password != null && password.isNotEmpty;
 
     // 1. SharedPreferences 全量（路径相对化）
+    report(0.08, '读取应用设置');
     final rawPrefs = <String, dynamic>{};
     for (final key in prefs.getKeys()) {
       final value = prefs.get(key);
@@ -113,8 +122,9 @@ class BackupService {
     final archive = Archive();
     final filesMap = <String, dynamic>{};
 
-    // 2. 用户数据文件
-    var fileCount = 0;
+    // 2. 先统计用户文件数量，便于按比例回报进度
+    report(0.12, '扫描用户文件');
+    final pendingFiles = <File>[];
     final root = Directory(docDir.path);
     if (await root.exists()) {
       await for (final entity in root.list()) {
@@ -122,27 +132,34 @@ class BackupService {
         final name = _basename(entity.path);
         if (!_isUserDir(name)) continue;
         await for (final file in entity.list(recursive: true)) {
-          if (file is! File) continue;
-          final rel = _relativeTo(file.path, docDir.path);
-          if (rel == null) continue;
-          final bytes = await file.readAsBytes();
-          archive.addFile(ArchiveFile.bytes('files/$rel', bytes));
-          filesMap[rel] = bytes.length;
-          fileCount++;
+          if (file is File) pendingFiles.add(file);
         }
       }
-      // 文档根目录散落的用户文件（如自定义开屏图）
       await for (final entity in root.list()) {
         if (entity is! File) continue;
-        final name = _basename(entity.path);
-        if (name.startsWith('.')) continue;
-        final bytes = await entity.readAsBytes();
-        archive.addFile(ArchiveFile.bytes('files/$name', bytes));
-        filesMap[name] = bytes.length;
-        fileCount++;
+        if (_basename(entity.path).startsWith('.')) continue;
+        pendingFiles.add(entity);
       }
     }
 
+    var fileCount = 0;
+    final total = pendingFiles.isEmpty ? 1 : pendingFiles.length;
+    for (var i = 0; i < pendingFiles.length; i++) {
+      final file = pendingFiles[i];
+      final rel = _relativeTo(file.path, docDir.path) ?? _basename(file.path);
+      final bytes = await file.readAsBytes();
+      archive.addFile(ArchiveFile.bytes('files/$rel', bytes));
+      filesMap[rel] = bytes.length;
+      fileCount++;
+      if (i % 5 == 0 || i == pendingFiles.length - 1) {
+        report(
+          0.15 + 0.65 * ((i + 1) / total),
+          '打包用户文件 ${i + 1}/$total',
+        );
+      }
+    }
+
+    report(0.84, '写入清单与设置');
     final manifest = <String, dynamic>{
       'app': 'AiChat',
       'format': formatVersion,
@@ -159,8 +176,13 @@ class BackupService {
       const JsonEncoder.withIndent('  ').convert(rawPrefs),
     ));
 
+    report(0.88, '压缩打包');
     final zipBytes = Uint8List.fromList(ZipEncoder().encode(archive));
+    if (encrypted) {
+      report(0.93, '加密备份包');
+    }
     final out = encrypted ? BackupCrypto.encrypt(zipBytes, password) : zipBytes;
+    report(1, '导出完成');
     return LocalExport(bytes: out, fileName: fileName, size: out.length);
   }
 
@@ -169,14 +191,21 @@ class BackupService {
   static Future<File> createLocalBackup({
     String? password,
     String fileNamePrefix = 'aichat_backup',
+    BackupProgressCallback? onProgress,
   }) async {
     final export = await exportBackupZip(
       password: password,
       fileNamePrefix: fileNamePrefix,
+      onProgress: (p, stage) {
+        // 预留最后 8% 给写入本地文件
+        onProgress?.call(p * 0.92, stage);
+      },
     );
+    onProgress?.call(0.94, '写入本地备份');
     final dir = await localBackupDir();
     final target = File('${dir.path}/${export.fileName}');
     await target.writeAsBytes(export.bytes, flush: true);
+    onProgress?.call(1, '本地备份完成');
     return target;
   }
 
@@ -282,21 +311,35 @@ class BackupService {
   static Future<void> restoreLocalBackup(
     File file, {
     String? password,
+    BackupProgressCallback? onProgress,
   }) async {
+    void report(double p, String stage) => onProgress?.call(p.clamp(0, 1), stage);
+
+    report(0.05, '读取备份文件');
     if (!await file.exists()) {
       throw StateError('本地备份文件不存在');
     }
     final raw = await file.readAsBytes();
-    final zipBytes = BackupCrypto.isEncrypted(raw)
-        ? BackupCrypto.decrypt(raw, password ?? '')
-        : raw;
-    await restoreZipBytes(zipBytes);
+    Uint8List zipBytes;
+    if (BackupCrypto.isEncrypted(raw)) {
+      report(0.12, '解密备份包');
+      zipBytes = BackupCrypto.decrypt(raw, password ?? '');
+    } else {
+      zipBytes = raw;
+    }
+    await restoreZipBytes(zipBytes, onProgress: onProgress);
   }
 
-  static Future<void> restoreZipBytes(Uint8List zipBytes) async {
+  static Future<void> restoreZipBytes(
+    Uint8List zipBytes, {
+    BackupProgressCallback? onProgress,
+  }) async {
+    void report(double p, String stage) => onProgress?.call(p.clamp(0, 1), stage);
+
     if (zipBytes.isEmpty) {
       throw StateError('备份内容为空，已取消恢复');
     }
+    report(0.18, '解析备份包');
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(zipBytes);
@@ -321,6 +364,7 @@ class BackupService {
       throw StateError('备份包中缺少 prefs.json，已取消恢复');
     }
 
+    report(0.28, '读取设置数据');
     Map<String, dynamic> decodedPrefs;
     try {
       decodedPrefs =
@@ -333,6 +377,7 @@ class BackupService {
     final prefs = await SharedPreferences.getInstance();
 
     // 恢复前安全副本（设置快照）
+    report(0.36, '创建安全副本');
     final safetyDir = await _safetyDir();
     final safetyPrefs = File('${safetyDir.path}/prefs.json');
     final current = <String, dynamic>{};
@@ -348,12 +393,14 @@ class BackupService {
 
     try {
       // 1. 覆盖 SharedPreferences
+      report(0.45, '恢复应用设置');
       await prefs.clear();
       for (final entry in decodedPrefs.entries) {
         await _setPrefValue(prefs, entry.key, entry.value, docDir.path);
       }
 
       // 2. 替换用户数据文件：先清掉旧目录，再写入备份内容
+      report(0.55, '清理旧用户文件');
       final root = Directory(docDir.path);
       if (await root.exists()) {
         await for (final entity in root.list()) {
@@ -363,11 +410,21 @@ class BackupService {
           await entity.delete(recursive: true);
         }
       }
+      final total = fileEntries.isEmpty ? 1 : fileEntries.length;
+      var index = 0;
       for (final entry in fileEntries.entries) {
         final target = File('${docDir.path}/${entry.key}');
         await target.parent.create(recursive: true);
         await target.writeAsBytes(entry.value, flush: true);
+        index++;
+        if (index % 5 == 0 || index == fileEntries.length) {
+          report(
+            0.58 + 0.4 * (index / total),
+            '恢复用户文件 $index/$total',
+          );
+        }
       }
+      report(1, '恢复完成');
     } catch (e) {
       // 回滚设置
       try {

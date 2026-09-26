@@ -22,8 +22,10 @@ import '../providers/workshop_provider.dart';
 import '../services/backup_schedule_service.dart';
 import '../services/backup_service.dart';
 import '../services/cloud_backup_service.dart';
-import '../utils/app_toast.dart';
 import '../utils/file_picker_helper.dart';
+import 'backup_cloud_settings_screen.dart';
+import 'backup_password_screen.dart';
+import 'backup_schedule_screen.dart';
 
 /// 数据备份页：本地备份 + 云端备份（腾讯云 COS / 阿里云 OSS）。
 ///
@@ -58,6 +60,8 @@ class _BackupScreenState extends State<BackupScreen> {
 
   bool _loading = true;
   bool _working = false;
+  double _progress = 0;
+  String _progressStage = '';
   String? _status;
   bool _statusIsError = false;
 
@@ -129,6 +133,30 @@ class _BackupScreenState extends State<BackupScreen> {
     setState(() => _status = null);
   }
 
+  void _beginWorking([String stage = '处理中']) {
+    setState(() {
+      _working = true;
+      _progress = 0;
+      _progressStage = stage;
+    });
+  }
+
+  void _endWorking() {
+    setState(() {
+      _working = false;
+      _progress = 0;
+      _progressStage = '';
+    });
+  }
+
+  void _onProgress(double progress, String stage) {
+    if (!mounted) return;
+    setState(() {
+      _progress = progress.clamp(0, 1);
+      if (stage.isNotEmpty) _progressStage = stage;
+    });
+  }
+
   String _formatTime(DateTime t) {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${t.year}-${two(t.month)}-${two(t.day)} '
@@ -153,7 +181,7 @@ class _BackupScreenState extends State<BackupScreen> {
       requireConfirm: true,
     );
     if (password == null) return;
-    setState(() => _working = true);
+    _beginWorking();
     _clearStatus();
     try {
       final encryptedTag = password.isEmpty ? '' : ' · 已加密';
@@ -161,6 +189,7 @@ class _BackupScreenState extends State<BackupScreen> {
         final item = await CloudBackupService.uploadBackup(
           _cloudConfig,
           password: password.isEmpty ? null : password,
+          onProgress: _onProgress,
         );
         if (!mounted) return;
         setState(() {
@@ -173,6 +202,7 @@ class _BackupScreenState extends State<BackupScreen> {
       } else {
         final file = await BackupService.createLocalBackup(
           password: password.isEmpty ? null : password,
+          onProgress: _onProgress,
         );
         if (!mounted) return;
         setState(() {
@@ -187,7 +217,7 @@ class _BackupScreenState extends State<BackupScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       _setStatus('备份失败：$e', isError: true);
     }
   }
@@ -195,7 +225,7 @@ class _BackupScreenState extends State<BackupScreen> {
   // ─── 本地：导出 / 导入 ──────────────────────────────────────
 
   Future<void> _onExportLocal(File file) async {
-    setState(() => _working = true);
+    _beginWorking();
     _clearStatus();
     try {
       final name = file.path.split(RegExp(r'[/\\]')).last;
@@ -205,12 +235,12 @@ class _BackupScreenState extends State<BackupScreen> {
         mimeType: 'application/zip',
       );
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       if (saved == null) return;
       _setStatus('已导出到所选位置：$saved');
     } catch (e) {
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       _setStatus('导出失败：$e', isError: true);
     }
   }
@@ -218,7 +248,7 @@ class _BackupScreenState extends State<BackupScreen> {
   Future<void> _onImportLocal() async {
     final picked = await FilePickerHelper.pickFile();
     if (picked == null || !mounted) return;
-    setState(() => _working = true);
+    _beginWorking();
     _clearStatus();
     try {
       final file = await BackupService.importBackupFromPath(
@@ -226,14 +256,14 @@ class _BackupScreenState extends State<BackupScreen> {
         displayName: picked.name,
       );
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       await _refreshAll();
       _setStatus(
         '已导入：${file.path.split(RegExp(r'[/\\]')).last}，可在列表中恢复',
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       _setStatus('导入失败：$e', isError: true);
     }
   }
@@ -283,13 +313,13 @@ class _BackupScreenState extends State<BackupScreen> {
       return;
     }
 
-    setState(() => _working = true);
+    _beginWorking();
     _clearStatus();
     try {
       await restore(password.isEmpty ? null : password);
       await _reloadAllProviders();
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       await _refreshAll();
       if (!mounted) return;
       await showCupertinoDialog<void>(
@@ -311,7 +341,7 @@ class _BackupScreenState extends State<BackupScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       _setStatus('恢复失败：$e', isError: true);
     }
   }
@@ -325,6 +355,7 @@ class _BackupScreenState extends State<BackupScreen> {
       restore: (pwd) => BackupService.restoreLocalBackup(
         file,
         password: pwd,
+        onProgress: _onProgress,
       ),
     );
   }
@@ -339,6 +370,7 @@ class _BackupScreenState extends State<BackupScreen> {
         _cloudConfig,
         item.key,
         password: pwd,
+        onProgress: _onProgress,
       ),
     );
   }
@@ -368,17 +400,17 @@ class _BackupScreenState extends State<BackupScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() => _working = true);
+    _beginWorking();
     _clearStatus();
     try {
       await BackupService.restoreFromSafetyCopy();
       await _reloadAllProviders();
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       _setStatus('已从安全副本恢复设置');
     } catch (e) {
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       _setStatus('安全副本恢复失败：$e', isError: true);
     }
   }
@@ -407,10 +439,10 @@ class _BackupScreenState extends State<BackupScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() => _working = true);
+    _beginWorking();
     final ok = await BackupService.deleteLocalBackup(file);
     if (!mounted) return;
-    setState(() => _working = false);
+    _endWorking();
     await _refreshAll();
     _setStatus(ok ? '已彻底删除本地备份' : '本地备份删除失败，请重试', isError: !ok);
   }
@@ -436,17 +468,17 @@ class _BackupScreenState extends State<BackupScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() => _working = true);
+    _beginWorking();
     _clearStatus();
     try {
       await CloudBackupService.deleteBackup(_cloudConfig, item.key);
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       await _refreshCloud();
       _setStatus('已删除云端备份');
     } catch (e) {
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       _setStatus('删除失败：$e', isError: true);
     }
   }
@@ -473,12 +505,14 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   Future<void> _onOpenCloudSettings() async {
-    final saved = await showCupertinoDialog<CloudBackupConfig>(
-      context: context,
-      builder: (ctx) => _CloudSettingsDialog(initial: _cloudConfig),
+    final saved = await Navigator.push<CloudBackupConfig>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => BackupCloudSettingsScreen(initial: _cloudConfig),
+      ),
     );
     if (saved == null || !mounted) return;
-    setState(() => _working = true);
+    _beginWorking();
     try {
       await CloudBackupService.saveConfig(saved);
       if (!mounted) return;
@@ -490,7 +524,7 @@ class _BackupScreenState extends State<BackupScreen> {
       if (saved.isConfigured) await _refreshCloud();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       _setStatus('保存配置失败：$e', isError: true);
     }
   }
@@ -499,15 +533,17 @@ class _BackupScreenState extends State<BackupScreen> {
 
   Future<void> _onEditSchedule({required bool cloud}) async {
     final current = cloud ? _cloudSchedule : _localSchedule;
-    final saved = await showCupertinoDialog<BackupScheduleConfig>(
-      context: context,
-      builder: (ctx) => _SchedulePickerDialog(
-        title: cloud ? '云端定时备份' : '本地定时备份',
-        initial: current,
+    final saved = await Navigator.push<BackupScheduleConfig>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => BackupScheduleScreen(
+          title: cloud ? '云端定时备份' : '本地定时备份',
+          initial: current,
+        ),
       ),
     );
     if (saved == null || !mounted) return;
-    setState(() => _working = true);
+    _beginWorking();
     try {
       if (cloud) {
         await BackupScheduleService.saveCloud(saved);
@@ -540,7 +576,7 @@ class _BackupScreenState extends State<BackupScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() => _working = false);
+      _endWorking();
       _setStatus('保存定时备份失败：$e', isError: true);
     }
   }
@@ -568,60 +604,21 @@ class _BackupScreenState extends State<BackupScreen> {
     );
   }
 
-  /// 返回密码；取消返回 null。[requireConfirm] 时要求两次输入一致。
+  /// 打开密码输入页；取消返回 null。[requireConfirm] 时要求两次输入一致。
   Future<String?> _askPassword({
     required String title,
     required String message,
     required bool requireConfirm,
   }) {
-    final controller = TextEditingController();
-    final confirmController = TextEditingController();
-    return showCupertinoDialog<String>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(message, textAlign: TextAlign.left),
-            const SizedBox(height: 12),
-            CupertinoTextField(
-              controller: controller,
-              placeholder: '备份密码（可留空）',
-              obscureText: true,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            ),
-            if (requireConfirm) ...[
-              const SizedBox(height: 8),
-              CupertinoTextField(
-                controller: confirmController,
-                placeholder: '确认密码',
-                obscureText: true,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              ),
-            ],
-          ],
+    return Navigator.push<String>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => BackupPasswordScreen(
+          title: title,
+          message: message,
+          requireConfirm: requireConfirm,
+          confirmLabel: requireConfirm ? '确定' : '下一步',
         ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () {
-              final pwd = controller.text;
-              if (requireConfirm && pwd != confirmController.text) {
-                showAppToast('两次输入的密码不一致');
-                return;
-              }
-              Navigator.pop(ctx, pwd);
-            },
-            child: const Text('确定'),
-          ),
-        ],
       ),
     );
   }
@@ -695,7 +692,10 @@ class _BackupScreenState extends State<BackupScreen> {
             ),
             if (_working) ...[
               const SizedBox(height: 12),
-              const CupertinoActivityIndicator(),
+              _WorkingProgressBar(
+                value: _progress,
+                stage: _progressStage,
+              ),
             ],
             if (_status != null)
               Padding(
@@ -1071,329 +1071,71 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 }
 
-/// 对象储存配置弹窗（腾讯云 COS / 阿里云 OSS）
-class _CloudSettingsDialog extends StatefulWidget {
-  final CloudBackupConfig initial;
 
-  const _CloudSettingsDialog({required this.initial});
+/// 备份过程进度条：分阶段进度 + 当前阶段文案
+class _WorkingProgressBar extends StatelessWidget {
+  final double value;
+  final String stage;
 
-  @override
-  State<_CloudSettingsDialog> createState() => _CloudSettingsDialogState();
-}
-
-class _CloudSettingsDialogState extends State<_CloudSettingsDialog> {
-  late final TextEditingController _secretId;
-  late final TextEditingController _secretKey;
-  late final TextEditingController _bucketUrl;
-  late final TextEditingController _prefix;
-
-  @override
-  void initState() {
-    super.initState();
-    _secretId = TextEditingController(text: widget.initial.secretId);
-    _secretKey = TextEditingController(text: widget.initial.secretKey);
-    _bucketUrl = TextEditingController(text: widget.initial.bucketUrl);
-    _prefix = TextEditingController(text: widget.initial.prefix);
-  }
-
-  @override
-  void dispose() {
-    _secretId.dispose();
-    _secretKey.dispose();
-    _bucketUrl.dispose();
-    _prefix.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return CupertinoAlertDialog(
-      title: const Text('对象储存设置'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            '私有读写需要访问密钥。密钥仅保存在本机，请使用子账号并仅授权该存储桶。\n'
-            '支持腾讯云 COS 与阿里云 OSS。',
-            textAlign: TextAlign.left,
-            style: TextStyle(
-              fontSize: 12,
-              color: context.textSecondaryColor,
-            ),
-          ),
-          const SizedBox(height: 12),
-          CupertinoTextField(
-            controller: _secretId,
-            placeholder: 'SecretId / AccessKey ID',
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
-          const SizedBox(height: 8),
-          CupertinoTextField(
-            controller: _secretKey,
-            placeholder: 'SecretKey / AccessKey Secret',
-            obscureText: true,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
-          const SizedBox(height: 8),
-          CupertinoTextField(
-            controller: _bucketUrl,
-            placeholder: 'https://xxx-1250000000.cos.ap-guangzhou.myqcloud.com',
-            keyboardType: TextInputType.url,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
-          const SizedBox(height: 8),
-          CupertinoTextField(
-            controller: _prefix,
-            placeholder: '对象前缀（默认 backups/v1）',
-            keyboardType: TextInputType.url,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '存储桶 URL 可从控制台复制默认访问域名；对象前缀用于隔离备份目录。',
-            textAlign: TextAlign.left,
-            style: TextStyle(
-              fontSize: 11,
-              color: context.textSecondaryColor,
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        CupertinoDialogAction(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        CupertinoDialogAction(
-          isDefaultAction: true,
-          onPressed: () {
-            final url =
-                CloudBackupService.normalizeBucketUrl(_bucketUrl.text);
-            Navigator.pop(
-              context,
-              CloudBackupConfig(
-                secretId: _secretId.text.trim(),
-                secretKey: _secretKey.text.trim(),
-                bucketUrl: url,
-                prefix: _prefix.text.trim(),
-              ),
-            );
-          },
-          child: const Text('保存'),
-        ),
-      ],
-    );
-  }
-}
-
-/// 定时备份策略弹窗：触发方式 / 每周日 / 每月日 / 覆盖上次自动备份 / 预设密码
-class _SchedulePickerDialog extends StatefulWidget {
-  final String title;
-  final BackupScheduleConfig initial;
-
-  const _SchedulePickerDialog({
-    required this.title,
-    required this.initial,
+  const _WorkingProgressBar({
+    required this.value,
+    required this.stage,
   });
 
   @override
-  State<_SchedulePickerDialog> createState() => _SchedulePickerDialogState();
-}
-
-class _SchedulePickerDialogState extends State<_SchedulePickerDialog> {
-  late BackupScheduleMode _mode;
-  late int _weeklyDay;
-  late int _monthlyDay;
-  late bool _deletePrevious;
-  late final TextEditingController _password;
-
-  @override
-  void initState() {
-    super.initState();
-    _mode = widget.initial.mode;
-    _weeklyDay = widget.initial.weeklyDay;
-    _monthlyDay = widget.initial.monthlyDay;
-    _deletePrevious = widget.initial.deletePrevious;
-    _password = TextEditingController(text: widget.initial.password);
-  }
-
-  @override
-  void dispose() {
-    _password.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return CupertinoAlertDialog(
-      title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+    final percent = (value * 100).clamp(0, 100).toStringAsFixed(0);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '定时在打开 APP 时触发。自动备份文件名以 aichat_auto 开头，与手动备份区分。',
-            textAlign: TextAlign.left,
-            style: TextStyle(
-              fontSize: 12,
-              color: context.textSecondaryColor,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _label('触发方式'),
-          const SizedBox(height: 6),
-          Container(
-            decoration: BoxDecoration(
-              color: context.listBgColor.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              children: [
-                for (final m in [
-                  BackupScheduleMode.onAppOpen,
-                  BackupScheduleMode.daily,
-                  BackupScheduleMode.weekly,
-                  BackupScheduleMode.monthly,
-                  BackupScheduleMode.disabled,
-                ])
-                  CupertinoListTile(
-                    title: Text(
-                      m == BackupScheduleMode.onAppOpen
-                          ? '打开 APP 时备份'
-                          : '${m.displayName}${m == BackupScheduleMode.disabled ? '' : '备份'}',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    trailing: _mode == m
-                        ? Icon(
-                            CupertinoIcons.checkmark_alt,
-                            size: 18,
-                            color: context.accentColor,
-                          )
-                        : null,
-                    onTap: () => setState(() => _mode = m),
-                  ),
-              ],
-            ),
-          ),
-          if (_mode == BackupScheduleMode.weekly) ...[
-            const SizedBox(height: 10),
-            _label('每周'),
-            const SizedBox(height: 6),
-            CupertinoSlidingSegmentedControl<int>(
-              groupValue: _weeklyDay,
-              children: {
-                for (var d = 1; d <= 7; d++)
-                  d: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                    child: Text(
-                      weekdayName(d).substring(1),
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-              },
-              onValueChanged: (v) {
-                if (v != null) setState(() => _weeklyDay = v);
-              },
-            ),
-          ],
-          if (_mode == BackupScheduleMode.monthly) ...[
-            const SizedBox(height: 10),
-            _label('每月日期（1–31，超出当月天数按月末）'),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 120,
-              child: CupertinoPicker(
-                itemExtent: 32,
-                scrollController: FixedExtentScrollController(
-                  initialItem: (_monthlyDay - 1).clamp(0, 30),
-                ),
-                onSelectedItemChanged: (i) => _monthlyDay = i + 1,
-                children: [
-                  for (var d = 1; d <= 31; d++)
-                    Center(
-                      child: Text(
-                        '$d 日',
-                        style: const TextStyle(fontSize: 15),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: Text(
-                  '自动备份时删除上次的自动备份',
+                  stage.isEmpty ? '处理中…' : stage,
                   style: TextStyle(
-                    fontSize: 13,
-                    color: context.textPrimaryColor,
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              CupertinoSwitch(
-                value: _deletePrevious,
-                onChanged: (v) => setState(() => _deletePrevious = v),
+              const SizedBox(width: 8),
+              Text(
+                '$percent%',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: context.accentColor,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          _label('自动备份密码（可留空 = 不加密）'),
-          const SizedBox(height: 6),
-          CupertinoTextField(
-            controller: _password,
-            placeholder: '预设加密密码',
-            obscureText: true,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '密码仅保存在本机；忘记密码将无法恢复加密的自动备份。手动备份仍可另行设置密码。',
-            textAlign: TextAlign.left,
-            style: TextStyle(
-              fontSize: 11,
-              color: context.textSecondaryColor,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              height: 8,
+              child: Stack(
+                children: [
+                  Container(color: context.separatorColor),
+                  FractionallySizedBox(
+                    widthFactor: value.clamp(0.0, 1.0),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: context.accentColor,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
-      ),
-      actions: [
-        CupertinoDialogAction(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        CupertinoDialogAction(
-          isDefaultAction: true,
-          onPressed: () {
-            Navigator.pop(
-              context,
-              BackupScheduleConfig(
-                mode: _mode,
-                weeklyDay: _weeklyDay,
-                monthlyDay: _monthlyDay,
-                deletePrevious: _deletePrevious,
-                password: _password.text,
-              ),
-            );
-          },
-          child: const Text('保存'),
-        ),
-      ],
-    );
-  }
-
-  Widget _label(String text) {
-    return Text(
-      text,
-      textAlign: TextAlign.left,
-      style: TextStyle(
-        fontSize: 12,
-        color: context.textSecondaryColor,
       ),
     );
   }

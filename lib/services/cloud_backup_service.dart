@@ -236,13 +236,20 @@ class CloudBackupService {
     CloudBackupConfig config, {
     String? password,
     String fileNamePrefix = 'aichat_backup',
+    BackupProgressCallback? onProgress,
   }) async {
+    void report(double p, String stage) => onProgress?.call(p.clamp(0, 1), stage);
+
     if (!config.isConfigured) {
       throw StateError('请先配置对象储存（SecretId / SecretKey / 存储桶 URL）');
     }
     final export = await BackupService.exportBackupZip(
       password: password,
       fileNamePrefix: fileNamePrefix,
+      onProgress: (p, stage) {
+        // 打包占 0~0.75，上传占 0.75~1
+        report(p * 0.75, stage);
+      },
     );
     final key = objectKey(config, export.fileName);
     final uri = _objectUri(config, key);
@@ -256,6 +263,7 @@ class CloudBackupService {
       ),
       'Content-Type': contentType,
     };
+    report(0.78, '上传云端备份');
     final resp = await http
         .put(uri, headers: headers, body: export.bytes)
         .timeout(const Duration(minutes: 5));
@@ -267,6 +275,7 @@ class CloudBackupService {
         config,
       );
     }
+    report(1, '云端备份完成');
     return CloudBackupItem(
       key: key,
       size: export.size,
@@ -377,12 +386,26 @@ class CloudBackupService {
     CloudBackupConfig config,
     String key, {
     String? password,
+    BackupProgressCallback? onProgress,
   }) async {
+    void report(double p, String stage) => onProgress?.call(p.clamp(0, 1), stage);
+
+    report(0.05, '下载云端备份');
     final raw = await downloadObject(config, key);
-    final zipBytes = BackupCrypto.isEncrypted(raw)
-        ? BackupCrypto.decrypt(raw, password ?? '')
-        : raw;
-    await BackupService.restoreZipBytes(zipBytes);
+    Uint8List zipBytes;
+    if (BackupCrypto.isEncrypted(raw)) {
+      report(0.35, '解密备份包');
+      zipBytes = BackupCrypto.decrypt(raw, password ?? '');
+    } else {
+      zipBytes = raw;
+    }
+    await BackupService.restoreZipBytes(
+      zipBytes,
+      onProgress: (p, stage) {
+        // 下载/解密占 0~0.4，恢复占 0.4~1
+        report(0.4 + p * 0.6, stage);
+      },
+    );
   }
 
   /// 删除云端备份，并确认远端已不存在。
