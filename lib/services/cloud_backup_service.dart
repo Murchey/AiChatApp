@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xml/xml.dart';
@@ -231,14 +231,19 @@ class CloudBackupService {
   }
 
   /// 上传备份到云端；[password] 非空则加密整包。
+  /// [fileNamePrefix]：手动 `aichat_backup`，自动 `aichat_auto`。
   static Future<CloudBackupItem> uploadBackup(
     CloudBackupConfig config, {
     String? password,
+    String fileNamePrefix = 'aichat_backup',
   }) async {
     if (!config.isConfigured) {
       throw StateError('请先配置对象储存（SecretId / SecretKey / 存储桶 URL）');
     }
-    final export = await BackupService.exportBackupZip(password: password);
+    final export = await BackupService.exportBackupZip(
+      password: password,
+      fileNamePrefix: fileNamePrefix,
+    );
     final key = objectKey(config, export.fileName);
     final uri = _objectUri(config, key);
     const contentType = 'application/octet-stream';
@@ -406,6 +411,26 @@ class CloudBackupService {
     if (await objectExists(config, key)) {
       throw StateError('云端对象删除后仍存在，请检查存储桶是否开启了版本控制');
     }
+  }
+
+  /// 删除云端同一文件名前缀的备份（自动备份清理上一份用）。
+  /// 返回成功删除数量；不影响手动备份文件。
+  static Future<int> deleteBackupsByFileNamePrefix(
+    CloudBackupConfig config,
+    String fileNamePrefix,
+  ) async {
+    final items = await listBackups(config);
+    var deleted = 0;
+    for (final item in items) {
+      if (!item.fileName.startsWith(fileNamePrefix)) continue;
+      try {
+        await deleteBackup(config, item.key);
+        deleted++;
+      } catch (e) {
+        debugPrint('[CloudBackup] delete auto backup failed ${item.key}: $e');
+      }
+    }
+    return deleted;
   }
 
   /// HEAD 探测对象是否存在。

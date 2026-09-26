@@ -19,6 +19,7 @@ import '../providers/settings_provider.dart';
 import '../providers/sticker_provider.dart';
 import '../providers/token_usage_provider.dart';
 import '../providers/workshop_provider.dart';
+import '../services/backup_schedule_service.dart';
 import '../services/backup_service.dart';
 import '../services/cloud_backup_service.dart';
 import '../utils/app_toast.dart';
@@ -29,6 +30,7 @@ import '../utils/file_picker_helper.dart';
 /// 从「设置 → 存储 → 数据备份」进入，对齐 inkqilin-ledger：
 /// 立即备份（可选密码加密）、导入/导出、恢复、安全副本；
 /// 云端支持上传、列表、下载恢复、删除与对象储存配置。
+/// 本地 / 云端定时备份策略分开配置。
 class BackupScreen extends StatefulWidget {
   const BackupScreen({super.key});
 
@@ -43,12 +45,16 @@ class _BackupScreenState extends State<BackupScreen> {
   List<File> _backups = [];
   String? _lastLocalInfo;
   bool _hasSafety = false;
+  BackupScheduleConfig _localSchedule = const BackupScheduleConfig();
+  DateTime? _lastLocalAuto;
 
   // 云端
   CloudBackupConfig _cloudConfig = const CloudBackupConfig();
   List<CloudBackupItem> _cloudBackups = [];
   String? _lastCloudInfo;
   bool _loadingCloud = false;
+  BackupScheduleConfig _cloudSchedule = const BackupScheduleConfig();
+  DateTime? _lastCloudAuto;
 
   bool _loading = true;
   bool _working = false;
@@ -67,11 +73,19 @@ class _BackupScreenState extends State<BackupScreen> {
       final backups = await BackupService.listLocalBackups();
       final safety = await BackupService.hasSafetyCopy();
       final config = await CloudBackupService.loadConfig();
+      final localSchedule = await BackupScheduleService.loadLocal();
+      final cloudSchedule = await BackupScheduleService.loadCloud();
+      final lastLocalAuto = await BackupScheduleService.lastLocalRun();
+      final lastCloudAuto = await BackupScheduleService.lastCloudRun();
       if (!mounted) return;
       setState(() {
         _backups = backups;
         _hasSafety = safety;
         _cloudConfig = config;
+        _localSchedule = localSchedule;
+        _cloudSchedule = cloudSchedule;
+        _lastLocalAuto = lastLocalAuto;
+        _lastCloudAuto = lastCloudAuto;
         _loading = false;
       });
       if (config.isConfigured) {
@@ -481,6 +495,79 @@ class _BackupScreenState extends State<BackupScreen> {
     }
   }
 
+  // ─── 定时备份 ───────────────────────────────────────────────
+
+  Future<void> _onEditSchedule({required bool cloud}) async {
+    final current = cloud ? _cloudSchedule : _localSchedule;
+    final saved = await showCupertinoDialog<BackupScheduleConfig>(
+      context: context,
+      builder: (ctx) => _SchedulePickerDialog(
+        title: cloud ? '云端定时备份' : '本地定时备份',
+        initial: current,
+      ),
+    );
+    if (saved == null || !mounted) return;
+    setState(() => _working = true);
+    try {
+      if (cloud) {
+        await BackupScheduleService.saveCloud(saved);
+      } else {
+        await BackupScheduleService.saveLocal(saved);
+      }
+      if (!mounted) return;
+      setState(() {
+        if (cloud) {
+          _cloudSchedule = saved;
+        } else {
+          _localSchedule = saved;
+        }
+        _working = false;
+      });
+      _setStatus(
+        '${cloud ? '云端' : '本地'}定时备份已设为：${saved.describe()}',
+      );
+      // 刚开启时若已到期，立即补一次，方便验证
+      if (saved.enabled) {
+        final messages = await BackupScheduleService.checkAndRunNow(
+          local: !cloud,
+          cloud: cloud,
+        );
+        if (!mounted) return;
+        if (messages.isNotEmpty) {
+          _setStatus(messages.join('；'));
+        }
+        await _refreshAll();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _working = false);
+      _setStatus('保存定时备份失败：$e', isError: true);
+    }
+  }
+
+  Widget _scheduleTile({
+    required bool cloud,
+  }) {
+    final config = cloud ? _cloudSchedule : _localSchedule;
+    final last = cloud ? _lastCloudAuto : _lastLocalAuto;
+    final lastText = last == null ? '尚未自动备份' : '上次自动：${_formatTime(last)}';
+    final extras = [
+      if (config.deletePrevious) '覆盖上次自动备份',
+      if (config.encryptEnabled) '自动加密',
+    ];
+    final extrasText = extras.isEmpty ? '' : ' · ${extras.join(' · ')}';
+    final subtitle = config.enabled
+        ? '${config.describe()}$extrasText · $lastText'
+        : '已关闭 · $lastText';
+    return _actionTile(
+      icon: CupertinoIcons.clock_fill,
+      title: cloud ? '云端定时备份' : '本地定时备份',
+      subtitle: subtitle,
+      enabled: !_working,
+      onTap: () => _onEditSchedule(cloud: cloud),
+    );
+  }
+
   /// 返回密码；取消返回 null。[requireConfirm] 时要求两次输入一致。
   Future<String?> _askPassword({
     required String title,
@@ -688,6 +775,7 @@ class _BackupScreenState extends State<BackupScreen> {
               enabled: _hasSafety && !_working,
               onTap: _onRestoreSafety,
             ),
+            _scheduleTile(cloud: false),
           ],
         ),
         const SizedBox(height: 16),
@@ -752,6 +840,7 @@ class _BackupScreenState extends State<BackupScreen> {
               subtitle: 'SecretId / SecretKey / 存储桶 URL',
               onTap: _onOpenCloudSettings,
             ),
+            _scheduleTile(cloud: true),
           ],
         ),
         const SizedBox(height: 16),
@@ -1094,6 +1183,218 @@ class _CloudSettingsDialogState extends State<_CloudSettingsDialog> {
           child: const Text('保存'),
         ),
       ],
+    );
+  }
+}
+
+/// 定时备份策略弹窗：触发方式 / 每周日 / 每月日 / 覆盖上次自动备份 / 预设密码
+class _SchedulePickerDialog extends StatefulWidget {
+  final String title;
+  final BackupScheduleConfig initial;
+
+  const _SchedulePickerDialog({
+    required this.title,
+    required this.initial,
+  });
+
+  @override
+  State<_SchedulePickerDialog> createState() => _SchedulePickerDialogState();
+}
+
+class _SchedulePickerDialogState extends State<_SchedulePickerDialog> {
+  late BackupScheduleMode _mode;
+  late int _weeklyDay;
+  late int _monthlyDay;
+  late bool _deletePrevious;
+  late final TextEditingController _password;
+
+  @override
+  void initState() {
+    super.initState();
+    _mode = widget.initial.mode;
+    _weeklyDay = widget.initial.weeklyDay;
+    _monthlyDay = widget.initial.monthlyDay;
+    _deletePrevious = widget.initial.deletePrevious;
+    _password = TextEditingController(text: widget.initial.password);
+  }
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoAlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '定时在打开 APP 时触发。自动备份文件名以 aichat_auto 开头，与手动备份区分。',
+            textAlign: TextAlign.left,
+            style: TextStyle(
+              fontSize: 12,
+              color: context.textSecondaryColor,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _label('触发方式'),
+          const SizedBox(height: 6),
+          Container(
+            decoration: BoxDecoration(
+              color: context.listBgColor.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                for (final m in [
+                  BackupScheduleMode.onAppOpen,
+                  BackupScheduleMode.daily,
+                  BackupScheduleMode.weekly,
+                  BackupScheduleMode.monthly,
+                  BackupScheduleMode.disabled,
+                ])
+                  CupertinoListTile(
+                    title: Text(
+                      m == BackupScheduleMode.onAppOpen
+                          ? '打开 APP 时备份'
+                          : '${m.displayName}${m == BackupScheduleMode.disabled ? '' : '备份'}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    trailing: _mode == m
+                        ? Icon(
+                            CupertinoIcons.checkmark_alt,
+                            size: 18,
+                            color: context.accentColor,
+                          )
+                        : null,
+                    onTap: () => setState(() => _mode = m),
+                  ),
+              ],
+            ),
+          ),
+          if (_mode == BackupScheduleMode.weekly) ...[
+            const SizedBox(height: 10),
+            _label('每周'),
+            const SizedBox(height: 6),
+            CupertinoSlidingSegmentedControl<int>(
+              groupValue: _weeklyDay,
+              children: {
+                for (var d = 1; d <= 7; d++)
+                  d: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    child: Text(
+                      weekdayName(d).substring(1),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+              },
+              onValueChanged: (v) {
+                if (v != null) setState(() => _weeklyDay = v);
+              },
+            ),
+          ],
+          if (_mode == BackupScheduleMode.monthly) ...[
+            const SizedBox(height: 10),
+            _label('每月日期（1–31，超出当月天数按月末）'),
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 120,
+              child: CupertinoPicker(
+                itemExtent: 32,
+                scrollController: FixedExtentScrollController(
+                  initialItem: (_monthlyDay - 1).clamp(0, 30),
+                ),
+                onSelectedItemChanged: (i) => _monthlyDay = i + 1,
+                children: [
+                  for (var d = 1; d <= 31; d++)
+                    Center(
+                      child: Text(
+                        '$d 日',
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '自动备份时删除上次的自动备份',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: context.textPrimaryColor,
+                  ),
+                ),
+              ),
+              CupertinoSwitch(
+                value: _deletePrevious,
+                onChanged: (v) => setState(() => _deletePrevious = v),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _label('自动备份密码（可留空 = 不加密）'),
+          const SizedBox(height: 6),
+          CupertinoTextField(
+            controller: _password,
+            placeholder: '预设加密密码',
+            obscureText: true,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '密码仅保存在本机；忘记密码将无法恢复加密的自动备份。手动备份仍可另行设置密码。',
+            textAlign: TextAlign.left,
+            style: TextStyle(
+              fontSize: 11,
+              color: context.textSecondaryColor,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        CupertinoDialogAction(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        CupertinoDialogAction(
+          isDefaultAction: true,
+          onPressed: () {
+            Navigator.pop(
+              context,
+              BackupScheduleConfig(
+                mode: _mode,
+                weeklyDay: _weeklyDay,
+                monthlyDay: _monthlyDay,
+                deletePrevious: _deletePrevious,
+                password: _password.text,
+              ),
+            );
+          },
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
+
+  Widget _label(String text) {
+    return Text(
+      text,
+      textAlign: TextAlign.left,
+      style: TextStyle(
+        fontSize: 12,
+        color: context.textSecondaryColor,
+      ),
     );
   }
 }

@@ -88,7 +88,11 @@ class BackupService {
   }
 
   /// 生成全量备份字节；[password] 非空则 AES-GCM 加密整包。
-  static Future<LocalExport> exportBackupZip({String? password}) async {
+  /// [fileNamePrefix] 用于区分自动 / 手动备份文件名（默认手动）。
+  static Future<LocalExport> exportBackupZip({
+    String? password,
+    String fileNamePrefix = 'aichat_backup',
+  }) async {
     final docDir = await getApplicationDocumentsDirectory();
     final prefs = await SharedPreferences.getInstance();
     final encrypted = password != null && password.isNotEmpty;
@@ -103,8 +107,8 @@ class BackupService {
 
     final ts = _timestamp();
     final fileName = encrypted
-        ? 'aichat_backup_${ts}_enc.zip'
-        : 'aichat_backup_$ts.zip';
+        ? '${fileNamePrefix}_${ts}_enc.zip'
+        : '${fileNamePrefix}_$ts.zip';
 
     final archive = Archive();
     final filesMap = <String, dynamic>{};
@@ -161,12 +165,34 @@ class BackupService {
   }
 
   /// 生成备份并写入本地备份目录，返回目标文件。
-  static Future<File> createLocalBackup({String? password}) async {
-    final export = await exportBackupZip(password: password);
+  /// [fileNamePrefix]：手动 `aichat_backup`，自动 `aichat_auto`。
+  static Future<File> createLocalBackup({
+    String? password,
+    String fileNamePrefix = 'aichat_backup',
+  }) async {
+    final export = await exportBackupZip(
+      password: password,
+      fileNamePrefix: fileNamePrefix,
+    );
     final dir = await localBackupDir();
     final target = File('${dir.path}/${export.fileName}');
     await target.writeAsBytes(export.bytes, flush: true);
     return target;
+  }
+
+  /// 删除指定前缀的本地备份（用于自动备份清理上一份），返回删除数量。
+  /// 只匹配同前缀文件，不影响手动备份。
+  static Future<int> deleteLocalBackupsByPrefix(String prefix) async {
+    final dir = await localBackupDir();
+    if (!await dir.exists()) return 0;
+    var deleted = 0;
+    await for (final entity in dir.list()) {
+      if (entity is! File) continue;
+      final name = _basename(entity.path);
+      if (!name.startsWith(prefix)) continue;
+      if (await deleteLocalBackup(entity)) deleted++;
+    }
+    return deleted;
   }
 
   static Future<List<File>> listLocalBackups() async {

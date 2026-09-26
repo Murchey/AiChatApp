@@ -16,6 +16,7 @@ import 'providers/settings_provider.dart';
 import 'providers/token_usage_provider.dart';
 import 'providers/workshop_provider.dart';
 import 'providers/sticker_provider.dart';
+import 'services/backup_schedule_service.dart';
 import 'services/notification_service.dart';
 import 'services/widget_sync_service.dart';
 import 'utils/app_toast.dart';
@@ -49,10 +50,26 @@ class _AiChatAppState extends State<AiChatApp> {
     NotificationService.instance.init();
     // 检查仓库更新通知
     _checkWorkshopUpdates();
+    // 定时备份：打开 APP 时检查本地/云端是否到期
+    _runScheduledBackups();
     // 监听小组件导航
     _setupNavigationHandler();
     // 初始化时同步数据到小组件
     _syncWidgetData();
+  }
+
+  /// 打开 APP 时执行到期的自动备份（延迟，等 Provider 加载完再打包）
+  void _runScheduledBackups() {
+    Future.delayed(const Duration(seconds: 3), () async {
+      if (!mounted) return;
+      try {
+        final messages = await BackupScheduleService.checkAndRunOnAppOpen();
+        if (!mounted || messages.isEmpty) return;
+        showAppToast(messages.join('；'));
+      } catch (e) {
+        debugPrint('[BackupSchedule] check on app open failed: $e');
+      }
+    });
   }
 
   void _syncWidgetData() {
