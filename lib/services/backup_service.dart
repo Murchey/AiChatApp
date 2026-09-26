@@ -105,13 +105,18 @@ class BackupService {
     final prefs = await SharedPreferences.getInstance();
     final encrypted = password != null && password.isNotEmpty;
 
-    // 1. SharedPreferences 全量（路径相对化）
+    // 1. SharedPreferences 全量（路径相对化 + 密钥脱敏）
     report(0.08, '读取应用设置');
     final rawPrefs = <String, dynamic>{};
     for (final key in prefs.getKeys()) {
       final value = prefs.get(key);
       if (value == null) continue;
-      rawPrefs[key] = _encodePrefValue(_relativizePaths(value, docDir.path));
+      final sanitized = sanitizePrefForExport(
+        key,
+        _relativizePaths(value, docDir.path),
+      );
+      if (sanitized == null) continue; // 密钥整键不进备份
+      rawPrefs[key] = _encodePrefValue(sanitized);
     }
 
     final ts = _timestamp();
@@ -376,15 +381,36 @@ class BackupService {
     final docDir = await getApplicationDocumentsDirectory();
     final prefs = await SharedPreferences.getInstance();
 
-    // 恢复前安全副本（设置快照）
+    // 恢复前：快照本机密钥（备份中不含密钥，恢复后回填，避免丢 Key）
     report(0.36, '创建安全副本');
+    final localSecretTop = <String, String>{};
+    final localSecretsByField = <String, String>{}; // 字段名 → 有值密钥
+    final localSecretsByPath = <String, String>{}; // 完整路径 → 密钥
+    for (final key in prefs.getKeys()) {
+      final value = prefs.get(key);
+      if (value == null) continue;
+      if (secretTopLevelKeys.contains(key) && value is String) {
+        localSecretTop[key] = value;
+        continue;
+      }
+      if (value is! String) continue;
+      for (final e in extractSecretFields(value).entries) {
+        localSecretsByPath['$key|${e.key}'] = e.value;
+        localSecretsByField.putIfAbsent(e.key.split('.').last, () => e.value);
+        localSecretsByField.putIfAbsent(e.key, () => e.value);
+      }
+    }
+
+    // 恢复前安全副本（设置快照，不含密钥）
     final safetyDir = await _safetyDir();
     final safetyPrefs = File('${safetyDir.path}/prefs.json');
     final current = <String, dynamic>{};
     for (final key in prefs.getKeys()) {
       final value = prefs.get(key);
       if (value == null) continue;
-      current[key] = _encodePrefValue(value);
+      final sanitized = sanitizePrefForExport(key, value);
+      if (sanitized == null) continue;
+      current[key] = _encodePrefValue(sanitized);
     }
     await safetyPrefs.writeAsString(
       const JsonEncoder.withIndent('  ').convert(current),
@@ -397,6 +423,34 @@ class BackupService {
       await prefs.clear();
       for (final entry in decodedPrefs.entries) {
         await _setPrefValue(prefs, entry.key, entry.value, docDir.path);
+      }
+      // 回填本机密钥（备份里是空的）
+      for (final entry in localSecretTop.entries) {
+        await prefs.setString(entry.key, entry.value);
+      }
+      for (final key in prefs.getKeys()) {
+        final value = prefs.get(key);
+        if (value is! String) continue;
+        final trimmed = value.trim();
+        if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) continue;
+        try {
+          final decoded = jsonDecode(trimmed);
+          final byPath = <String, String>{};
+          for (final e in localSecretsByPath.entries) {
+            if (e.key.startsWith('$key|')) {
+              byPath[e.key.substring(key.length + 1)] = e.value;
+            }
+          }
+          final filled = fillSecretFields(
+            decoded,
+            '',
+            {...localSecretsByField, ...byPath},
+          );
+          final encoded = jsonEncode(filled);
+          if (encoded != value) {
+            await prefs.setString(key, encoded);
+          }
+        } catch (_) {}
       }
 
       // 2. 替换用户数据文件：先清掉旧目录，再写入备份内容
@@ -563,6 +617,135 @@ class BackupService {
           .toList();
     }
     return value;
+  }
+
+  // ─── 密钥脱敏：备份不含任何密钥 ─────────────────────────────
+
+  /// 整键排除（纯密钥，备份中不出现）
+  static const Set<String> secretTopLevelKeys = {
+    'api_key',
+    'cloud_backup_secret_id',
+    'cloud_backup_secret_key',
+  };
+
+  /// JSON 内敏感字段名（大小写不敏感）：导出时清空，恢复时回填本机密钥
+  static const Set<String> secretJsonFieldNames = {
+    'api_key',
+    'apikey',
+    'accesskeyid',
+    'secretaccesskey',
+    'secretid',
+    'secretkey',
+    'password',
+    'secret',
+    'token',
+  };
+
+  static bool _isSecretField(String name) =>
+      secretJsonFieldNames.contains(name.toLowerCase());
+
+  /// 递归清空 Map/List 中的密钥字段（结构保留，值置空串）
+  static dynamic sanitizeSecrets(dynamic value) {
+    if (value is Map) {
+      final out = <String, dynamic>{};
+      value.forEach((k, v) {
+        final key = k.toString();
+        if (_isSecretField(key)) {
+          out[key] = '';
+        } else {
+          out[key] = sanitizeSecrets(v);
+        }
+      });
+      return out;
+    }
+    if (value is List) {
+      return value.map(sanitizeSecrets).toList();
+    }
+    return value;
+  }
+
+  /// 若字符串是 JSON 对象/数组则脱敏后重新编码，否则原样返回
+  static String _sanitizeJsonString(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return raw;
+    if (!(s.startsWith('{') || s.startsWith('['))) return raw;
+    try {
+      final decoded = jsonDecode(s);
+      final cleaned = sanitizeSecrets(decoded);
+      return jsonEncode(cleaned);
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  /// 导出前处理某个 prefs 键值：整键排除或 JSON 内脱敏
+  /// 返回 null 表示该键不进入备份。
+  static dynamic sanitizePrefForExport(String key, dynamic value) {
+    if (secretTopLevelKeys.contains(key)) return null;
+    if (value is String) return _sanitizeJsonString(value);
+    return value;
+  }
+
+  /// 从本机原始 JSON 值中抽取密钥字段路径 → 值（用于恢复后回填）
+  static Map<String, String> extractSecretFields(String jsonRaw) {
+    final result = <String, String>{};
+    final s = jsonRaw.trim();
+    if (s.isEmpty || !(s.startsWith('{') || s.startsWith('['))) return result;
+    try {
+      final decoded = jsonDecode(s);
+      void walk(dynamic node, String path) {
+        if (node is Map) {
+          node.forEach((k, v) {
+            final key = k.toString();
+            final next = path.isEmpty ? key : '$path.$key';
+            if (_isSecretField(key) && v is String && v.isNotEmpty) {
+              result[next] = v;
+            } else {
+              walk(v, next);
+            }
+          });
+        } else if (node is List) {
+          for (var i = 0; i < node.length; i++) {
+            walk(node[i], '$path[$i]');
+          }
+        }
+      }
+
+      walk(decoded, '');
+    } catch (_) {}
+    return result;
+  }
+
+  /// 按路径回填密钥到 JSON 结构（仅填空值，不覆盖已有）
+  static dynamic fillSecretFields(
+    dynamic node,
+    String path,
+    Map<String, String> secrets,
+  ) {
+    if (node is Map) {
+      final out = <String, dynamic>{};
+      node.forEach((k, v) {
+        final key = k.toString();
+        final next = path.isEmpty ? key : '$path.$key';
+        if (_isSecretField(key)) {
+          final current = v?.toString() ?? '';
+          out[key] = current.isNotEmpty
+              ? v
+              : (secrets[next] ?? secrets[key] ?? current);
+        } else {
+          out[key] = fillSecretFields(v, next, secrets);
+        }
+      });
+      return out;
+    }
+    if (node is List) {
+      final out = <dynamic>[];
+      for (var i = 0; i < node.length; i++) {
+        out.add(fillSecretFields(node[i], '$path[$i]', secrets));
+      }
+      return out;
+    }
+    return node;
   }
 
   /// SharedPreferences 值序列化：保留类型信息

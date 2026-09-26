@@ -170,9 +170,9 @@ class _BackupScreenState extends State<BackupScreen> {
   Future<void> _onBackupNow({required bool cloud}) async {
     final title = cloud ? '云端备份' : '本地备份';
     final message = cloud
-        ? '打包全部数据并上传到对象储存。\n'
+        ? '打包全部数据（不含密钥）并上传到对象储存。\n'
             '可设置密码加密备份包（留空则不加密）。'
-        : '打包全部聊天、角色、设置与用户文件保存到应用私有目录。\n'
+        : '打包聊天、角色、软件设置与用户文件（不含密钥）保存到应用私有目录。\n'
             '卸载应用会丢失，重要备份请再「导出」到文件。\n'
             '可设置密码加密备份包（留空则不加密）。';
     final password = await _askPassword(
@@ -731,7 +731,7 @@ class _BackupScreenState extends State<BackupScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '打包应用内全部聊天、角色、表情包、设置与用户文件。'
+          '打包应用内全部聊天、角色、表情包、软件设置与用户文件（不含任何密钥/API Key）。'
           '备份保存在应用私有目录，卸载会丢失；重要备份请「导出」到系统文件。',
           style: TextStyle(
             fontSize: 12,
