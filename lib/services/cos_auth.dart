@@ -88,14 +88,20 @@ String _httpDate([DateTime? time]) {
       '${t.year} ${two(t.hour)}:${two(t.minute)}:${two(t.second)} GMT';
 }
 
-/// 为对象储存 GET 请求生成鉴权请求头。
+/// 为对象储存请求生成鉴权请求头。
 /// 目前支持腾讯云 COS 与阿里云 OSS；其它厂商返回空 map（退回匿名）。
+///
+/// [contentType] / [contentMd5] 仅在请求实际携带对应头时传入：
+/// 阿里云 OSS V1 会把它们纳入 StringToSign；腾讯云 q-sign 默认只签 host。
 Map<String, String> buildCosAuthHeaders({
   required String method,
   required Uri uri,
   required String accessKeyId,
   required String secretAccessKey,
   DateTime? now,
+  String? contentType,
+  String? contentMd5,
+  Map<String, String> extraHeaders = const {},
 }) {
   final ak = accessKeyId.trim();
   final sk = secretAccessKey.trim();
@@ -118,6 +124,9 @@ Map<String, String> buildCosAuthHeaders({
         accessKeyId: ak,
         accessKeySecret: sk,
         now: now,
+        contentType: contentType,
+        contentMd5: contentMd5,
+        extraHeaders: extraHeaders,
       );
     case CosVendor.other:
       return const {};
@@ -194,6 +203,9 @@ Map<String, String> _signAliyunOss({
   required String accessKeyId,
   required String accessKeySecret,
   DateTime? now,
+  String? contentType,
+  String? contentMd5,
+  Map<String, String> extraHeaders = const {},
 }) {
   final date = _httpDate(now);
   // 虚拟主机风格：host 第一段为 bucket 名
@@ -217,14 +229,27 @@ Map<String, String> _signAliyunOss({
   // 仅 bucket 时资源为 /bucket/，有 object 时为 /bucket/object
   final canonicalizedResource = '/$bucket$objectKey$sub';
 
+  // CanonicalizedOSSHeaders：x-oss-* 头按字典序参与签名
+  final ossHeaders = <String, String>{};
+  for (final e in extraHeaders.entries) {
+    final k = e.key.toLowerCase();
+    if (k.startsWith('x-oss-')) {
+      ossHeaders[k] = e.value.trim();
+    }
+  }
+  final sortedHeaderKeys = ossHeaders.keys.toList()..sort();
+  final canonicalizedOssHeaders = sortedHeaderKeys.isEmpty
+      ? ''
+      : sortedHeaderKeys.map((k) => '$k:${ossHeaders[k]}\n').join();
+
   // 官方公式：
   // VERB\nContent-MD5\nContent-Type\nDate\nCanonicalizedOSSHeadersCanonicalizedResource
   // CanonicalizedOSSHeaders 为空时直接拼接 Resource，中间不能多出 \n
   final stringToSign = '${method.toUpperCase()}\n'
-      '\n' // Content-MD5
-      '\n' // Content-Type
+      '${contentMd5 ?? ''}\n'
+      '${contentType ?? ''}\n'
       '$date\n'
-      '' // CanonicalizedOSSHeaders（无 x-oss-*）
+      '$canonicalizedOssHeaders'
       '$canonicalizedResource';
 
   final sig = _base64(_hmacSha1(utf8.encode(accessKeySecret), stringToSign));
