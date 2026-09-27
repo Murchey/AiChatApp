@@ -290,6 +290,45 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
     }
   }
 
+  /// 保存角色背景图到系统相册
+  Future<void> _saveBackground(Character character) async {
+    if (character.background.isEmpty) {
+      showAppToast('尚未设置背景图');
+      return;
+    }
+    if (!PlatformSupport.supportsGallerySave) {
+      showAppToast('当前平台暂不支持保存到相册');
+      return;
+    }
+    if (!await Gal.hasAccess()) {
+      final granted = await Gal.requestAccess();
+      if (!granted) {
+        if (mounted) showAppToast('未获得相册权限，无法保存图片');
+        return;
+      }
+    }
+    try {
+      final bytes = base64Decode(character.background);
+      await Gal.putImageBytes(
+        bytes,
+        name: 'aichat_cover_${DateTime.now().millisecondsSinceEpoch}',
+      );
+      if (mounted) showAppToast('背景图已保存到系统相册');
+    } on GalException catch (e) {
+      if (!mounted) return;
+      showAppToast(
+        switch (e.type) {
+          GalExceptionType.accessDenied => '未获得相册权限，无法保存图片',
+          GalExceptionType.notEnoughSpace => '存储空间不足，保存失败',
+          GalExceptionType.notSupportedFormat => '图片格式不支持保存',
+          GalExceptionType.unexpected => '保存失败，请重试',
+        },
+      );
+    } catch (_) {
+      if (mounted) showAppToast('保存图片失败，请重试');
+    }
+  }
+
   /// 点击背景图选择图片
   Future<void> _pickBackground(Character character) async {
     final picker = ImagePicker();
@@ -309,11 +348,20 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
 
   /// 背景图选择弹窗
   void _showBackgroundMenu(Character character) {
+    final hasBg = character.background.isNotEmpty;
     showCupertinoModalPopup(
       context: context,
       builder: (ctx) => CupertinoActionSheet(
         title: const Text('设置角色背景图'),
         actions: [
+          if (hasBg)
+            CupertinoActionSheetAction(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _saveBackground(character);
+              },
+              child: const Text('保存图片'),
+            ),
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
@@ -620,39 +668,83 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
                 ),
               ),
             ),
-            // 更换封面按钮：仅在拉到底部（固定展开）时显示在背景图右下角
+            // 封面操作：仅在拉到底部（固定展开）时显示在背景图右下角
             if (_coverExpanded)
               Positioned(
                 right: 12,
                 bottom: coverHeight - 40,
-                child: GestureDetector(
-                  onTap: () => _showBackgroundMenu(character),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: CupertinoColors.black.withValues(alpha: 0.35),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          CupertinoIcons.camera_fill,
-                          size: 13,
-                          color: CupertinoColors.white,
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          '更换封面',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: CupertinoColors.white,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (character.background.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: GestureDetector(
+                          onTap: () => _saveBackground(character),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: CupertinoColors.black
+                                  .withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  CupertinoIcons.arrow_down_to_line,
+                                  size: 13,
+                                  color: CupertinoColors.white,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  '保存图片',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: CupertinoColors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ],
+                      ),
+                    GestureDetector(
+                      onTap: () => _showBackgroundMenu(character),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color:
+                              CupertinoColors.black.withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              CupertinoIcons.camera_fill,
+                              size: 13,
+                              color: CupertinoColors.white,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              '更换封面',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: CupertinoColors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             // 头像：骑跨背景图与朋友圈区交界处，靠右（昵称在其左侧）

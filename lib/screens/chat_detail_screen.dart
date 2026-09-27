@@ -24,6 +24,7 @@ import 'character_detail_screen.dart';
 import 'create_group_screen.dart';
 import 'image_crop_screen.dart';
 import 'memory_point_manage_screen.dart';
+import 'prompt_edit_screen.dart';
 import 'moment_visibility_screen.dart';
 
 /// 聊天详情/角色资料：上半部分可编辑角色卡（备注/昵称/个性签名/定位地区），
@@ -54,15 +55,6 @@ class ChatDetailScreen extends StatefulWidget {
 }
 
 class _ChatDetailScreenState extends State<ChatDetailScreen> {
-  bool _promptExpanded = false;
-  TextEditingController? _promptController;
-
-  @override
-  void dispose() {
-    _promptController?.dispose();
-    super.dispose();
-  }
-
   String get _characterId {
     // 直接指定的角色优先（角色管理页场景）
     final direct = widget.characterId;
@@ -660,34 +652,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   void _togglePrompt() {
-    setState(() {
-      _promptExpanded = !_promptExpanded;
-      if (_promptExpanded && _promptController == null) {
-        final character =
-            context.read<CharacterProvider>().getCharacterById(_characterId);
-        _promptController =
-            TextEditingController(text: character?.systemPrompt ?? '');
-      }
-    });
-  }
-
-  Future<void> _savePrompt() async {
-    await context
-        .read<CharacterProvider>()
-        .updateSystemPrompt(_characterId, _promptController?.text.trim() ?? '');
-    if (!mounted) return;
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('保存成功'),
-        content: const Text('角色的提示词已更新，新对话将使用该提示词。'),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('确定'),
-          ),
-        ],
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => PromptEditScreen(
+          characterId: _characterId,
+          characterName: widget.characterName,
+        ),
       ),
     );
   }
@@ -1751,16 +1722,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               style: TextStyle(color: context.textPrimaryColor),
             ),
             subtitle: Text(
-              '定义角色对话时的行为与设定，点击展开编辑',
+              '定义角色对话时的行为与设定，点击进入编辑',
               style: TextStyle(
                 fontSize: 12,
                 color: context.textSecondaryColor,
               ),
             ),
             trailing: Icon(
-              _promptExpanded
-                  ? CupertinoIcons.chevron_up
-                  : CupertinoIcons.chevron_down,
+              CupertinoIcons.chevron_right,
               size: 16,
               color: context.textSecondaryColor,
             ),
@@ -1791,47 +1760,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
             onTap: _openMemoryManage,
           ),
-          if (_promptExpanded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  CupertinoTextField(
-                    controller: _promptController,
-                    maxLines: 6,
-                    minLines: 3,
-                    padding: const EdgeInsets.all(12),
-                    placeholder: '输入角色的提示词…',
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.5,
-                      color: context.textPrimaryColor,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.fieldBgColor,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  CupertinoButton.filled(
-                    onPressed: _savePrompt,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    borderRadius: BorderRadius.circular(10),
-                    child: const Text('保存'),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '保存后新对话将使用新的提示词，已进行的对话不受影响',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );

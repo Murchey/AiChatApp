@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/memory_point_provider.dart';
+import 'memory_point_edit_screen.dart';
 
 /// 记忆点管理页：编辑 / 添加 / 删除某个角色的持久化记忆点。
 /// 从会话详情「提示词设置 → 记忆点管理」进入。
@@ -20,7 +21,10 @@ class _MemoryPointManageScreenState extends State<MemoryPointManageScreen> {
   static final DateFormat _dateFmt = DateFormat('yyyy-MM-dd HH:mm');
 
   Future<void> _add() async {
-    final content = await _showEditDialog(title: '添加记忆点');
+    final content = await MemoryPointEditScreen.open(
+      context,
+      title: '添加记忆点',
+    );
     if (content == null || content.trim().isEmpty) return;
     if (!mounted) return;
     await context
@@ -29,7 +33,11 @@ class _MemoryPointManageScreenState extends State<MemoryPointManageScreen> {
   }
 
   Future<void> _edit(String pointId, String oldContent) async {
-    final content = await _showEditDialog(title: '编辑记忆点', initial: oldContent);
+    final content = await MemoryPointEditScreen.open(
+      context,
+      title: '编辑记忆点',
+      initial: oldContent,
+    );
     if (content == null || !mounted) return;
     await context
         .read<MemoryPointProvider>()
@@ -59,41 +67,6 @@ class _MemoryPointManageScreenState extends State<MemoryPointManageScreen> {
     await context
         .read<MemoryPointProvider>()
         .removePoint(widget.characterId, pointId);
-  }
-
-  /// 弹出输入框编辑记忆点内容（空内容保存视为删除由 provider 处理）
-  Future<String?> _showEditDialog({
-    required String title,
-    String initial = '',
-  }) {
-    final controller = TextEditingController(text: initial);
-    return showCupertinoDialog<String>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text(title),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: CupertinoTextField(
-            controller: controller,
-            autofocus: true,
-            maxLines: 4,
-            minLines: 2,
-            placeholder: '输入记忆内容…',
-          ),
-        ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
   }
 
   String _shorten(String s) => s.length > 30 ? '${s.substring(0, 30)}…' : s;
