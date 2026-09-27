@@ -21,27 +21,19 @@ class _MemoryPointManageScreenState extends State<MemoryPointManageScreen> {
   static final DateFormat _dateFmt = DateFormat('yyyy-MM-dd HH:mm');
 
   Future<void> _add() async {
-    final content = await MemoryPointEditScreen.open(
+    await MemoryPointEditScreen.open(
       context,
-      title: '添加记忆点',
+      characterId: widget.characterId,
     );
-    if (content == null || content.trim().isEmpty) return;
-    if (!mounted) return;
-    await context
-        .read<MemoryPointProvider>()
-        .addPoints(widget.characterId, [content]);
   }
 
   Future<void> _edit(String pointId, String oldContent) async {
-    final content = await MemoryPointEditScreen.open(
+    await MemoryPointEditScreen.open(
       context,
-      title: '编辑记忆点',
+      characterId: widget.characterId,
+      pointId: pointId,
       initial: oldContent,
     );
-    if (content == null || !mounted) return;
-    await context
-        .read<MemoryPointProvider>()
-        .updatePoint(widget.characterId, pointId, content);
   }
 
   Future<void> _delete(String pointId, String content) async {

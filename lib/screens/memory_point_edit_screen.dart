@@ -1,29 +1,41 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
+import 'package:provider/provider.dart';
 
 import '../config/theme.dart';
+import '../providers/memory_point_provider.dart';
 
-/// 记忆点编辑二级页：全屏编辑单条记忆点内容。
-/// 从「记忆点管理」添加 / 点条目编辑进入，替代弹窗小输入框。
+/// 记忆点编辑二级页：全屏编辑单条记忆点。
+/// 文字变动自动保存；底部仅保留「清空」。
 class MemoryPointEditScreen extends StatefulWidget {
-  final String title;
+  final String characterId;
+
+  /// 编辑已有记忆点时传入；为空表示新增
+  final String? pointId;
   final String initial;
 
   const MemoryPointEditScreen({
     super.key,
-    required this.title,
+    required this.characterId,
+    this.pointId,
     this.initial = '',
   });
 
-  /// 返回编辑后的文本；取消返回 null
-  static Future<String?> open(
+  static Future<void> open(
     BuildContext context, {
-    required String title,
+    required String characterId,
+    String? pointId,
     String initial = '',
   }) {
-    return Navigator.push<String>(
+    return Navigator.push(
       context,
       CupertinoPageRoute(
-        builder: (_) => MemoryPointEditScreen(title: title, initial: initial),
+        builder: (_) => MemoryPointEditScreen(
+          characterId: characterId,
+          pointId: pointId,
+          initial: initial,
+        ),
       ),
     );
   }
@@ -34,66 +46,105 @@ class MemoryPointEditScreen extends StatefulWidget {
 
 class _MemoryPointEditScreenState extends State<MemoryPointEditScreen> {
   late final TextEditingController _controller;
-  bool _dirty = false;
+  Timer? _debounce;
+  bool _saving = false;
+  bool _pendingSave = false;
+  String? _pointId;
+  String _status = '已自动保存';
+  String _lastSavedText = '';
 
   @override
   void initState() {
     super.initState();
+    _pointId = widget.pointId;
+    _lastSavedText = widget.initial;
     _controller = TextEditingController(text: widget.initial);
-    _controller.addListener(() {
-      if (!_dirty && mounted) setState(() => _dirty = true);
-    });
+    _controller.addListener(_onChanged);
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    _controller.removeListener(_onChanged);
     _controller.dispose();
+    _flushSave();
     super.dispose();
   }
 
-  Future<void> _confirmPop() async {
-    if (!_dirty) {
-      Navigator.pop(context);
+  void _onChanged() {
+    final text = _controller.text;
+    if (text == _lastSavedText) return;
+    setState(() => _status = '正在输入…');
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), _saveNow);
+  }
+
+  Future<void> _flushSave() async {
+    _debounce?.cancel();
+    if (_controller.text != _lastSavedText) {
+      await _saveNow();
+    }
+  }
+
+  Future<void> _saveNow() async {
+    if (_saving) {
+      _pendingSave = true;
       return;
     }
-    final leave = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('放弃修改？'),
-        content: const Text('内容尚未保存，返回将丢失本次编辑。'),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('继续编辑'),
-            onPressed: () => Navigator.pop(ctx, false),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            child: const Text('放弃'),
-            onPressed: () => Navigator.pop(ctx, true),
-          ),
-        ],
-      ),
-    );
-    if (leave == true && mounted) Navigator.pop(context);
+    final text = _controller.text;
+    if (text == _lastSavedText) return;
+    setState(() {
+      _saving = true;
+      _status = '保存中…';
+    });
+    final provider = context.read<MemoryPointProvider>();
+    try {
+      if (_pointId != null) {
+        await provider.updatePoint(widget.characterId, _pointId!, text);
+      } else if (text.trim().isNotEmpty) {
+        // 新建：首次有内容时插入，并记录 id 供后续编辑
+        await provider.addPoints(widget.characterId, [text]);
+        final created = provider
+            .pointsFor(widget.characterId)
+            .where((p) => p.content == text.trim())
+            .toList();
+        if (created.isNotEmpty) _pointId = created.first.id;
+      }
+      _lastSavedText = text;
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _status = '已自动保存';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _status = '保存失败，稍后重试';
+        });
+      }
+    }
+    if (_pendingSave) {
+      _pendingSave = false;
+      if (mounted) await _saveNow();
+    }
+  }
+
+  void _clear() {
+    if (_controller.text.isEmpty) return;
+    _controller.text = '';
+    _onChanged();
   }
 
   @override
   Widget build(BuildContext context) {
     final length = _controller.text.trim().length;
+    final isNew = widget.pointId == null && _pointId == null;
     return CupertinoPageScaffold(
       backgroundColor: context.scaffoldColor,
       navigationBar: CupertinoNavigationBar(
-        middle: Text(widget.title),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _confirmPop,
-          child: const Text('返回'),
-        ),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context, _controller.text),
-          child: const Text('保存'),
-        ),
+        middle: Text(isNew ? '添加记忆点' : '编辑记忆点'),
       ),
       child: SafeArea(
         child: Column(
@@ -133,6 +184,15 @@ class _MemoryPointEditScreenState extends State<MemoryPointEditScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '修改后自动保存；清空内容并自动保存后将删除该记忆点。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -146,21 +206,17 @@ class _MemoryPointEditScreenState extends State<MemoryPointEditScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      '已输入 $length 字',
+                      '已输入 $length 字 · $_status',
                       style: TextStyle(
                         fontSize: 12,
                         color: context.textSecondaryColor,
                       ),
                     ),
                   ),
-                  CupertinoButton.filled(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 22,
-                      vertical: 12,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                    onPressed: () => Navigator.pop(context, _controller.text),
-                    child: const Text('保存'),
+                  CupertinoButton(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    onPressed: _clear,
+                    child: const Text('清空'),
                   ),
                 ],
               ),

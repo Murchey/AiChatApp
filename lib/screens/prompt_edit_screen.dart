@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 
@@ -5,7 +7,7 @@ import '../config/theme.dart';
 import '../providers/character_provider.dart';
 
 /// 提示词编辑二级页：全屏大文本框编辑角色 systemPrompt。
-/// 从「聊天详情 → 提示词设置」进入，替代原先的行内小输入框。
+/// 文字变动自动保存；底部仅保留「清空」。
 class PromptEditScreen extends StatefulWidget {
   final String characterId;
   final String characterName;
@@ -22,80 +24,87 @@ class PromptEditScreen extends StatefulWidget {
 
 class _PromptEditScreenState extends State<PromptEditScreen> {
   late final TextEditingController _controller;
+  Timer? _debounce;
   bool _saving = false;
-  bool _dirty = false;
+  bool _pendingSave = false;
+  String _status = '已自动保存';
+  String _lastSavedText = '';
 
   @override
   void initState() {
     super.initState();
     final character =
         context.read<CharacterProvider>().getCharacterById(widget.characterId);
-    _controller = TextEditingController(text: character?.systemPrompt ?? '');
-    _controller.addListener(() {
-      if (!_dirty && mounted) setState(() => _dirty = true);
-    });
+    _lastSavedText = character?.systemPrompt ?? '';
+    _controller = TextEditingController(text: _lastSavedText);
+    _controller.addListener(_onChanged);
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    _controller.removeListener(_onChanged);
     _controller.dispose();
+    // 退出前把未写入的内容落盘
+    _flushSave();
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (_saving) return;
-    setState(() => _saving = true);
-    await context
-        .read<CharacterProvider>()
-        .updateSystemPrompt(widget.characterId, _controller.text.trim());
-    if (!mounted) return;
-    setState(() {
-      _saving = false;
-      _dirty = false;
-    });
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('已保存'),
-        content: const Text('提示词已更新，新对话将使用该提示词。'),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pop(context);
-            },
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
+  void _onChanged() {
+    final text = _controller.text;
+    if (text == _lastSavedText) return;
+    setState(() => _status = '正在输入…');
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), _saveNow);
   }
 
-  Future<void> _confirmPop() async {
-    if (!_dirty) {
-      Navigator.pop(context);
+  Future<void> _flushSave() async {
+    _debounce?.cancel();
+    if (_controller.text != _lastSavedText) {
+      await _saveNow();
+    }
+  }
+
+  Future<void> _saveNow() async {
+    if (_saving) {
+      _pendingSave = true;
       return;
     }
-    final leave = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('放弃修改？'),
-        content: const Text('提示词尚未保存，返回将丢失本次编辑。'),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('继续编辑'),
-            onPressed: () => Navigator.pop(ctx, false),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            child: const Text('放弃'),
-            onPressed: () => Navigator.pop(ctx, true),
-          ),
-        ],
-      ),
-    );
-    if (leave == true && mounted) Navigator.pop(context);
+    final text = _controller.text;
+    if (text == _lastSavedText) return;
+    setState(() {
+      _saving = true;
+      _status = '保存中…';
+    });
+    try {
+      await context
+          .read<CharacterProvider>()
+          .updateSystemPrompt(widget.characterId, text);
+      _lastSavedText = text;
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _status = '已自动保存';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _status = '保存失败，稍后重试';
+        });
+      }
+    }
+    if (_pendingSave) {
+      _pendingSave = false;
+      if (mounted) await _saveNow();
+    }
+  }
+
+  void _clear() {
+    if (_controller.text.isEmpty) return;
+    _controller.text = '';
+    _onChanged();
   }
 
   @override
@@ -103,20 +112,8 @@ class _PromptEditScreenState extends State<PromptEditScreen> {
     final length = _controller.text.trim().length;
     return CupertinoPageScaffold(
       backgroundColor: context.scaffoldColor,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('编辑提示词'),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _confirmPop,
-          child: const Text('返回'),
-        ),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _saving ? null : _save,
-          child: _saving
-              ? const CupertinoActivityIndicator(radius: 10)
-              : const Text('保存'),
-        ),
+      navigationBar: const CupertinoNavigationBar(
+        middle: Text('编辑提示词'),
       ),
       child: SafeArea(
         child: Column(
@@ -159,7 +156,7 @@ class _PromptEditScreenState extends State<PromptEditScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    '保存后新对话将使用新的提示词，已进行的对话不受影响。',
+                    '修改后自动保存；新对话将使用新的提示词，已进行的对话不受影响。',
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.5,
@@ -169,7 +166,6 @@ class _PromptEditScreenState extends State<PromptEditScreen> {
                 ],
               ),
             ),
-            // 底部工具条
             Container(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
               decoration: BoxDecoration(
@@ -180,7 +176,7 @@ class _PromptEditScreenState extends State<PromptEditScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      '已输入 $length 字',
+                      '已输入 $length 字 · $_status',
                       style: TextStyle(
                         fontSize: 12,
                         color: context.textSecondaryColor,
@@ -188,22 +184,9 @@ class _PromptEditScreenState extends State<PromptEditScreen> {
                     ),
                   ),
                   CupertinoButton(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    onPressed: () {
-                      _controller.text = '';
-                      setState(() => _dirty = true);
-                    },
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    onPressed: _clear,
                     child: const Text('清空'),
-                  ),
-                  const SizedBox(width: 8),
-                  CupertinoButton.filled(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 22,
-                      vertical: 12,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                    onPressed: _saving ? null : _save,
-                    child: const Text('保存提示词'),
                   ),
                 ],
               ),
