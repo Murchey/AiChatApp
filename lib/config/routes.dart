@@ -4,6 +4,8 @@ import '../screens/home_screen.dart';
 import '../screens/chat_screen.dart';
 import '../screens/character_list_screen.dart';
 import '../screens/character_detail_screen.dart';
+import '../screens/desktop/desktop_shell.dart';
+import '../utils/platform_support.dart';
 
 /// 全局路由观察者：监听二级页面的压栈/出栈，
 /// 用于在返回主页时强制刷新底部导航栏未读角标（页面被覆盖期间 Consumer 不会重建）
@@ -22,7 +24,11 @@ class AppRoutes {
       case splash:
         return CupertinoPageRoute(builder: (_) => const SplashScreen());
       case home:
-        return CupertinoPageRoute(builder: (_) => const HomeScreen());
+        // 电脑端：微信风格三栏主界面；移动端：底部 Tab 主页
+        return CupertinoPageRoute(
+          builder: (_) =>
+              PlatformSupport.isDesktop ? const DesktopShell() : const HomeScreen(),
+        );
       case chat:
         final args = settings.arguments as Map<String, dynamic>;
         return CupertinoPageRoute(

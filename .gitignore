@@ -33,8 +33,21 @@ IDEA.md
 /build/
 /coverage/
 
-# 桌面端脚手架（本项目仅适配 Android，不纳入版本控制）
-/windows/
+# ── 桌面端 ─────────────────────────────────────────────
+# 保留 windows 工程源码（便于上传电脑版），只忽略构建产物与临时文件
+/windows/flutter/ephemeral/
+/windows/x64/
+/windows/arm64/
+**/cmake-build-*/
+*.exe
+*.dll
+*.lib
+*.pdb
+*.obj
+*.exp
+*.ilk
+desktop_sync_data/
+# 其他桌面平台暂不使用
 /macos/
 /linux/
 

@@ -26,6 +26,8 @@ class MessageInput extends StatefulWidget {
   final bool replyEnabled; // 对号按钮是否可点：上一条消息是用户发送时才可点
   /// 剧情建议：询问补充后生成可填入输入框的建议（语C/短信通用）
   final VoidCallback? onPlotSuggestion;
+  /// 桌面端：Enter 发送、Shift+Enter 换行（默认 false，不影响手机端）
+  final bool enterToSend;
   /// 外部可通过此 key 调用 setText / focus
   final GlobalKey<MessageInputState>? inputKey;
 
@@ -48,6 +50,7 @@ class MessageInput extends StatefulWidget {
     this.onRequestReply,
     this.replyEnabled = true,
     this.onPlotSuggestion,
+    this.enterToSend = false,
   });
 
   @override
@@ -250,6 +253,16 @@ class MessageInputState extends State<MessageInput>
                       color: context.fieldBgColor,
                       borderRadius: BorderRadius.circular(10),
                     ),
+                    // 桌面端 Enter 发送；手机端保持默认（回车换行由系统键盘决定）
+                    textInputAction: widget.enterToSend
+                        ? TextInputAction.send
+                        : TextInputAction.newline,
+                    onSubmitted: widget.enterToSend
+                        ? (_) {
+                            final text = _controller.text.trim();
+                            if (text.isNotEmpty) _handleSend();
+                          }
+                        : null,
                   ),
                 ),
                 // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（点击请求角色回复）

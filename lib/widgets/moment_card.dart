@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:gal/gal.dart';
+import '../utils/platform_support.dart';
 import 'package:provider/provider.dart';
 import '../config/motion.dart';
 import '../config/theme.dart';
@@ -1255,6 +1256,10 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
   }
 
   Future<void> _saveImage() async {
+    if (!PlatformSupport.supportsGallerySave) {
+      showAppToast('当前平台暂不支持保存到相册');
+      return;
+    }
     // gal 的 putImage 不会自行申请权限：Android 6–9（API 23–28）
     // 需要 WRITE_EXTERNAL_STORAGE 才能写入相册，先检查/申请权限再保存
     if (!await Gal.hasAccess()) {

@@ -141,6 +141,7 @@ class AppTheme {
   static CupertinoThemeData buildTheme({
     required Brightness brightness,
     required Color accent,
+    String? fontFamily,
   }) {
     final isDark = brightness == Brightness.dark;
     return CupertinoThemeData(
@@ -152,19 +153,37 @@ class AppTheme {
       barBackgroundColor: isDark ? AppColors.navBarDark : AppColors.navBarLight,
       textTheme: CupertinoTextThemeData(
         primaryColor: accent,
-        // 不指定 fontFamily：直接使用各手机平台的系统字体
+        // 桌面端传入 Windows 字体栈；手机端不指定，用系统字体
         textStyle: TextStyle(
           fontSize: 16,
+          fontFamily: fontFamily,
           color:
               isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
         ),
         navTitleTextStyle: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w600,
+          fontFamily: fontFamily,
           color:
               isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
         ),
-        navActionTextStyle: TextStyle(fontSize: 16, color: accent),
+        navActionTextStyle: TextStyle(
+          fontSize: 16,
+          color: accent,
+          fontFamily: fontFamily,
+        ),
+        actionTextStyle: TextStyle(
+          fontSize: 16,
+          color: accent,
+          fontFamily: fontFamily,
+        ),
+        tabLabelTextStyle: TextStyle(
+          fontSize: 10,
+          fontFamily: fontFamily,
+          color: isDark
+              ? AppColors.textSecondaryDark
+              : AppColors.textSecondaryLight,
+        ),
       ),
     );
   }

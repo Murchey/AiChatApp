@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/platform_support.dart';
 
 /// Gitee 仓库信息（国内下载源，更新时优先选择）
 const String kGiteeOwner = 'Murchey';
@@ -260,6 +261,9 @@ class UpdateService {
 
   /// 触发系统安装（原生 FileProvider + ACTION_VIEW）
   static Future<void> installApk(String path) async {
+    if (!PlatformSupport.supportsApkInstall) {
+      throw UnsupportedError('当前平台不支持安装 APK');
+    }
     try {
       await _channel.invokeMethod('installApk', {'path': path});
     } catch (e) {

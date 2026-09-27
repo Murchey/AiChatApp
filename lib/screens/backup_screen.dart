@@ -26,6 +26,7 @@ import '../utils/file_picker_helper.dart';
 import 'backup_cloud_settings_screen.dart';
 import 'backup_password_screen.dart';
 import 'backup_schedule_screen.dart';
+import 'lan_sync_screen.dart';
 
 /// 数据备份页：本地备份 + 云端备份（腾讯云 COS / 阿里云 OSS）。
 ///
@@ -761,6 +762,16 @@ class _BackupScreenState extends State<BackupScreen> {
               title: '导入备份文件',
               subtitle: '从系统文件选择 zip / 加密备份包',
               onTap: _working ? null : _onImportLocal,
+            ),
+            _actionTile(
+              icon: CupertinoIcons.wifi,
+              title: '局域网同步到电脑',
+              subtitle: '端口配对，支持手机热点',
+              enabled: !_working,
+              onTap: () => Navigator.push(
+                context,
+                CupertinoPageRoute(builder: (_) => const LanSyncScreen()),
+              ),
             ),
             _actionTile(
               icon: CupertinoIcons.info_circle_fill,

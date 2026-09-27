@@ -1,7 +1,8 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/platform_support.dart';
 import 'dev_log_service.dart';
 
 /// 系统通知服务：角色在用户离开聊天界面时发来新消息，
@@ -24,25 +25,34 @@ class NotificationService {
   bool _initialized = false;
 
   /// 应用启动时初始化：创建通知渠道并请求 Android 13+ 通知权限。
+  /// 桌面端暂不支持本地通知，直接跳过。
   Future<void> init() async {
     if (_initialized) return;
-    const initSettings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-    );
-    await _plugin.initialize(settings: initSettings);
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    // Android 13+（API 33）需要运行时通知权限
-    await android?.requestNotificationsPermission();
-    await android?.createNotificationChannel(
-      const AndroidNotificationChannel(
-        _channelId,
-        _channelName,
-        description: _channelDesc,
-        importance: Importance.high,
-        playSound: true,
-      ),
-    );
+    if (!PlatformSupport.supportsLocalNotifications) {
+      _initialized = true;
+      return;
+    }
+    try {
+      const initSettings = InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      );
+      await _plugin.initialize(settings: initSettings);
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      // Android 13+（API 33）需要运行时通知权限
+      await android?.requestNotificationsPermission();
+      await android?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _channelId,
+          _channelName,
+          description: _channelDesc,
+          importance: Importance.high,
+          playSound: true,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[Notification] init skipped/failed: $e');
+    }
     _initialized = true;
   }
 

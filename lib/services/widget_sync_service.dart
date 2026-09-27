@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/platform_support.dart';
 
 class WidgetSyncService {
   static const _tokenKey = 'widget_data';
@@ -16,6 +17,7 @@ class WidgetSyncService {
     required int groupChat,
     required int moment,
   }) async {
+    if (!PlatformSupport.supportsHomeWidgets) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('${_tokenKey}_token_total', total);
@@ -37,6 +39,7 @@ class WidgetSyncService {
 
   static Future<void> syncConversations(
       List<Map<String, dynamic>> conversations) async {
+    if (!PlatformSupport.supportsHomeWidgets) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonString = jsonEncode(conversations.take(10).toList());
@@ -54,6 +57,7 @@ class WidgetSyncService {
 
   /// 通知 Android 端更新小组件
   static Future<void> _notifyWidgetUpdate() async {
+    if (!PlatformSupport.supportsHomeWidgets) return;
     try {
       await _channel.invokeMethod('updateWidgets');
       debugPrint('[WidgetSync] 已通知 Android 更新小组件');

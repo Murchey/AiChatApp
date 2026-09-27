@@ -1,0 +1,743 @@
+<!-- AI生成 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AiChat 电脑版</title>
+<style>
+:root{
+  --bg:#eef0f3;--panel:#fff;--ink:#16181d;--sub:#8a8f98;--accent:#c4a574;
+  --accent-ink:#2a2114;--self:#d2bc95;--other:#ececec;--line:rgba(20,24,32,.10);
+  --danger:#ff3b30;--ok:#2fbf71;--shadow:0 10px 30px rgba(20,24,32,.08);
+  --radius:16px;
+  font-size:15px;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#0d0f13;--panel:#171a21;--ink:#f2f3f5;--sub:#9aa0a8;--other:#2a2d33;
+        --line:rgba(255,255,255,.10);--shadow:0 10px 30px rgba(0,0,0,.35);--self:#8d7754;}
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+.app{height:100dvh;display:grid;grid-template-columns:88px 280px 1fr;background:var(--panel);
+  width:min(1440px,100%);margin:0 auto;overflow:hidden}
+@media(max-width:1100px){.app{grid-template-columns:72px 1fr}.list-panel{display:none}.app.show-list{grid-template-columns:72px 240px 1fr}.app.show-list .list-panel{display:flex}}
+@media(max-width:760px){.app{grid-template-columns:1fr;display:flex;flex-direction:column}.rail{display:none}.list-panel{display:flex!important;height:42vh}.main{flex:1}}
+.rail{background:color-mix(in srgb,var(--accent) 10%, var(--panel));display:flex;flex-direction:column;align-items:center;padding:18px 0;gap:10px;border-right:1px solid var(--line)}
+.logo{width:44px;height:44px;border-radius:14px;background:linear-gradient(145deg,var(--accent),#a8885a);color:var(--accent-ink);display:grid;place-items:center;font-weight:800;margin-bottom:8px}
+.rail button{width:52px;height:52px;border-radius:14px;color:var(--sub);display:grid;place-items:center;font-size:18px}
+.rail button.active,.rail button:hover{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--ink)}
+.list-panel{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:color-mix(in srgb,var(--panel) 92%,var(--bg))}
+.list-head{padding:18px 16px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.list-head h2{font-size:18px;font-weight:700}
+.search{margin:0 12px 10px;background:color-mix(in srgb,var(--ink) 6%,transparent);border-radius:12px;padding:10px 12px;border:1px solid transparent}
+.search:focus-within{border-color:var(--accent)}
+.search input{width:100%;border:0;outline:0;background:transparent;font-size:13px}
+.list-scroll{flex:1;overflow:auto;padding:0 8px 16px}
+.item{display:flex;gap:12px;padding:12px 10px;border-radius:14px;cursor:pointer;align-items:center}
+.item:hover,.item.active{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.avatar{width:44px;height:44px;border-radius:12px;background:var(--self);color:var(--accent-ink);display:grid;place-items:center;font-weight:700;flex:0 0 auto}
+.avatar.circle{border-radius:50%}
+.item .meta{min-width:0;flex:1}
+.item .title{font-size:14px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .sub{font-size:12px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+.badge{background:var(--danger);color:#fff;border-radius:999px;font-size:11px;padding:2px 7px}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.topbar{height:64px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 18px;border-bottom:1px solid var(--line)}
+.topbar h3{font-size:16px;font-weight:700}
+.topbar .actions{display:flex;gap:8px;flex-wrap:wrap}
+.pill{padding:8px 12px;border-radius:999px;font-size:12px;font-weight:600;background:color-mix(in srgb,var(--ink) 7%,transparent)}
+.pill.primary{background:var(--accent);color:var(--accent-ink)}
+.pill.ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.pill.danger{background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger)}
+.content{flex:1;min-height:0;overflow:auto;padding:18px}
+.chat-view{display:flex;flex-direction:column;height:100%;min-height:0}
+.msgs{flex:1;overflow:auto;display:flex;flex-direction:column;gap:12px;padding:8px 2px 16px}
+.bubble{max-width:min(560px,86%);padding:12px 14px;border-radius:16px;background:var(--other);line-height:1.6;font-size:14px;white-space:pre-wrap;word-break:break-word}
+.bubble.self{align-self:flex-end;background:var(--self);color:var(--accent-ink)}
+.composer{border-top:1px solid var(--line);padding:12px;display:flex;gap:10px;align-items:flex-end}
+.composer textarea{flex:1;min-height:48px;max-height:140px;resize:none;border:1px solid var(--line);border-radius:12px;padding:12px;outline:0;background:color-mix(in srgb,var(--ink) 4%,transparent)}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+.card{border:1px solid var(--line);border-radius:var(--radius);padding:16px;background:var(--panel);box-shadow:var(--shadow)}
+.span-12{grid-column:span 12}.span-8{grid-column:span 8}.span-6{grid-column:span 6}.span-4{grid-column:span 4}.span-3{grid-column:span 3}
+@media(max-width:1000px){.span-8,.span-6,.span-4,.span-3{grid-column:span 12}}
+.card h4{font-size:12px;color:var(--sub);font-weight:650;margin-bottom:12px}
+.metric{font-size:30px;font-weight:750;letter-spacing:-.02em}
+.metric small{font-size:12px;color:var(--sub);margin-left:6px;font-weight:500}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);font-size:13px}
+.row:last-child{border-bottom:0}
+.row .v{color:var(--sub);text-align:right}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:var(--sub);margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:11px;padding:11px 12px;background:color-mix(in srgb,var(--ink) 4%,transparent);outline:0}
+.field input:focus,.field textarea:focus{border-color:var(--accent)}
+.btn{border-radius:12px;padding:11px 16px;font-size:13px;font-weight:650}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:color-mix(in srgb,var(--ink) 7%,transparent)}
+.btn.danger{background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger)}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px}
+.char-card{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:14px}
+.moment{padding:14px;border:1px solid var(--line);border-radius:14px;margin-bottom:10px}
+.moment .who{font-weight:650;font-size:14px}
+.moment .time{color:var(--sub);font-size:12px;margin:4px 0 8px}
+.moment .text{font-size:14px;line-height:1.6}
+.moment .foot{margin-top:10px;color:var(--sub);font-size:12px;display:flex;gap:14px}
+.progress{height:8px;border-radius:999px;background:color-mix(in srgb,var(--ink) 8%,transparent);overflow:hidden}
+.progress>span{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.empty{padding:36px 12px;text-align:center;color:var(--sub);border:1px dashed var(--line);border-radius:14px;font-size:13px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(18,18,20,.92);color:#fff;padding:12px 16px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:50;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+.pair{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:28px;letter-spacing:.18em;font-weight:750;background:color-mix(in srgb,var(--accent) 22%,transparent);border-radius:12px;padding:12px 16px;display:inline-block}
+.muted{color:var(--sub);font-size:12px;line-height:1.6}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.tabs button{padding:8px 12px;border-radius:999px;font-size:12px;font-weight:650;background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.tabs button.active{background:var(--accent);color:var(--accent-ink)}
+</style>
+</head>
+<body>
+<p data-aigc-mark="1" style="margin:0 0 8px;font-size:10px;line-height:1.3;color:#6b6560;font-weight:400;">AI生成</p>
+
+<div class="app" id="app">
+  <aside class="rail">
+    <div class="logo">Ai</div>
+    <button class="active" data-view="chats" title="消息">💬</button>
+    <button data-view="characters" title="角色">👥</button>
+    <button data-view="moments" title="朋友圈">🌈</button>
+    <button data-view="groups" title="群聊">👨‍👩‍👧</button>
+    <button data-view="settings" title="设置">⚙️</button>
+    <button data-view="sync" title="局域网同步">⇄</button>
+    <button data-view="home" title="概览">⌂</button>
+  </aside>
+
+  <section class="list-panel" id="listPanel">
+    <div class="list-head">
+      <h2 id="listTitle">消息</h2>
+      <button class="pill primary" id="btnNew">新建</button>
+    </div>
+    <div class="search"><input id="searchInput" placeholder="搜索会话 / 角色 / 朋友圈" /></div>
+    <div class="list-scroll" id="listScroll"></div>
+  </section>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h3 id="mainTitle">AiChat 电脑版</h3>
+        <div class="muted" id="mainSub">完整功能客户端 · 支持手机局域网同步</div>
+      </div>
+      <div class="actions">
+        <span class="pill" id="serverPill">服务检测中</span>
+        <button class="pill" id="btnLoadDemo">载入演示数据</button>
+        <button class="pill primary" id="btnSync">局域网同步</button>
+      </div>
+    </header>
+    <div class="content" id="content"></div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const toastEl = $("toast");
+let state = {
+  view: "chats",
+  selectedChatId: null,
+  selectedCharacterId: null,
+  selectedMomentId: null,
+  app: { chats: [], characters: [], groups: [], moments: [], settings: {}, source: "empty" },
+  status: {},
+  progress: 0,
+  progressText: "",
+};
+
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  clearTimeout(toastEl._t);
+  toastEl._t = setTimeout(() => toastEl.classList.remove("show"), 2200);
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+function formatBytes(n) {
+  n = Number(n || 0);
+  if (n < 1024) return n + " B";
+  const kb = n / 1024;
+  if (kb < 1024) return kb.toFixed(1) + " KB";
+  const mb = kb / 1024;
+  if (mb < 1024) return mb.toFixed(1) + " MB";
+  return (mb / 1024).toFixed(2) + " GB";
+}
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  const ct = res.headers.get("content-type") || "";
+  const body = ct.includes("json") ? await res.json() : await res.text();
+  if (!res.ok) throw new Error((body && body.error) || res.statusText);
+  return body;
+}
+
+function setProgress(p, text) {
+  state.progress = Math.max(0, Math.min(1, p));
+  state.progressText = text || "";
+  const bar = $("progressBar");
+  const txt = $("progressText");
+  if (bar) bar.style.width = (state.progress * 100) + "%";
+  if (txt) txt.textContent = state.progressText || "空闲";
+}
+
+/* ============================ 列表 ============================ */
+function renderList() {
+  const q = ($("searchInput").value || "").trim().toLowerCase();
+  const box = $("listScroll");
+  const app = state.app;
+  const titles = { chats: "消息", characters: "角色", moments: "朋友圈", groups: "群聊", settings: "设置", sync: "同步", home: "概览" };
+  $("listTitle").textContent = titles[state.view] || "列表";
+
+  const match = (s) => !q || String(s || "").toLowerCase().includes(q);
+
+  if (state.view === "chats") {
+    const chats = (app.chats || []).filter((c) => match(c.title) || match(c.lastMessage));
+    $("btnNew").style.display = "";
+    $("btnNew").textContent = "新建";
+    box.innerHTML = chats.length ? chats.map((c) => `
+      <div class="item ${c.id === state.selectedChatId ? "active" : ""}" onclick="selectChat('${esc(c.id)}')">
+        <div class="avatar circle">${esc((c.title || "?").slice(0, 1))}</div>
+        <div class="meta">
+          <div class="title">${esc(c.title)}${c.pinned ? " 📌" : ""}</div>
+          <div class="sub">${esc(c.lastMessage || "暂无消息")}</div>
+        </div>
+        ${c.unread ? `<div class="badge">${c.unread}</div>` : ""}
+      </div>`).join("") : `<div class="empty">暂无会话<br/>可从手机同步或载入演示数据</div>`;
+    return;
+  }
+
+  if (state.view === "characters") {
+    const list = (app.characters || []).filter((c) => match(c.name) || match(c.signature));
+    $("btnNew").style.display = "";
+    $("btnNew").textContent = "新建";
+    box.innerHTML = list.length ? list.map((c) => `
+      <div class="item ${c.id === state.selectedCharacterId ? "active" : ""}" onclick="selectCharacter('${esc(c.id)}')">
+        <div class="avatar">${esc((c.name || "?").slice(0, 1))}</div>
+        <div class="meta">
+          <div class="title">${esc(c.name)}</div>
+          <div class="sub">${esc(c.signature || "暂无签名")}</div>
+        </div>
+      </div>`).join("") : `<div class="empty">暂无角色</div>`;
+    return;
+  }
+
+  if (state.view === "moments") {
+    const list = (app.moments || []).filter((m) => match(m.author) || match(m.content));
+    $("btnNew").style.display = "none";
+    box.innerHTML = list.length ? list.map((m, i) => `
+      <div class="item ${i === state.selectedMomentId ? "active" : ""}" onclick="selectMoment(${i})">
+        <div class="avatar circle">${esc((m.author || "友").slice(0, 1))}</div>
+        <div class="meta">
+          <div class="title">${esc(m.author)}</div>
+          <div class="sub">${esc(m.content)}</div>
+        </div>
+      </div>`).join("") : `<div class="empty">暂无朋友圈动态</div>`;
+    return;
+  }
+
+  if (state.view === "groups") {
+    const list = (app.groups || []).filter((g) => match(g.name) || match(g.lastMessage));
+    $("btnNew").style.display = "";
+    $("btnNew").textContent = "新建";
+    box.innerHTML = list.length ? list.map((g) => `
+      <div class="item" onclick="toast('群聊详情可在手机端完整使用')">
+        <div class="avatar">${esc((g.name || "群").slice(0, 1))}</div>
+        <div class="meta">
+          <div class="title">${esc(g.name)}</div>
+          <div class="sub">${g.memberCount || 0} 人 · ${esc(g.lastMessage || "暂无消息")}</div>
+        </div>
+      </div>`).join("") : `<div class="empty">暂无群聊</div>`;
+    return;
+  }
+
+  const nav = [
+    ["home", "概览", "数据与服务状态"],
+    ["settings", "偏好设置", "外观 / 聊天 / 通知"],
+    ["settings-api", "API 设置", "模型与接口"],
+    ["settings-backup", "备份与同步", "本地 / 云端 / 局域网"],
+    ["sync", "局域网同步", "手机 → 电脑"],
+  ];
+  $("btnNew").style.display = "none";
+  box.innerHTML = nav.map(([k, t, s]) => `
+    <div class="item" onclick="gotoView('${k === "settings-api" || k === "settings-backup" ? "settings" : k}', '${k}')">
+      <div class="avatar">${esc(t.slice(0, 1))}</div>
+      <div class="meta"><div class="title">${t}</div><div class="sub">${s}</div></div>
+    </div>`).join("");
+}
+
+function gotoView(view, sub) {
+  state.view = view === "settings" ? "settings" : view;
+  if (sub) state.settingsTab = sub.replace("settings-", "") || "prefs";
+  renderAll();
+}
+
+/* ============================ 主区 ============================ */
+function renderMain() {
+  const app = state.app;
+  const box = $("content");
+  const titles = {
+    chats: ["消息", "与 AI 角色继续对话"],
+    characters: ["角色", "管理角色资料与设定"],
+    moments: ["朋友圈", "角色动态与互动"],
+    groups: ["群聊", "多角色群聊会话"],
+    settings: ["设置", "偏好 / API / 备份同步"],
+    sync: ["局域网同步", "把手机数据同步到电脑"],
+    home: ["概览", "电脑端数据与服务"],
+  };
+  const [t, s] = titles[state.view] || titles.home;
+  $("mainTitle").textContent = t;
+  $("mainSub").textContent = s;
+
+  if (state.view === "chats") return renderChat(box);
+  if (state.view === "characters") return renderCharacters(box);
+  if (state.view === "moments") return renderMoments(box);
+  if (state.view === "groups") return renderGroups(box);
+  if (state.view === "sync") return renderSync(box);
+  if (state.view === "settings") return renderSettings(box);
+  return renderHome(box);
+}
+
+function renderHome(box) {
+  const app = state.app;
+  const st = state.status || {};
+  box.innerHTML = `
+    <div class="grid">
+      <div class="card span-6">
+        <h4>服务状态</h4>
+        <div class="metric">${st.running ? "运行中" : "未连接"}<small>${esc(st.listen || "")}</small></div>
+        <div class="row"><div>配对码</div><div class="v">${esc(st.pairCode || "—")}</div></div>
+        <div class="row"><div>建议 IP</div><div class="v">${esc(st.host || "—")}</div></div>
+        <div class="row"><div>最近同步</div><div class="v">${esc(app.updated || "—")}</div></div>
+      </div>
+      <div class="card span-6">
+        <h4>数据概况</h4>
+        <div class="metric">${(app.chats||[]).length}<small>会话</small> · ${(app.characters||[]).length}<small>角色</small></div>
+        <div class="row"><div>群聊</div><div class="v">${(app.groups||[]).length}</div></div>
+        <div class="row"><div>朋友圈</div><div class="v">${(app.moments||[]).length}</div></div>
+        <div class="row"><div>备份文件</div><div class="v">${(st.files||[]).length} 份</div></div>
+      </div>
+      <div class="card span-12">
+        <h4>快捷操作</h4>
+        <div class="btn-row">
+          <button class="btn primary" onclick="gotoView('sync')">打开局域网同步</button>
+          <button class="btn ghost" onclick="loadDemo()">载入演示数据</button>
+          <button class="btn ghost" onclick="gotoView('chats')">进入消息</button>
+          <button class="btn ghost" onclick="refreshAll()">刷新数据</button>
+        </div>
+        <p class="muted" style="margin-top:12px">
+          在电脑运行 <b>python desktop_server.py</b> 后，手机端「数据备份 → 局域网同步」填入 IP:端口 与配对码，
+          即可把手机上的聊天、角色、设置完整同步到电脑端查看与使用。
+        </p>
+      </div>
+    </div>`;
+}
+
+function renderChat(box) {
+  const chat = (state.app.chats || []).find((c) => c.id === state.selectedChatId);
+  if (!chat) {
+    box.innerHTML = `<div class="empty">从左侧选择一个会话，或先同步手机数据 / 载入演示数据</div>`;
+    return;
+  }
+  const msgs = chat.messages || [];
+  box.innerHTML = `
+    <div class="chat-view">
+      <div class="msgs" id="msgs">
+        ${msgs.map((m) => `
+          <div class="bubble ${m.isFromUser ? "self" : ""}">
+            ${m.senderName && !m.isFromUser ? `<div class="muted" style="margin-bottom:4px">${esc(m.senderName)}</div>` : ""}
+            ${esc(m.content)}
+          </div>`).join("")}
+      </div>
+      <div class="composer">
+        <textarea id="chatInput" placeholder="输入消息，Enter 发送（电脑端演示回复）"></textarea>
+        <button class="btn primary" onclick="sendChat()">发送</button>
+      </div>
+    </div>`;
+  const el = $("msgs");
+  if (el) el.scrollTop = el.scrollHeight;
+  const input = $("chatInput");
+  if (input) {
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendChat();
+      }
+    });
+  }
+}
+
+async function sendChat() {
+  const input = $("chatInput");
+  const text = (input?.value || "").trim();
+  if (!text) return;
+  if (!state.selectedChatId) return toast("请先选择会话");
+  try {
+    const res = await api("/api/chat/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId: state.selectedChatId, text }),
+    });
+    input.value = "";
+    await loadAppData();
+    renderAll();
+    toast("已发送");
+  } catch (e) {
+    toast("发送失败：" + e.message);
+  }
+}
+
+function renderCharacters(box) {
+  const c = (state.app.characters || []).find((x) => x.id === state.selectedCharacterId)
+    || (state.app.characters || [])[0];
+  const list = state.app.characters || [];
+  box.innerHTML = list.length ? `
+    <div class="grid">
+      <div class="card span-8">
+        <h4>角色资料</h4>
+        <div class="char-card" style="margin-bottom:14px">
+          <div class="avatar" style="width:64px;height:64px;font-size:22px">${esc((c?.name || "?").slice(0, 1))}</div>
+          <div>
+            <div style="font-size:18px;font-weight:700">${esc(c?.name || "—")}</div>
+            <div class="muted">${esc(c?.signature || "暂无签名")}</div>
+          </div>
+        </div>
+        <div class="row"><div>开场白</div><div class="v">${esc(c?.greeting || "—")}</div></div>
+        <div class="row"><div>角色 ID</div><div class="v">${esc(c?.id || "—")}</div></div>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn primary" onclick="toast('角色编辑在手机端功能更完整')">编辑设定</button>
+          <button class="btn ghost" onclick="gotoView('chats')">去聊天</button>
+        </div>
+      </div>
+      <div class="card span-4">
+        <h4>全部角色 (${list.length})</h4>
+        ${list.map((x) => `
+          <div class="row" style="cursor:pointer" onclick="selectCharacter('${esc(x.id)}')">
+            <div>${esc(x.name)}</div>
+            <div class="v">${x.id === c?.id ? "当前" : "查看"}</div>
+          </div>`).join("")}
+      </div>
+    </div>` : `<div class="empty">暂无角色数据，请先从手机同步</div>`;
+}
+
+function renderMoments(box) {
+  const list = state.app.moments || [];
+  box.innerHTML = list.length ? `
+    <div class="grid">
+      <div class="card span-8">
+        <h4>朋友圈动态</h4>
+        ${list.map((m) => `
+          <div class="moment">
+            <div class="who">${esc(m.author)}</div>
+            <div class="time">${esc(m.time || "")}</div>
+            <div class="text">${esc(m.content)}</div>
+            <div class="foot"><span>赞 ${m.likes || 0}</span><span>评论 ${m.comments || 0}</span></div>
+          </div>`).join("")}
+      </div>
+      <div class="card span-4">
+        <h4>说明</h4>
+        <p class="muted">电脑端可浏览同步来的朋友圈数据。发布、点赞、评论等互动请在手机 App 使用；后续桌面版可继续扩展。</p>
+      </div>
+    </div>` : `<div class="empty">暂无朋友圈内容</div>`;
+}
+
+function renderGroups(box) {
+  const list = state.app.groups || [];
+  box.innerHTML = `
+    <div class="grid">
+      <div class="card span-8">
+        <h4>群聊列表</h4>
+        ${list.length ? list.map((g) => `
+          <div class="row">
+            <div>
+              <div style="font-weight:650">${esc(g.name)}</div>
+              <div class="muted">${g.memberCount || 0} 人 · ${esc(g.lastMessage || "暂无消息")}</div>
+            </div>
+            <button class="btn ghost" onclick="toast('群聊完整功能在手机端')">进入</button>
+          </div>`).join("") : `<div class="empty">暂无群聊</div>`}
+      </div>
+      <div class="card span-4">
+        <h4>功能说明</h4>
+        <p class="muted">群聊数据会随手机备份同步到电脑。多角色发言、群成员设置等高级交互以手机端为准。</p>
+      </div>
+    </div>`;
+}
+
+function renderSettings(box) {
+  const tab = state.settingsTab || "prefs";
+  const s = state.app.settings || {};
+  box.innerHTML = `
+    <div class="tabs">
+      <button class="${tab === "prefs" ? "active" : ""}" onclick="setSettingsTab('prefs')">偏好设置</button>
+      <button class="${tab === "api" ? "active" : ""}" onclick="setSettingsTab('api')">API 设置</button>
+      <button class="${tab === "backup" ? "active" : ""}" onclick="setSettingsTab('backup')">备份与同步</button>
+    </div>
+    ${tab === "prefs" ? `
+      <div class="grid">
+        <div class="card span-6">
+          <h4>外观</h4>
+          <div class="field"><label>主题</label>
+            <select id="setTheme">
+              <option value="light">浅色</option>
+              <option value="dark">深色</option>
+              <option value="system">跟随系统</option>
+            </select>
+          </div>
+          <div class="field"><label>UI 风格</label>
+            <input id="setUi" value="${esc(s.uiStyle || "")}" placeholder="例如 sleek" />
+          </div>
+          <div class="field"><label>气泡样式</label>
+            <input id="setBubble" value="${esc(s.bubbleStyle || "")}" placeholder="例如 sr / ww" />
+          </div>
+          <button class="btn primary" onclick="savePrefs()">保存外观</button>
+        </div>
+        <div class="card span-6">
+          <h4>聊天与通知</h4>
+          <div class="row"><div>允许角色发送表情包</div><div class="v">${s.allowStickerSend === false ? "关" : "开"}</div></div>
+          <div class="row"><div>未读通知</div><div class="v">${s.unreadNotify === false ? "关" : "开"}</div></div>
+          <div class="row"><div>数据来源</div><div class="v">${esc(state.app.source || "empty")}</div></div>
+          <div class="row"><div>最后更新</div><div class="v">${esc(state.app.updated || "—")}</div></div>
+        </div>
+      </div>` : ""}
+    ${tab === "api" ? `
+      <div class="grid">
+        <div class="card span-6">
+          <h4>模型接口</h4>
+          <div class="field"><label>API Base URL</label><input id="apiBase" placeholder="https://api.deepseek.com" /></div>
+          <div class="field"><label>API Key</label><input id="apiKey" type="password" placeholder="sk-..." /></div>
+          <div class="field"><label>模型名</label><input id="apiModel" placeholder="deepseek-v4-flash" /></div>
+          <button class="btn primary" onclick="toast('API 配置保存在电脑本地（演示）')">保存 API 配置</button>
+        </div>
+        <div class="card span-6">
+          <h4>说明</h4>
+          <p class="muted">手机备份不同步任何密钥。电脑端 API 配置仅保存在本机，用于后续桌面直接对话能力扩展。</p>
+        </div>
+      </div>` : ""}
+    ${tab === "backup" ? `
+      <div class="grid">
+        <div class="card span-6">
+          <h4>同步到电脑的数据</h4>
+          <div class="row"><div>会话</div><div class="v">${(state.app.chats||[]).length}</div></div>
+          <div class="row"><div>角色</div><div class="v">${(state.app.characters||[]).length}</div></div>
+          <div class="row"><div>群聊</div><div class="v">${(state.app.groups||[]).length}</div></div>
+          <div class="row"><div>朋友圈</div><div class="v">${(state.app.moments||[]).length}</div></div>
+          <div class="btn-row" style="margin-top:12px">
+            <button class="btn primary" onclick="gotoView('sync')">去局域网同步</button>
+            <button class="btn danger" onclick="clearBackups()">清空电脑端备份</button>
+          </div>
+        </div>
+        <div class="card span-6">
+          <h4>备份文件</h4>
+          <div class="progress" style="margin-bottom:10px"><span id="progressBar"></span></div>
+          <div class="muted" id="progressText">空闲</div>
+          <div style="margin-top:12px">
+            ${(state.status.files || []).length ? (state.status.files || []).map((f) => `
+              <div class="row"><div>${esc(f.name)}</div><div class="v">${formatBytes(f.size)} · ${esc(f.time)}</div></div>
+            `).join("") : `<div class="empty">暂无备份</div>`}
+          </div>
+        </div>
+      </div>` : ""}`;
+  const theme = document.getElementById("setTheme");
+  if (theme) theme.value = s.theme || "system";
+}
+
+function setSettingsTab(tab) {
+  state.settingsTab = tab;
+  renderMain();
+}
+
+function renderSync(box) {
+  const st = state.status || {};
+  box.innerHTML = `
+    <div class="grid">
+      <div class="card span-7">
+        <h4>手机连接信息</h4>
+        <div class="field"><label>电脑 IP</label><input id="syncIp" value="${esc(st.host || "127.0.0.1")}" /></div>
+        <div class="field"><label>端口</label><input id="syncPort" type="number" value="${esc(st.port || 8765)}" /></div>
+        <div class="field"><label>配对码</label><div class="pair" id="pairCode">${esc(st.pairCode || "------")}</div></div>
+        <div class="btn-row">
+          <button class="btn primary" onclick="copyPair()">复制连接信息</button>
+          <button class="btn ghost" onclick="refreshAll()">刷新状态</button>
+          <button class="btn ghost" onclick="resetPair()">重置配对码</button>
+        </div>
+        <p class="muted" style="margin-top:12px">
+          手机打开「设置 → 数据备份 → 局域网同步」，填写
+          <b>IP:端口</b> 与配对码后发送备份。<br/>
+          手机热点：电脑连接热点后使用上方 IP（通常 192.168.43.x）。
+        </p>
+      </div>
+      <div class="card span-5">
+        <h4>同步进度</h4>
+        <div class="progress"><span id="progressBar"></span></div>
+        <div class="row"><div>状态</div><div class="v" id="progressText">${esc(state.progressText || "等待手机连接")}</div></div>
+        <div class="row"><div>已收备份</div><div class="v">${(st.files || []).length}</div></div>
+        <div class="row"><div>数据解析</div><div class="v">${esc(state.app.updated || "未解析")}</div></div>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn ghost" onclick="loadDemo()">载入演示数据</button>
+          <button class="btn danger" onclick="clearBackups()">清空已收备份</button>
+        </div>
+      </div>
+      <div class="card span-12">
+        <h4>服务日志</h4>
+        <div class="muted" style="white-space:pre-wrap;max-height:180px;overflow:auto">${esc(((st.logs||[]).slice(-12)).join("\n") || "暂无日志")}</div>
+      </div>
+    </div>`;
+  const bar = $("progressBar");
+  if (bar) bar.style.width = (state.progress * 100) + "%";
+}
+
+function renderAll() {
+  document.querySelectorAll(".rail button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.view === state.view);
+  });
+  renderList();
+  renderMain();
+  const st = state.status || {};
+  $("serverPill").textContent = st.running ? `服务 ${st.port || ""} · ${st.pairCode || ""}` : "无法连接服务";
+  $("serverPill").className = "pill " + (st.running ? "ok" : "danger");
+}
+
+/* ============================ 交互 ============================ */
+function selectChat(id) {
+  state.selectedChatId = id;
+  state.view = "chats";
+  renderAll();
+}
+function selectCharacter(id) {
+  state.selectedCharacterId = id;
+  state.view = "characters";
+  renderAll();
+}
+function selectMoment(i) {
+  state.selectedMomentId = i;
+  state.view = "moments";
+  renderAll();
+}
+
+async function loadAppData() {
+  try {
+    state.app = await api("/api/appdata");
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
+async function loadStatus() {
+  try {
+    state.status = await api("/api/status");
+  } catch (e) {
+    state.status = { running: false };
+  }
+}
+
+async function refreshAll() {
+  await Promise.all([loadStatus(), loadAppData()]);
+  renderAll();
+}
+
+async function loadDemo() {
+  try {
+    await api("/api/demo", { method: "POST" });
+    await refreshAll();
+    toast("已载入演示数据");
+    state.view = "chats";
+    const first = (state.app.chats || [])[0];
+    if (first) state.selectedChatId = first.id;
+    renderAll();
+  } catch (e) {
+    toast("载入失败：" + e.message);
+  }
+}
+
+async function resetPair() {
+  try {
+    const res = await api("/api/reset_pair", { method: "POST" });
+    state.status.pairCode = res.pairCode;
+    renderAll();
+    toast("配对码已重置");
+  } catch (e) {
+    toast("重置失败");
+  }
+}
+
+function copyPair() {
+  const text = `${$("syncIp").value}:${$("syncPort").value} 配对码 ${$("pairCode").textContent}`;
+  navigator.clipboard?.writeText(text).then(() => toast("已复制")).catch(() => toast(text));
+}
+
+async function clearBackups() {
+  if (!confirm("确定清空电脑端已收备份与解析数据？")) return;
+  try {
+    await api("/api/clear", { method: "POST" });
+    await refreshAll();
+    toast("已清空");
+  } catch (e) {
+    toast("清空失败");
+  }
+}
+
+function savePrefs() {
+  const theme = $("setTheme")?.value;
+  const ui = $("setUi")?.value;
+  const bubble = $("setBubble")?.value;
+  state.app.settings = { ...(state.app.settings || {}), theme, uiStyle: ui, bubbleStyle: bubble };
+  toast("外观设置已保存（本地演示）");
+  renderMain();
+}
+
+document.querySelector(".rail").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-view]");
+  if (!btn) return;
+  state.view = btn.dataset.view;
+  if (state.view === "chats" && !state.selectedChatId) {
+    state.selectedChatId = (state.app.chats || [])[0]?.id || null;
+  }
+  renderAll();
+});
+
+$("searchInput").addEventListener("input", renderList);
+$("btnSync").addEventListener("click", () => { state.view = "sync"; renderAll(); });
+$("btnLoadDemo").addEventListener("click", loadDemo);
+$("btnNew").addEventListener("click", () => toast("新建请在手机端操作，或使用演示数据"));
+
+// 轮询服务状态，便于手机同步后自动刷新
+setInterval(async () => {
+  const prev = state.status?.appDataUpdated;
+  await loadStatus();
+  if (state.status?.appDataUpdated && state.status.appDataUpdated !== prev) {
+    await loadAppData();
+    renderAll();
+    toast("已收到新的同步数据");
+  } else {
+    const pill = $("serverPill");
+    if (pill) {
+      pill.textContent = state.status.running ? `服务 ${state.status.port || ""} · ${state.status.pairCode || ""}` : "无法连接服务";
+      pill.className = "pill " + (state.status.running ? "ok" : "danger");
+    }
+  }
+}, 2500);
+
+// 初始加载
+(async function init() {
+  await refreshAll();
+  if (!(state.app.chats || []).length) {
+    // 无数据时给提示，不自动覆盖
+  } else {
+    state.selectedChatId = state.app.chats[0].id;
+    renderAll();
+  }
+})();
+</script>
+</body>
+</html>

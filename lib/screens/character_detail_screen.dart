@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:gal/gal.dart';
+import '../utils/platform_support.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../config/motion.dart';
@@ -255,6 +256,10 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
   /// 保存头像到系统相册（base64 头像解码为图片字节后通过 gal 写入）
   Future<void> _saveAvatar(Character character) async {
     // gal 不自动申请权限：Android 6–9 需要 WRITE_EXTERNAL_STORAGE 才能写入相册
+    if (!PlatformSupport.supportsGallerySave) {
+      showAppToast('当前平台暂不支持保存到相册');
+      return;
+    }
     if (!await Gal.hasAccess()) {
       final granted = await Gal.requestAccess();
       if (!granted) {

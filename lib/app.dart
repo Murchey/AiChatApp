@@ -20,7 +20,9 @@ import 'services/backup_schedule_service.dart';
 import 'services/notification_service.dart';
 import 'services/widget_sync_service.dart';
 import 'utils/app_toast.dart';
+import 'utils/platform_support.dart';
 import 'widgets/update_dialogs.dart';
+import 'screens/desktop/desktop_theme.dart' show kDesktopFontFallback;
 
 class AiChatApp extends StatefulWidget {
   const AiChatApp({super.key});
@@ -179,6 +181,8 @@ class _AiChatAppState extends State<AiChatApp> {
           theme: AppTheme.buildTheme(
             brightness: Brightness.light,
             accent: settings.accentColor,
+            fontFamily:
+                PlatformSupport.isDesktop ? 'Segoe UI' : null,
           ),
           // 在此动态解析明暗模式并注入主题（支持跟随系统）
           builder: (context, child) {
@@ -189,8 +193,17 @@ class _AiChatAppState extends State<AiChatApp> {
               data: AppTheme.buildTheme(
                 brightness: brightness,
                 accent: settings.accentColor,
+                fontFamily:
+                    PlatformSupport.isDesktop ? 'Segoe UI' : null,
               ),
-              child: child ?? const SizedBox.shrink(),
+              child: DefaultTextStyle.merge(
+                style: TextStyle(
+                  fontFamily: PlatformSupport.isDesktop ? 'Segoe UI' : null,
+                  fontFamilyFallback:
+                      PlatformSupport.isDesktop ? kDesktopFontFallback : null,
+                ),
+                child: child ?? const SizedBox.shrink(),
+              ),
             );
           },
           initialRoute: AppRoutes.splash,
