@@ -410,13 +410,14 @@ class LLMService {
           ? null
           : (choices.first as Map<String, dynamic>)['delta']
               as Map<String, dynamic>?;
-      final reasoning = _extractReasoning(delta) ??
-          _extractReasoning(choices.isEmpty
-              ? null
-              : (choices.first as Map<String, dynamic>)['message']
-                  as Map<String, dynamic>?) ??
-          _extractReasoning(decoded) ??
-          '';
+      final reasoning = (_extractReasoning(delta) ??
+              _extractReasoning(choices.isEmpty
+                  ? null
+                  : (choices.first as Map<String, dynamic>)['message']
+                      as Map<String, dynamic>?) ??
+              _extractReasoning(decoded) ??
+              '')
+          .trim();
       return StreamCompletionChunk(
         content: delta?['content'] as String? ?? '',
         usage: _parseUsage(decoded),
@@ -427,11 +428,19 @@ class LLMService {
     }
   }
 
-  /// 从 message/delta 中提取思考过程（DeepSeek reasoning_content，部分网关 reasoning）。
+  /// 从 message/delta 中提取思考过程（DeepSeek reasoning_content，部分网关 reasoning / thinking）。
+  /// 取第一个非空字符串，避免空串字段挡住其它真实思考字段。
   static String? _extractReasoning(Map<String, dynamic>? map) {
     if (map == null) return null;
-    final v = map['reasoning_content'] ?? map['reasoning'];
-    if (v is String) return v;
+    for (final key in const [
+      'reasoning_content',
+      'reasoning',
+      'thinking',
+      'thought',
+    ]) {
+      final v = map[key];
+      if (v is String && v.isNotEmpty) return v;
+    }
     return null;
   }
 
@@ -531,12 +540,18 @@ class LLMService {
             as Map<String, dynamic>?;
         final reasoning = _extractReasoning(message) ?? '';
         final content = message?['content'] as String? ?? '';
-        // 无思考内容时不记录时长，避免把纯正文耗时误标成思考
+        final usage = _parseUsage(decoded);
+        final reasoningTokens = usage.reasoningTokens ??
+            estimateReasoningTokens(reasoning);
+        // 有思考正文，或网关返回了思考 token 时记录时长；
+        // 否则不把纯正文耗时误标成思考
+        final hasThinking =
+            reasoning.trim().isNotEmpty || reasoningTokens > 0;
         final durationMs =
-            reasoning.trim().isEmpty ? null : stopwatch.elapsedMilliseconds;
+            hasThinking ? stopwatch.elapsedMilliseconds : null;
         return CompletionResult(
           content,
-          _parseUsage(decoded),
+          usage,
           reasoningContent: reasoning,
           reasoningDurationMs: durationMs,
         );

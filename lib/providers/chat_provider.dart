@@ -541,12 +541,17 @@ class ChatProvider extends ChangeNotifier {
       final index = _messagesMap[conversationId]!
           .indexWhere((item) => item.id == message.id);
       if (index >= 0) {
+        final reasoningTokens = streamUsage.reasoningTokens ??
+            LLMService.estimateReasoningTokens(reasoning);
+        final hasThinking =
+            reasoning.trim().isNotEmpty || reasoningTokens > 0;
         _messagesMap[conversationId]![index] = message.copyWith(
           content: content,
           reasoningContent: reasoning,
           reasoningDurationMs:
-              reasoning.trim().isEmpty ? null : streamWatch.elapsedMilliseconds,
+              hasThinking ? streamWatch.elapsedMilliseconds : null,
         );
+        notifyListeners();
         _persist();
       }
       _updateConversationLastMessage(conversationId, content);

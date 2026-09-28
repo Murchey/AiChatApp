@@ -161,9 +161,12 @@ class Message {
           .toList(),
       isCompressionSummary: json['is_compression_summary'] as bool? ?? false,
       reasoningContent: json['reasoning_content'] as String? ?? '',
-      reasoningDurationMs: json['reasoning_duration_ms'] is int
-          ? json['reasoning_duration_ms'] as int
-          : int.tryParse('${json['reasoning_duration_ms'] ?? ''}'),
+      reasoningDurationMs: switch (json['reasoning_duration_ms']) {
+        final int v => v,
+        final num v => v.round(),
+        final String s => int.tryParse(s),
+        _ => null,
+      },
     );
   }
 
