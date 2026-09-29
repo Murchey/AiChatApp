@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../data/local_data_store.dart';
@@ -11,11 +9,15 @@ import '../models/conversation.dart';
 import '../services/llm_service.dart';
 import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
+import 'chat_compress.dart';
+import 'chat_history_builder.dart';
+import 'chat_token_estimator.dart';
+import 'chat_reply_builder.dart';
+import 'chat_reply_runner.dart';
+import 'chat_roleplay_stream.dart';
 import '../services/widget_sync_service.dart';
-import '../services/sticker_query_protocol.dart';
 import '../services/sticker_search_service.dart';
 import 'api_provider.dart';
-import 'token_usage_provider.dart';
 
 part 'chat_provider_isolates.dart';
 
@@ -483,7 +485,7 @@ class ChatProvider extends ChangeNotifier {
     return future;
   }
 
-Future<List<String>> _doRunRoleplayStream({
+  Future<List<String>> _doRunRoleplayStream({
     required String conversationId,
     required ApiModel model,
     required String characterName,
@@ -494,137 +496,51 @@ Future<List<String>> _doRunRoleplayStream({
     required int contextCount,
     required String progressionStyle,
     required bool includeChoices,
-  }) async {
-    final prompt = PromptBuilder.buildSystemPrompt(
-      baseSystemPrompt: characterSystemPrompt,
-      characterName: characterName,
-      userNickname: userNickname,
-      userRelationship: userRelationship,
-      currentTime: DateTime.now(),
-      replyToUser: true,
-      memoryPoints: memoryPoints,
-      roleplayProgressionStyle: progressionStyle,
-      roleplayMode: true,
-    );
-    final instruction = PromptBuilder.buildOutputInstruction(
-      characterName: characterName,
-      replyToUser: true,
-      roleplayMode: true,
-      includeRoleplayChoices: includeChoices,
-    );
-    final history = _buildHistory(conversationId, contextCount);
-    final systemPromptTokens = _estimateTextTokens(prompt) +
-        _estimateTextTokens(instruction) +
-        kPerMessageJsonTokens * 2;
-    _systemTokens[conversationId] = systemPromptTokens;
-    final message = Message(
-      id: const Uuid().v4(),
-      conversationId: conversationId,
-      content: '',
-      sender: MessageSender.character,
-    );
-    _messagesMap[conversationId] ??= [];
-    _messagesMap[conversationId]!.add(message);
-    notifyListeners();
-    var content = '';
-    var reasoning = '';
-    ChatUsage streamUsage = const ChatUsage();
-    final streamWatch = Stopwatch()..start();
-    try {
-      await for (final chunk in streamCompletion(
-        model: model,
-        messages: [
-          {'role': 'system', 'content': prompt},
-          ...history,
-          {'role': 'user', 'content': instruction},
-        ],
-      )) {
-        content += chunk.content;
-        reasoning += chunk.reasoning;
-        if (!chunk.usage.isEmpty) streamUsage = chunk.usage;
-        final index = _messagesMap[conversationId]!
-            .indexWhere((item) => item.id == message.id);
-        if (index >= 0) {
-          _messagesMap[conversationId]![index] = message.copyWith(
-            content: content,
-            reasoningContent: reasoning,
-          );
-          notifyListeners();
-        }
-      }
-      streamWatch.stop();
-      final reply = LLMService.parseRoleplayReply(content);
-      content = reply.content;
-      if (reply.choices.isNotEmpty) {
-        await setRoleplayChoices(conversationId, reply.choices);
-      }
-      final index = _messagesMap[conversationId]!
-          .indexWhere((item) => item.id == message.id);
-      if (index >= 0) {
-        final reasoningTokens = streamUsage.reasoningTokens ??
-            LLMService.estimateReasoningTokens(reasoning);
-        final hasThinking =
-            reasoning.trim().isNotEmpty || reasoningTokens > 0;
-        _messagesMap[conversationId]![index] = message.copyWith(
-          content: content,
-          reasoningContent: reasoning,
-          reasoningDurationMs:
-              hasThinking ? streamWatch.elapsedMilliseconds : null,
-        );
-        notifyListeners();
-        _persist();
-      }
-      _updateConversationLastMessage(conversationId, content);
-      final promptTokens = streamUsage.promptTokens ??
-          systemPromptTokens +
-              history.fold<int>(
-                0,
-                (sum, item) =>
-                    sum +
-                    _estimateTextTokens(item['content'] ?? '') +
-                    kPerMessageJsonTokens,
-              );
-      // completion 已含思考；网关未给 reasoning_tokens 时按思考正文估算
-      final reasoningTokens = streamUsage.reasoningTokens ??
-          LLMService.estimateReasoningTokens(reasoning);
-      final completionTokens = streamUsage.completionTokens ??
-          _estimateTextTokens(content) + reasoningTokens;
-      await TokenUsageProvider.instance.addUsage(
-        conversationId,
-        ChatUsage(
-          promptTokens: promptTokens,
-          completionTokens: completionTokens,
-          totalTokens: promptTokens + completionTokens,
-          reasoningTokens: reasoningTokens,
+  }) =>
+      runRoleplayStreamWithHooks(
+        hooks: ChatStreamHooks(
+          getMessages: (id) => getMessages(id),
+          appendMessage: (id, msg) {
+            _messagesMap[id] ??= [];
+            _messagesMap[id]!.add(msg);
+          },
+          replaceMessage: (id, msgId, updated) {
+            final list = _messagesMap[id];
+            if (list == null) return;
+            final i = list.indexWhere((m) => m.id == msgId);
+            if (i >= 0) list[i] = updated;
+          },
+          removeMessage: (id, msgId) {
+            _messagesMap[id]?.removeWhere((m) => m.id == msgId);
+          },
+          notify: notifyListeners,
+          persist: _persist,
+          setSystemTokens: (id, tokens) => _systemTokens[id] = tokens,
+          setContextTokens: (id, tokens) => _contextTokens[id] = tokens,
+          setLastError: (v) => _lastError = v,
+          clearReplying: () {
+            _replyingConversationId = null;
+            _runningReply = null;
+          },
+          estimateTokens: _estimateTextTokens,
+          estimateInputBudget: (id, count, {systemTokens = 0}) =>
+              _estimateRequestInputBudget(id,
+                  contextCount: count, systemTokens: systemTokens),
+          conversationAvatar: _conversationAvatar,
+          setRoleplayChoices: setRoleplayChoices,
+          updateLastMessage: _updateConversationLastMessage,
         ),
-        label: characterName,
-        avatar: _conversationAvatar(conversationId),
-      );
-      // 进度条显示下一次请求可能携带的上下文，必须与 contextCount 和
-      // _buildHistory 的消息转换规则保持一致。
-      _contextTokens[conversationId] = _estimateRequestInputBudget(
-        conversationId,
+        conversationId: conversationId,
+        model: model,
+        characterName: characterName,
+        characterSystemPrompt: characterSystemPrompt,
+        userRelationship: userRelationship,
+        userNickname: userNickname,
+        memoryPoints: memoryPoints,
         contextCount: contextCount,
-        systemTokens: systemPromptTokens,
+        progressionStyle: progressionStyle,
+        includeChoices: includeChoices,
       );
-      await _persist();
-      return content.isEmpty ? const [] : [content];
-    } on LLMException catch (e) {
-      _lastError = e.message;
-      _messagesMap[conversationId]
-          ?.removeWhere((item) => item.id == message.id);
-      return const [];
-    } catch (e) {
-      _lastError = LLMService.describeException(e);
-      _messagesMap[conversationId]
-          ?.removeWhere((item) => item.id == message.id);
-      return const [];
-    } finally {
-      _replyingConversationId = null;
-      _runningReply = null;
-      notifyListeners();
-    }
-  }
 
   /// 生成"角色主动发消息/回复"的消息列表。
   ///
@@ -654,84 +570,56 @@ Future<List<String>> _doRunRoleplayStream({
     bool enableCompression = false,
     int contextLength = 8000,
     double compressThreshold = 0.7,
-    String? imagePath, // 非空时以"图片消息"发给模型（OpenAI 视觉格式）
+    String? imagePath,
     String activeStart = '',
     String activeEnd = '',
-    List<String> memoryPoints = const [], // 用户持久化的长期记忆点，拼入系统提示词
-    String extraSystemContext = '', // 额外的记忆上下文（如角色记忆池），拼入系统提示词
-  }) async {
-    final now = DateTime.now();
-    final prompt = PromptBuilder.buildSystemPrompt(
-      baseSystemPrompt: characterSystemPrompt,
-      characterName: characterName,
-      userNickname: userNickname,
-      userRelationship: userRelationship,
-      currentTime: now,
-      replyToUser: replyToUser,
-      activeStart: roleplayMode ? '' : activeStart,
-      activeEnd: roleplayMode ? '' : activeEnd,
-      memoryPoints: memoryPoints,
-      roleplayProgressionStyle: roleplayProgressionStyle,
-      extraContext: roleplayMode ? '' : extraSystemContext,
-      roleplayMode: roleplayMode,
-    );
-    final outputInstruction = PromptBuilder.buildOutputInstruction(
-      characterName: characterName,
-      replyToUser: replyToUser,
-      currentTime: roleplayMode ? null : now,
-      roleplayMode: roleplayMode,
-      // 非流式语C会在正文完成后单独请求候选行动。正文请求不附带候选
-      // 标记，避免模型生成后被解析器丢弃，既浪费输出 token 又造成统计偏差。
-      includeRoleplayChoices: false,
-    );
-    // 记录本会话的系统提示词 + 输出指令 token，供发送消息时乐观更新进度条
-    _systemTokens[conversationId] = _estimateTextTokens(prompt) +
-        _estimateTextTokens(outputInstruction) +
-        kPerMessageJsonTokens * 2;
-    // 会话压缩：开启压缩且模型上下文已知时，先检查历史长度是否达到阈值。
-    // 预算同时计入系统提示词与格式指令占用的 token——
-    // 系统提示词越长，压缩越早触发，避免「提示词 + 历史」超过模型上下文上限
-    if (enableCompression && compressModel != null && contextLength > 0) {
-      await _maybeCompressConversation(
+    List<String> memoryPoints = const [],
+    String extraSystemContext = '',
+  }) =>
+      generateProactiveMessagesWithHooks(
+        hooks: ChatReplyHooks(
+          setLastError: (v) => _lastError = v,
+          estimateTokens: _estimateTextTokens,
+          setSystemTokens: (id, tokens) => _systemTokens[id] = tokens,
+          compress: ({
+            required conversationId,
+            required compressModel,
+            required contextLength,
+            required threshold,
+            required systemPromptTokens,
+            required contextCount,
+          }) =>
+              _maybeCompressConversation(
+            conversationId: conversationId,
+            compressModel: compressModel,
+            contextLength: contextLength,
+            threshold: threshold,
+            systemPromptTokens: systemPromptTokens,
+            contextCount: contextCount,
+          ),
+          buildHistory: _buildHistory,
+        ),
         conversationId: conversationId,
-        compressModel: compressModel,
-        contextLength: contextLength,
-        threshold: compressThreshold,
-        systemPromptTokens: _estimateTextTokens(prompt) +
-            _estimateTextTokens(outputInstruction) +
-            kPerMessageJsonTokens * 2, // 系统提示词与输出指令各是一条消息
-        contextCount: contextCount,
-      );
-    }
-    try {
-      final history =
-          historyMessages ?? _buildHistory(conversationId, contextCount);
-      // 图片消息走 OpenAI 兼容视觉格式，让角色"看到"图片后回复
-      if (imagePath != null && imagePath.isNotEmpty) {
-        return await generateVisionReply(
-          model: model,
-          systemPrompt: prompt,
-          historyMessages: history,
-          imagePath: imagePath,
-          outputInstruction: outputInstruction,
-          roleplayMode: roleplayMode,
-        );
-      }
-      return await generateMessages(
         model: model,
-        systemPrompt: prompt,
-        historyMessages: history,
-        outputInstruction: outputInstruction,
+        characterName: characterName,
+        characterSystemPrompt: characterSystemPrompt,
+        userRelationship: userRelationship,
+        userNickname: userNickname,
+        replyToUser: replyToUser,
         roleplayMode: roleplayMode,
+        roleplayProgressionStyle: roleplayProgressionStyle,
+        historyMessages: historyMessages,
+        contextCount: contextCount,
+        compressModel: compressModel,
+        enableCompression: enableCompression,
+        contextLength: contextLength,
+        compressThreshold: compressThreshold,
+        imagePath: imagePath,
+        activeStart: activeStart,
+        activeEnd: activeEnd,
+        memoryPoints: memoryPoints,
+        extraSystemContext: extraSystemContext,
       );
-    } on LLMException catch (e) {
-      _lastError = e.message;
-      return const ProactiveResult([], ChatUsage());
-    } catch (e) {
-      _lastError = LLMService.describeException(e);
-      return const ProactiveResult([], ChatUsage());
-    }
-  }
 
   /// 生成并逐条加入角色的回复消息（微信拟真：逐条延迟渲染）。
   ///
@@ -844,78 +732,37 @@ Future<List<String>> _doRunRoleplayStream({
         memoryPoints: memoryPoints,
         extraSystemContext: extraSystemContext,
       );
-      final messages = result.messages;
-      // 累计真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens，含思考）
-      var usage = result.usage;
-      if (usage.reasoningTokens == null &&
-          result.reasoningContent.trim().isNotEmpty) {
-        usage = ChatUsage(
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          totalTokens: usage.totalTokens,
-          reasoningTokens:
-              LLMService.estimateReasoningTokens(result.reasoningContent),
-        );
-      }
-      await TokenUsageProvider.instance.addUsage(
-        conversationId,
-        usage,
-        label: characterName,
-        avatar: _conversationAvatar(conversationId),
-      );
-      final random = Random();
-      final displayedMessages = <String>[];
-      var stickerSent = false;
-      var reasoningAttached = false;
-      for (final content in messages) {
-        final query = StickerQueryProtocol.extractQuery(content);
-        final visibleContent = StickerQueryProtocol.visibleText(content);
-        if (query != null) {
-          // 每轮最多发送一张；只有本地真实检索到的表情包才会显示。
-          final sticker = !stickerSent ? findSticker?.call(query) : null;
-          if (sticker != null) {
-            final beforeCount = _messagesMap[conversationId]?.length ?? 0;
+      return await processProactiveReplyMessages(
+        hooks: ProactiveReplyHooks(
+          addProactiveMessage: addProactiveMessage,
+          addSticker: ({required conversationId, required stickerPath, required label}) {
             addCharacterStickerMessage(
               conversationId: conversationId,
-              stickerPath: sticker.imagePath,
-              label: sticker.label,
+              stickerPath: stickerPath,
+              label: label,
             );
-            if ((_messagesMap[conversationId]?.length ?? 0) > beforeCount) {
-              stickerSent = true;
-              // 仅供调用方判断本轮是否有回复；不会作为文本气泡写入会话。
-              displayedMessages.add('[表情包]');
-            }
-          }
-          // 模型偶尔会把查询标记和正常文字写在同一元素中；仅展示剥离标记后的文字。
-          if (visibleContent.isEmpty) continue;
-        }
-        if (visibleContent.isEmpty) continue;
-        addProactiveMessage(
-          conversationId,
-          visibleContent,
-          reasoningContent: reasoningAttached ? '' : result.reasoningContent,
-          reasoningDurationMs:
-              reasoningAttached ? null : result.reasoningDurationMs,
-        );
-        if (result.reasoningContent.trim().isNotEmpty) reasoningAttached = true;
-        displayedMessages.add(visibleContent);
-        HapticFeedback.lightImpact(); // 消息提示震动
-        // 延迟 = 随机 0~1s + 消息长度 * 50ms（模拟打字耗时）+ 600ms 消息间隔
-        final delay = random.nextDouble() * 1000 + visibleContent.length * 50;
-        await Future.delayed(Duration(milliseconds: delay.round() + 600));
-      }
-      // 已使用的上下文 = 会话累计（摘要起全部文本消息 + 系统提示词）。
-      // 仅当 API 返回的 prompt_tokens 更大时用它校准（说明本地估算偏低或
-      // 上下文窗口未截断、prompt 代表全量真实消耗），
-      // 避免把显示值压成"最近一次请求的截断窗口"（几十条消息后只剩几百）。
-      final prompt = result.usage.promptTokens;
-      final estimated = _estimateRequestInputBudget(
-        conversationId,
+          },
+          messageCount: (id) => _messagesMap[id]?.length ?? 0,
+          conversationAvatar: _conversationAvatar,
+          estimateInputBudget: (id, count) =>
+              _estimateRequestInputBudget(id, contextCount: count),
+          setContextTokens: (id, tokens) => _contextTokens[id] = tokens,
+          clearReplying: () {
+            _replyingConversationId = null;
+            _runningReply = null;
+          },
+          notify: notifyListeners,
+        ),
+        conversationId: conversationId,
+        characterName: characterName,
+        messages: result.messages,
+        result: result,
+        reasoningContent: result.reasoningContent,
+        reasoningDurationMs: result.reasoningDurationMs,
         contextCount: contextCount,
+        usage: result.usage,
+        findSticker: findSticker,
       );
-      _contextTokens[conversationId] =
-          prompt != null && prompt > estimated ? prompt : estimated;
-      return displayedMessages;
     } finally {
       debugPrint('[ChatProvider] _doRunProactiveReply 结束: $conversationId');
       _replyingConversationId = null;
@@ -939,78 +786,31 @@ Future<List<String>> _doRunRoleplayStream({
     int systemPromptTokens = 0,
     int contextCount = 0,
     bool force = false,
-  }) async {
-    final messages = _messagesMap[conversationId] ?? [];
-    if (messages.isEmpty) return false;
-    final textMessages =
-        messages.where((m) => m.type == MessageType.text).toList();
-    if (textMessages.length <= kKeepRecentMessages) return false;
-
-    // 发送输入预算（系统提示词 + 摘要起历史）+ 系统提示词一起判断是否达到压缩阈值
-    // （手动压缩时跳过）。与进度条展示的上下文使用量同口径。
-    if (!force &&
-        _estimateRequestInputBudget(conversationId,
-                contextCount: contextCount, systemTokens: systemPromptTokens) <
-            contextLength * threshold) {
-      return false;
-    }
-
-    // 确定压缩边界：从尾部数出最近 kKeepRecentMessages 条文本消息，之前的全部压缩
-    var cutIndex = 0;
-    var textSeen = 0;
-    for (var i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].type == MessageType.text) textSeen++;
-      if (textSeen == kKeepRecentMessages) {
-        cutIndex = i;
-        break;
-      }
-    }
-    if (cutIndex <= 0) return false;
-    final toCompress = messages.sublist(0, cutIndex);
-    final kept = messages.sublist(cutIndex);
-
-    final history = toCompress
-        .map((m) => {
-              'role': m.isFromUser ? 'user' : 'assistant',
-              // 表情包/图片/文件绝不让文件路径进入压缩模型的上下文。
-              'content': _describeMessageForModel(m),
-            })
-        .toList();
-
-    try {
-      final summary = await LLMService.compressHistory(
-        model: compressModel,
-        historyMessages: history,
-      );
-      if (summary.isEmpty) return false;
-      // 压缩不删除前文：原文消息完整保留，仅在压缩边界处插入一条摘要消息。
-      // 后续发送上下文从最后一条摘要消息起取（其前原文不再发给模型，界面仍可完整查看）。
-      _messagesMap[conversationId]!.insert(
-        cutIndex,
-        Message(
-          id: const Uuid().v4(),
-          conversationId: conversationId,
-          content:
-              '［已${force ? '手动' : '自动'}压缩更早的 ${toCompress.length} 条消息］\n$summary',
-          type: MessageType.text,
-          sender: MessageSender.character,
-          isCompressionSummary: true,
+  }) =>
+      maybeCompressConversationWithHooks(
+        hooks: ChatCompressHooks(
+          getMessages: (id) => getMessages(id),
+          insertMessage: (id, msg, index) {
+            _messagesMap[id] ??= [];
+            _messagesMap[id]!.insert(index, msg);
+          },
+          setContextTokens: (id, tokens) => _contextTokens[id] = tokens,
+          updateLastMessage: _updateConversationLastMessage,
+          notify: notifyListeners,
+          persist: _persist,
+          estimateInputBudget: (id, count, {systemTokens = 0}) =>
+              _estimateRequestInputBudget(id,
+                  contextCount: count, systemTokens: systemTokens),
         ),
-      );
-      // 压缩后参与上下文的消息大幅减少，按「摘要 + 保留消息」重算发送输入预算
-      _contextTokens[conversationId] = _estimateRequestInputBudget(
-        conversationId,
+        conversationId: conversationId,
+        compressModel: compressModel,
+        contextLength: contextLength,
+        threshold: threshold,
+        systemPromptTokens: systemPromptTokens,
         contextCount: contextCount,
+        force: force,
       );
-      _updateConversationLastMessage(conversationId, kept.last.content);
-      notifyListeners();
-      await _persist();
-      return true;
-    } catch (e) {
-      debugPrint('[ChatProvider] 会话压缩失败，继续原样发送: $e');
-      return false;
-    }
-  }
+
 
   /// 手动压缩会话（聊天设置页「压缩对话」按钮）：
   /// 忽略阈值判断，直接压缩更早的历史消息。
@@ -1036,14 +836,9 @@ Future<List<String>> _doRunRoleplayStream({
       LLMService.estimateTokens(text);
 
   /// 估算文本消息列表的 token 数（含每条消息的 JSON 结构开销）
-  static int _estimateTokens(List<Message> messages) {
-    var total = 0;
-    for (final m in messages) {
-      if (m.type != MessageType.text) continue;
-      total += LLMService.estimateTokens(m.content) + kPerMessageJsonTokens;
-    }
-    return total;
-  }
+  static int _estimateTokens(List<Message> messages) =>
+      ChatTokenEstimator.estimateMessages(messages);
+
 
   /// 本地分词估算某会话的上下文 token（从最后一条压缩摘要消息起取全部 + 可选额外文本），
   /// 每条消息计入 JSON 结构开销。作为无真实 usage 记录时的兜底粗估。
@@ -1057,30 +852,13 @@ Future<List<String>> _doRunRoleplayStream({
   /// （[contextCount] <= 0 表示从摘要起取全部），每条计入 JSON 结构开销。
   /// [extra] 为本次提问 / 本次回复等额外文本。
   int _estimateSendBudget(String conversationId, int contextCount,
-      [List<String> extra = const []]) {
-    final messages = _messagesMap[conversationId] ?? const <Message>[];
-    var start = 0;
-    for (var i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].isCompressionSummary) {
-        start = i;
-        break;
-      }
-    }
-    final from = contextCount > 0 && messages.length - start > contextCount
-        ? messages.length - contextCount
-        : start;
-    var total = 0;
-    for (int i = from; i < messages.length; i++) {
-      final m = messages[i];
-      if (m.type == MessageType.text) {
-        total += LLMService.estimateTokens(m.content) + kPerMessageJsonTokens;
-      }
-    }
-    for (final text in extra) {
-      total += LLMService.estimateTokens(text) + kPerMessageJsonTokens;
-    }
-    return total;
-  }
+          [List<String> extra = const []]) =>
+      ChatTokenEstimator.estimateSendBudget(
+        _messagesMap[conversationId] ?? const [],
+        contextCount,
+        extra: extra,
+      );
+
 
   /// 按实际会发送给模型的 history payload 估算输入预算。
   ///
@@ -1093,15 +871,12 @@ Future<List<String>> _doRunRoleplayStream({
   }) {
     final sys = systemTokens ?? (_systemTokens[conversationId] ?? 0);
     final history = _buildHistory(conversationId, contextCount);
-    final historyTokens = history.fold<int>(
-      0,
-      (sum, item) =>
-          sum +
-          _estimateTextTokens(item['content'] ?? '') +
-          kPerMessageJsonTokens,
+    return ChatTokenEstimator.estimateRequestBudget(
+      history,
+      systemTokens: sys,
     );
-    return sys + historyTokens;
   }
+
 
   /// 估算会话当前"发送输入预算"（进度条口径，即公式的分子）：
   /// = 系统提示词 + 输出指令（[systemTokens] 或上次记录的缓存）+
@@ -1143,77 +918,21 @@ Future<List<String>> _doRunRoleplayStream({
   /// 压缩后原文不删除：历史起点定位到最后一条压缩摘要消息（含），
   /// 摘要之前的原文已被摘要替代、不再发送给模型。
   List<Map<String, String>> _buildHistory(
-      String conversationId, int contextCount) {
-    final history = _messagesMap[conversationId] ?? [];
-    var cutStart = 0;
-    for (var i = history.length - 1; i >= 0; i--) {
-      if (history[i].isCompressionSummary) {
-        cutStart = i;
-        break;
-      }
-    }
-    final start = contextCount > 0 && history.length - contextCount > cutStart
-        ? history.length - contextCount
-        : cutStart;
-    final result = <Map<String, String>>[];
-    for (int i = start; i < history.length; i++) {
-      final m = history[i];
-      if (m.type == MessageType.sticker) {
-        result.add({
-          'role': m.isFromUser ? 'user' : 'assistant',
-          'content': _describeMessageForModel(m),
-        });
-        continue;
-      }
-      if (m.type == MessageType.narration) {
-        result.add({
-          'role': 'user',
-          'content': '【用户剧情行动/旁白】\n${m.content}',
-        });
-        continue;
-      }
-      if (m.type != MessageType.text) continue; // 图片/文件消息不入上下文
-      // 合并转发卡片：展开为原始对话消息，参与上下文
-      if (m.isForwardCard) {
-        for (final item in m.forwardedItems) {
-          if (item.type != 'text') continue;
-          result.add({
-            'role': item.isUser ? 'user' : 'assistant',
-            'content': item.content,
-          });
-        }
-        continue;
-      }
-      result.add({
-        'role': m.isFromUser ? 'user' : 'assistant',
-        'content': m.content,
-      });
-    }
-    return result;
-  }
+      String conversationId, int contextCount) =>
+      buildChatHistory(
+        _messagesMap[conversationId] ?? const [],
+        contextCount,
+        describe: _describeMessageForModel,
+      );
+
 
   /// 把消息转换为模型可读的上下文描述：
   /// - 表情包绝不暴露本地文件路径；
   /// - 角色自己发送的表情包用「你」而不是「用户」，避免后续把
   ///   角色发的表情错记成用户发的；
   /// - 图片/文件以占位说明进入上下文。
-  String _describeMessageForModel(Message m) {
-    switch (m.type) {
-      case MessageType.sticker:
-        final label = m.stickerLabel?.trim() ?? '';
-        final who = m.isFromUser ? '用户' : '你';
-        return label.isEmpty ? '[$who发送了一个表情包]' : '[$who发送了一个表情包（备注：$label）]';
-      case MessageType.image:
-        return m.isFromUser ? '[用户发送了一张图片]' : '[你发送了一张图片]';
-      case MessageType.file:
-        final fileName = m.content.split(RegExp(r'[/\\]')).last;
-        return m.isFromUser ? '[用户发送了一个文件：$fileName]' : '[你发送了一个文件：$fileName]';
-      case MessageType.text:
-      case MessageType.system:
-      case MessageType.narration:
-        return m.content;
-    }
-  }
+  String _describeMessageForModel(Message m) => describeMessageForModel(m);
+
 
   /// 将一条角色主动消息加入会话并持久化（渲染阶段逐条调用）。
   /// [reasoningContent] / [reasoningDurationMs] 仅挂在第一条文本消息上。
