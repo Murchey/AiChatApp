@@ -367,144 +367,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget _buildThinkingDurationLabel(Message msg) =>
       ThinkingDurationLabel(message: msg);
 
-  /// 构建菜单项列表
   List<Widget> _buildMenuItems(Message message) {
-    final isUser = message.isFromUser;
-    final items = <Widget>[
-      ChatBubbleMenuItem(
-        icon: CupertinoIcons.doc_on_doc,
-        label: '复制',
-        onTap: () {
-          _closeMenu();
-          Clipboard.setData(ClipboardData(text: message.content));
-        },
-      ),
-      ChatBubbleMenuItem(
-        icon: CupertinoIcons.text_badge_checkmark,
-        label: '选择文本',
-        onTap: () {
-          _closeMenu();
-          _showTextSelection(message);
-        },
-      ),
-      ChatBubbleMenuItem(
-        icon: CupertinoIcons.quote_bubble,
-        label: '引用',
-        onTap: () {
-          _closeMenu();
-          setState(() {
-            _quoteMessage = message;
-          });
-        },
-      ),
-    ];
-
-    if (isUser) {
-      items.add(
-        ChatBubbleMenuItem(
-          icon: CupertinoIcons.xmark_circle,
-          label: '撤回',
-          onTap: () {
-            _closeMenu();
-            _withdrawMessage(message);
-          },
-        ),
-      );
-      if (message.type == MessageType.narration) {
-        items.add(
-          ChatBubbleMenuItem(
-            icon: CupertinoIcons.pencil,
-            label: '编辑剧情',
-            onTap: () {
-              _closeMenu();
-              _editMessage(message);
-            },
-          ),
-        );
-      }
-    } else {
-      if (message.hasReasoning) {
-        items.add(
-          ChatBubbleMenuItem(
-            icon: CupertinoIcons.lightbulb,
-            label: '查看思考',
-            onTap: () {
-              _closeMenu();
-              _showReasoningContent(message);
-            },
-          ),
-        );
-      }
-      items.add(
-        ChatBubbleMenuItem(
-          icon: CupertinoIcons.pencil,
-          label: '修改本条',
-          onTap: () {
-            _closeMenu();
-            _editMessage(message);
-          },
-        ),
-      );
-      items.add(
-        ChatBubbleMenuItem(
-          icon: CupertinoIcons.refresh,
-          label: '重新回复',
-          onTap: () {
-            _closeMenu();
-            _rerollReply(message);
-          },
-        ),
-      );
-      // 删除角色消息：移除后不再作为后续对话的上下文
-      items.add(
-        ChatBubbleMenuItem(
-          icon: CupertinoIcons.delete,
-          label: '删除',
-          onTap: () {
-            _closeMenu();
-            context
-                .read<ChatProvider>()
-                .deleteMessage(widget.conversationId, message.id);
-          },
-        ),
-      );
-    }
-
-    items.add(
-      ChatBubbleMenuItem(
-        icon: CupertinoIcons.bookmark,
-        label: '保存为记忆点',
-        onTap: () {
-          _closeMenu();
-          _enterSelectMode(message, forMemory: true);
-        },
-      ),
-    );
-
-    items.add(
-      ChatBubbleMenuItem(
-        icon: CupertinoIcons.square_stack,
-        label: '多选',
-        onTap: () {
-          _closeMenu();
-          _enterSelectMode(message);
-        },
-      ),
-    );
-
-    // 分支对话：从当前消息处带历史分出新角色会话
-    items.add(
-      ChatBubbleMenuItem(
-        icon: CupertinoIcons.arrow_branch,
-        label: '增加分支',
-        onTap: () {
-          _closeMenu();
-          _branchConversation(message);
-        },
-      ),
-    );
-
-    return items;
+    return ChatBubbleMenuItems(
+      message: message,
+      onClose: _closeMenu,
+      onCopy: () => Clipboard.setData(ClipboardData(text: message.content)),
+      onSelectText: () => _showTextSelection(message),
+      onQuote: () => setState(() => _quoteMessage = message),
+      onWithdraw: message.isFromUser ? () => _withdrawMessage(message) : null,
+      onEdit: (message.isFromUser && message.type != MessageType.narration) ? null : () => _editMessage(message),
+      onShowReasoning: message.hasReasoning ? () => _showReasoningContent(message) : null,
+      onReroll: () => _rerollReply(message),
+      onDelete: message.isFromUser
+          ? null
+          : () => context.read<ChatProvider>().deleteMessage(widget.conversationId, message.id),
+      onSaveMemory: () => _enterSelectMode(message, forMemory: true),
+      onMultiSelect: () => _enterSelectMode(message),
+      onBranch: () => _branchConversation(message),
+    ).build();
   }
 
   /// 分支对话

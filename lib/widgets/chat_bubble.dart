@@ -6,6 +6,7 @@ import '../models/message.dart';
 import '../providers/settings_provider.dart';
 import '../services/tts_playback_controller.dart';
 import 'character_avatar.dart';
+import 'chat/sticker_preview_dialog.dart';
 
 /// 微信表情代码 → emoji 映射：AI 按输出规则会携带表情包文字（如 [捂脸]），
 /// 渲染时转成真实 emoji 图标，贴近微信聊天观感。未收录的代码原样保留。
@@ -423,7 +424,7 @@ class _ChatBubbleState extends State<ChatBubble> {
     final image = GestureDetector(
       onTap: () => showCupertinoDialog(
         context: context,
-        builder: (_) => _StickerPreviewDialog(
+        builder: (_) => StickerPreviewDialog(
           imagePath: message.content,
           label: message.stickerLabel,
         ),
@@ -847,40 +848,7 @@ class _ChatBubbleState extends State<ChatBubble> {
   }
 }
 
-class _StickerPreviewDialog extends StatelessWidget {
-  final String imagePath;
-  final String? label;
 
-  const _StickerPreviewDialog({required this.imagePath, this.label});
-
-  @override
-  Widget build(BuildContext context) => CupertinoPopupSurface(
-        isSurfacePainted: false,
-        child: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            color: CupertinoColors.black.withValues(alpha: 0.88),
-            padding: const EdgeInsets.all(20),
-            child: SafeArea(
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  InteractiveViewer(
-                    child: Image.file(File(imagePath), fit: BoxFit.contain),
-                  ),
-                  if (label?.trim().isNotEmpty == true)
-                    Positioned(
-                      bottom: 12,
-                      child: Text(label!,
-                          style: const TextStyle(color: CupertinoColors.white)),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-}
 
 /// 构建「上边共线尾巴 + 圆角」的气泡路径（ww/zmd 共用）。
 /// 尾巴尖端在气泡顶边（与头像中线对齐），回程弧线圆心在气泡外侧尖端一侧，

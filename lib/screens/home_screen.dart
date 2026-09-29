@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/motion.dart';
 import '../config/theme.dart';
+import '../models/home_chat_entry.dart';
 import '../models/character.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
@@ -437,13 +438,13 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   /// 合并私聊与会话为统一会话列表：置顶优先，其余按最近消息时间倒序
-  List<_HomeChatEntry> _buildChatEntries(
+  List<HomeChatEntry> _buildChatEntries(
     ChatProvider chatProvider,
     GroupChatProvider groupProvider,
   ) {
-    final entries = <_HomeChatEntry>[
+    final entries = <HomeChatEntry>[
       for (final c in chatProvider.conversations)
-        _HomeChatEntry(
+        HomeChatEntry(
           isGroup: false,
           id: c.id,
           title: c.characterName,
@@ -454,7 +455,7 @@ class _HomeScreenState extends State<HomeScreen>
           unreadCount: c.unreadCount,
         ),
       for (final g in groupProvider.groups)
-        _HomeChatEntry(
+        HomeChatEntry(
           isGroup: true,
           id: g.id,
           title: '${g.name}（${g.memberCount}）',
@@ -479,7 +480,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  void _openChatEntry(_HomeChatEntry entry) {
+  void _openChatEntry(HomeChatEntry entry) {
     if (entry.isGroup) {
       Navigator.push(
         context,
@@ -825,7 +826,7 @@ class _HomeScreenState extends State<HomeScreen>
   void _showEntryMenu(
     BuildContext context,
     Offset globalPos,
-    _HomeChatEntry entry,
+    HomeChatEntry entry,
   ) {
     _dismissChatMenu();
     final overlay = Overlay.of(context);
@@ -944,24 +945,3 @@ class _HomeScreenState extends State<HomeScreen>
 }
 
 /// 首页会话列表统一条目：私聊与群聊混排使用同一份数据快照
-class _HomeChatEntry {
-  final bool isGroup;
-  final String id;
-  final String title;
-  final String avatar;
-  final String lastMessage;
-  final DateTime lastMessageTime;
-  final bool pinned;
-  final int unreadCount;
-
-  const _HomeChatEntry({
-    required this.isGroup,
-    required this.id,
-    required this.title,
-    required this.avatar,
-    required this.lastMessage,
-    required this.lastMessageTime,
-    required this.pinned,
-    required this.unreadCount,
-  });
-}

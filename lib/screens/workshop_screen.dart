@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../config/motion.dart';
 import '../config/theme.dart';
+import '../widgets/workshop/workshop_download_dialogs.dart';
 import '../models/character.dart';
 import '../models/character_pack_entry.dart';
 import '../models/moments_pack_entry.dart';
@@ -13,7 +14,6 @@ import '../providers/character_provider.dart';
 import '../providers/sticker_provider.dart';
 import '../providers/workshop_provider.dart';
 import '../services/character_pack_service.dart';
-import '../services/cos_auth.dart';
 import '../services/sticker_pack_service.dart';
 import '../services/workshop_service.dart';
 import '../utils/conversation_relink.dart';
@@ -31,20 +31,7 @@ class WorkshopScreen extends StatefulWidget {
   State<WorkshopScreen> createState() => _WorkshopScreenState();
 }
 
-/// 资产 zip 展示项（携带所属仓库信息）
-class _ZipItem {
-  final WorkshopAsset asset;
-  final String repoName;
-  final String repoId;
 
-  _ZipItem({
-    required this.asset,
-    required this.repoName,
-    required this.repoId,
-  });
-
-  String get key => '$repoId|${asset.tag}|${asset.name}';
-}
 
 class _WorkshopScreenState extends State<WorkshopScreen> {
   final Map<String, bool> _checked = {
@@ -52,7 +39,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     kGamePackTag: false,
     kStickerPackTag: false,
   };
-  final Map<String, List<_ZipItem>> _items = {
+  final Map<String, List<ZipItem>> _items = {
     kCharacterPackTag: [],
     kGamePackTag: [],
     kStickerPackTag: [],
@@ -87,14 +74,14 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
         _ => '表情包分类',
       };
 
-  List<_ZipItem> get _allItems => [
+  List<ZipItem> get _allItems => [
         for (final tag in kWorkshopPackTags) ..._items[tag]!,
       ];
 
   /// 搜索结果：仅在已勾选（标记开启）的两个分类内搜索。
   /// 忽略大小写，同时匹配「名称原文」与「完整拼音」：
   /// 汉字/字母查询命中名称，拼音查询命中名称拼音，结果为拼音命中 + 汉字命中的并集。
-  List<_ZipItem> get _searchResults {
+  List<ZipItem> get _searchResults {
     final query = _searchQuery.trim().toLowerCase();
     if (query.isEmpty) return const [];
     return _allItems.where((item) {
@@ -277,7 +264,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
   Future<void> _loadCategory(String tag, {bool loadAll = false}) async {
     setState(() => _loading[tag] = true);
     final provider = context.read<WorkshopProvider>();
-    final items = <_ZipItem>[];
+    final items = <ZipItem>[];
     String? error;
     var hasMore = false;
     try {
@@ -291,7 +278,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
           loadAll: loadAll,
         );
         items.addAll(assets.map(
-          (a) => _ZipItem(asset: a, repoName: repo.name, repoId: repo.id),
+          (a) => ZipItem(asset: a, repoName: repo.name, repoId: repo.id),
         ));
         if (repo.isCos && !provider.cosListComplete(repo.id)) {
           hasMore = true;
@@ -333,7 +320,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
       final downloadResults = await showCupertinoDialog<Map<String, String>>(
         context: context,
         barrierDismissible: false,
-        builder: (_) => _BatchDownloadDialog(
+        builder: (_) => BatchDownloadDialog(
           items: selected,
           getProxyUrl: (item) => workshop.proxyById(item.repoId) ?? '',
           getCosAuth: (item) => workshop.cosAuthById(item.repoId),
@@ -936,7 +923,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     );
   }
 
-  Widget _buildZipRow(BuildContext context, _ZipItem item) {
+  Widget _buildZipRow(BuildContext context, ZipItem item) {
     final isSelected = _selected.contains(item.key);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -994,7 +981,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     );
   }
 
-  void _toggleZip(_ZipItem item) {
+  void _toggleZip(ZipItem item) {
     setState(() {
       if (_selected.contains(item.key)) {
         _selected.remove(item.key);
@@ -1005,7 +992,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
   }
 
   /// zip 行副标题：仓库 · 分类 · 包大小
-  String _zipSubtitle(_ZipItem item) {
+  String _zipSubtitle(ZipItem item) {
     final sizeText = _formatSize(item.asset.sizeBytes);
     final base = '${item.repoName} · ${_categoryLabel(item.asset.tag)}';
     return sizeText.isEmpty ? base : '$base · $sizeText';
@@ -1024,293 +1011,10 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
   }
 }
 
-/// 下载 zip 进度弹窗：完成后自动关闭并返回本地路径，失败返回 null
-class _DownloadZipDialog extends StatefulWidget {
-  final String name;
-  final String downloadUrl;
-  final String proxyUrl;
 
-  const _DownloadZipDialog({
-    required this.name,
-    required this.downloadUrl,
-    required this.proxyUrl,
-  });
 
-  @override
-  State<_DownloadZipDialog> createState() => _DownloadZipDialogState();
-}
 
-class _DownloadZipDialogState extends State<_DownloadZipDialog> {
-  double _progress = 0;
-  bool _failed = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _start();
-  }
 
-  Future<void> _start() async {
-    final path = await WorkshopService.downloadZip(
-      downloadUrl: widget.downloadUrl,
-      proxyUrl: widget.proxyUrl,
-      onProgress: (p) {
-        if (mounted) setState(() => _progress = p);
-      },
-    );
-    if (!mounted) return;
-    if (path == null) {
-      setState(() => _failed = true);
-      return;
-    }
-    Navigator.of(context).pop(path);
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    final percent = (_progress * 100).round();
-    return CupertinoAlertDialog(
-      title: Text(_failed ? '下载失败' : '正在下载'),
-      content: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: _failed
-            ? const Text('下载失败，请检查网络或代理设置后重试')
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: context.separatorColor,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: _progress,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: context.accentColor,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '$percent%',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '下载完成后将自动进入导入流程',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                ],
-              ),
-      ),
-      actions: [
-        if (_failed)
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(context),
-            child: const Text('确定'),
-          ),
-      ],
-    );
-  }
-}
 
-/// 批量下载 zip 进度弹窗：下载所有 zip 后自动关闭，返回 item.key -> 本地路径 的映射
-class _BatchDownloadDialog extends StatefulWidget {
-  final List<_ZipItem> items;
-  final String Function(_ZipItem item) getProxyUrl;
-  final CosAuth? Function(_ZipItem item)? getCosAuth;
-
-  const _BatchDownloadDialog({
-    required this.items,
-    required this.getProxyUrl,
-    this.getCosAuth,
-  });
-
-  @override
-  State<_BatchDownloadDialog> createState() => _BatchDownloadDialogState();
-}
-
-class _BatchDownloadDialogState extends State<_BatchDownloadDialog> {
-  int _currentIndex = 0;
-  double _currentProgress = 0;
-  bool _failed = false;
-  final Map<String, String> _results = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _startBatchDownload();
-  }
-
-  Future<void> _startBatchDownload() async {
-    for (var i = 0; i < widget.items.length; i++) {
-      if (!mounted) return;
-      setState(() {
-        _currentIndex = i;
-        _currentProgress = 0;
-      });
-
-      final item = widget.items[i];
-      final proxyUrl = widget.getProxyUrl(item);
-      final auth = widget.getCosAuth?.call(item);
-      final path = await WorkshopService.downloadZip(
-        downloadUrl: item.asset.downloadUrl,
-        proxyUrl: proxyUrl,
-        auth: auth,
-        onProgress: (p) {
-          if (mounted) setState(() => _currentProgress = p);
-        },
-      );
-
-      if (!mounted) return;
-      if (path == null) {
-        setState(() {
-          _failed = true;
-        });
-        // 等待用户确认后继续或取消
-        final shouldContinue = await showCupertinoDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text('下载失败'),
-            content: Text(
-              '「${item.asset.displayName}」下载失败，请检查网络、密钥权限或稍后重试',
-              textAlign: TextAlign.center,
-            ),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('取消全部'),
-                onPressed: () => Navigator.pop(ctx, false),
-              ),
-              CupertinoDialogAction(
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('跳过继续'),
-              ),
-            ],
-          ),
-        );
-        if (shouldContinue != true) {
-          // 用户选择取消全部，返回已有结果
-          if (mounted) {
-            Navigator.pop(context, _results.isNotEmpty ? _results : null);
-          }
-          return;
-        }
-        // 跳过当前失败的，继续下载下一个
-        setState(() => _failed = false);
-        continue;
-      }
-
-      _results[item.key] = path;
-    }
-
-    // 全部下载完成
-    if (mounted) Navigator.pop(context, _results);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final total = widget.items.length;
-    final currentName = _currentIndex < total
-        ? widget.items[_currentIndex].asset.displayName
-        : '';
-    final percent = (_currentProgress * 100).round();
-
-    return CupertinoAlertDialog(
-      title: Text(_failed ? '下载失败' : '正在批量下载'),
-      content: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 整体进度提示
-            Text(
-              '正在下载 (${_currentIndex + 1}/$total)',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: context.textPrimaryColor,
-              ),
-            ),
-            const SizedBox(height: 8),
-            // 当前文件名
-            Text(
-              currentName,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                color: context.textSecondaryColor,
-              ),
-            ),
-            const SizedBox(height: 12),
-            // 进度条
-            Container(
-              height: 4,
-              decoration: BoxDecoration(
-                color: context.separatorColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
-              child: FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: _currentProgress,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: context.accentColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            // 百分比
-            Text(
-              '$percent%',
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textSecondaryColor,
-              ),
-            ),
-            const SizedBox(height: 8),
-            // 提示文字
-            Text(
-              '全部下载完成后将逐个确认导入',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textSecondaryColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: const [], // 下载过程中不允许取消（已在失败时提供选项）
-    );
-  }
-}

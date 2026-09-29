@@ -27,6 +27,7 @@ import 'backup_cloud_settings_screen.dart';
 import 'backup_password_screen.dart';
 import 'backup_schedule_screen.dart';
 import 'lan_sync_screen.dart';
+import '../widgets/settings/working_progress_bar.dart';
 
 /// 数据备份页：本地备份 + 云端备份（腾讯云 COS / 阿里云 OSS）。
 ///
@@ -693,7 +694,7 @@ class _BackupScreenState extends State<BackupScreen> {
             ),
             if (_working) ...[
               const SizedBox(height: 12),
-              _WorkingProgressBar(
+              WorkingProgressBar(
                 value: _progress,
                 stage: _progressStage,
               ),
@@ -1083,71 +1084,3 @@ class _BackupScreenState extends State<BackupScreen> {
 }
 
 
-/// 备份过程进度条：分阶段进度 + 当前阶段文案
-class _WorkingProgressBar extends StatelessWidget {
-  final double value;
-  final String stage;
-
-  const _WorkingProgressBar({
-    required this.value,
-    required this.stage,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final percent = (value * 100).clamp(0, 100).toStringAsFixed(0);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  stage.isEmpty ? '处理中…' : stage,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '$percent%',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  color: context.accentColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: SizedBox(
-              height: 8,
-              child: Stack(
-                children: [
-                  Container(color: context.separatorColor),
-                  FractionallySizedBox(
-                    widthFactor: value.clamp(0.0, 1.0),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: context.accentColor,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

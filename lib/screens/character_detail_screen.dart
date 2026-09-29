@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:gal/gal.dart';
 import '../utils/platform_support.dart';
@@ -8,6 +7,8 @@ import 'package:provider/provider.dart';
 import '../config/motion.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
+import '../widgets/character/moments_scroll_physics.dart';
+import '../widgets/character/avatar_preview.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
 import '../providers/auth_provider.dart';
@@ -22,86 +23,7 @@ import '../widgets/publish_moment_screen.dart';
 /// 朋友圈列表滚动物理：顶部保留 iOS 橡皮筋回弹（供封面下拉展开），
 /// 底部改为硬截止（到达列表末尾立即停止，不再越界回弹），
 /// 彻底消除快速滑动到底部时内容越界往复导致的"抖动"。
-class _MomentsScrollPhysics extends BouncingScrollPhysics {
-  const _MomentsScrollPhysics({super.parent});
 
-  @override
-  _MomentsScrollPhysics applyTo(ScrollPhysics? ancestor) =>
-      _MomentsScrollPhysics(parent: buildParent(ancestor));
-
-  @override
-  double applyBoundaryConditions(ScrollMetrics position, double value) {
-    final double result = _applyBoundaryConditions(position, value);
-    return result;
-  }
-
-  double _applyBoundaryConditions(ScrollMetrics position, double value) {
-    // 顶部：允许越界（Bouncing 行为），供下拉展开封面
-    if (value < position.minScrollExtent) return 0.0;
-    // 底部：硬截止（Clamping 行为），到达 maxScrollExtent 后不再越界
-    if (value > position.maxScrollExtent &&
-        position.pixels <= position.maxScrollExtent) {
-      return value - position.maxScrollExtent;
-    }
-    // 防御：极端情况下已越过底部，继续增大时按越界量返回
-    if (position.pixels > position.maxScrollExtent &&
-        value >= position.pixels) {
-      return value - position.pixels;
-    }
-    return 0.0;
-  }
-
-  @override
-  Simulation? createBallisticSimulation(
-      ScrollMetrics position, double velocity) {
-    final Tolerance tolerance = toleranceFor(position);
-    // 顶部越界：橡皮筋回弹到 0（下拉展开封面后松手回弹）。
-    // 速度取原始 velocity（与官方 BouncingScrollSimulation._underscrollSimulation
-    // 一致）：负速度先继续深入越界区再回弹，避免 -velocity 造成的收敛振荡。
-    if (position.pixels < position.minScrollExtent) {
-      return ScrollSpringSimulation(
-        spring,
-        position.pixels,
-        position.minScrollExtent,
-        velocity,
-        tolerance: tolerance,
-      );
-    }
-    // 底部越界（防御分支，正常拖拽已被硬截止）：回弹到 maxScrollExtent
-    if (position.pixels > position.maxScrollExtent) {
-      return ScrollSpringSimulation(
-        spring,
-        position.pixels,
-        position.maxScrollExtent,
-        math.min(0.0, velocity),
-        tolerance: tolerance,
-      );
-    }
-    // 正常范围：惯性滚动
-    if (velocity.abs() < tolerance.velocity) return null;
-    // 向下（朝底部）：Clamping 摩擦减速，配合拖拽硬截止，到底即停
-    if (velocity > 0.0) {
-      if (position.pixels >= position.maxScrollExtent) return null;
-      return ClampingScrollSimulation(
-        position: position.pixels,
-        velocity: velocity,
-        tolerance: tolerance,
-      );
-    }
-    // 向上（朝顶部）：官方 BouncingScrollSimulation —— 摩擦减速，接近顶部时
-    // 转入受限弹簧回弹。不能再用 ClampingScrollSimulation：顶部为开边界而
-    // 惯性模拟不经过 applyBoundaryConditions，会直接穿透顶部滑进深度越界区
-    // （-100~-160px）再缓慢回弹，即用户感知的"抖动"。
-    return BouncingScrollSimulation(
-      spring: spring,
-      position: position.pixels,
-      velocity: velocity,
-      leadingExtent: position.minScrollExtent,
-      trailingExtent: position.maxScrollExtent,
-      tolerance: tolerance,
-    );
-  }
-}
 
 /// base64 图片解码缓存：同一 base64 只解码一次并复用同一个 [MemoryImage]。
 /// 若每次重建都新建 [MemoryImage]，ImageCache 永不命中（Dart 的 List ==
@@ -248,7 +170,7 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
   void _viewAvatar(Character character) {
     Navigator.of(context).push(
       CupertinoPageRoute(
-        builder: (_) => _AvatarPreviewScreen(base64: character.avatar),
+        builder: (_) => AvatarPreviewScreen(base64: character.avatar),
       ),
     );
   }
@@ -866,7 +788,7 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
           return false;
         },
         child: ListView.builder(
-          physics: const _MomentsScrollPhysics(
+          physics: const MomentsScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
           ),
           // 底部留出悬浮按钮空间，避免遮挡最后一条内容
@@ -1021,67 +943,6 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
 /// 头像全屏预览页：黑底居中展示，单击关闭、双击缩放、双指缩放后
 /// 可自由拖动查看。子组件为整屏大小的盒子、图片在其内部居中，
 /// 避免 InteractiveViewer(constrained: false) 把图片锚定到左上角。
-class _AvatarPreviewScreen extends StatefulWidget {
-  final String base64;
 
-  const _AvatarPreviewScreen({required this.base64});
 
-  @override
-  State<_AvatarPreviewScreen> createState() => _AvatarPreviewScreenState();
-}
 
-class _AvatarPreviewScreenState extends State<_AvatarPreviewScreen> {
-  final TransformationController _transform = TransformationController();
-  Offset _doubleTapPos = Offset.zero;
-
-  @override
-  void dispose() {
-    _transform.dispose();
-    super.dispose();
-  }
-
-  /// 双击：放大 2.5 倍（以点击处为中心），再次双击复位
-  void _toggleZoom() {
-    if (_transform.value.getMaxScaleOnAxis() > 1.05) {
-      _transform.value = Matrix4.identity();
-    } else {
-      final p = _doubleTapPos;
-      _transform.value = Matrix4.identity()
-        ..translateByDouble(p.dx, p.dy, 0, 1)
-        ..scaleByDouble(2.5, 2.5, 1, 1)
-        ..translateByDouble(-p.dx, -p.dy, 0, 1);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final viewport = MediaQuery.of(context).size;
-    return ColoredBox(
-      color: CupertinoColors.black,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => Navigator.of(context).pop(),
-        onDoubleTapDown: (details) => _doubleTapPos = details.localPosition,
-        onDoubleTap: _toggleZoom,
-        child: InteractiveViewer(
-          transformationController: _transform,
-          constrained: false,
-          boundaryMargin: const EdgeInsets.all(200),
-          minScale: 1,
-          maxScale: 6,
-          child: SizedBox(
-            width: viewport.width,
-            height: viewport.height,
-            child: Center(
-              child: Image.memory(
-                base64Decode(widget.base64),
-                fit: BoxFit.contain,
-                gaplessPlayback: true,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

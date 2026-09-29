@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../config/theme.dart';
+import '../../models/message.dart';
 
 /// 长按气泡菜单网格面板（与手机聊天页常量一致）。
 class ChatBubbleMenuPanel extends StatelessWidget {
@@ -113,5 +114,156 @@ class ChatBubbleMenuItem extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 气泡长按菜单项集合（回调由聊天页注入）。
+class ChatBubbleMenuItems {
+  final Message message;
+  final VoidCallback onClose;
+  final VoidCallback onCopy;
+  final VoidCallback onSelectText;
+  final VoidCallback onQuote;
+  final VoidCallback? onWithdraw;
+  final VoidCallback? onEdit;
+  final VoidCallback? onShowReasoning;
+  final VoidCallback? onReroll;
+  final VoidCallback? onDelete;
+  final VoidCallback onSaveMemory;
+  final VoidCallback onMultiSelect;
+  final VoidCallback onBranch;
+
+  const ChatBubbleMenuItems({
+    required this.message,
+    required this.onClose,
+    required this.onCopy,
+    required this.onSelectText,
+    required this.onQuote,
+    this.onWithdraw,
+    this.onEdit,
+    this.onShowReasoning,
+    this.onReroll,
+    this.onDelete,
+    required this.onSaveMemory,
+    required this.onMultiSelect,
+    required this.onBranch,
+  });
+
+  List<Widget> build() {
+    final isUser = message.isFromUser;
+    final items = <Widget>[
+      ChatBubbleMenuItem(
+        icon: CupertinoIcons.doc_on_doc,
+        label: '复制',
+        onTap: () {
+          onClose();
+          onCopy();
+        },
+      ),
+      ChatBubbleMenuItem(
+        icon: CupertinoIcons.text_badge_checkmark,
+        label: '选择文本',
+        onTap: () {
+          onClose();
+          onSelectText();
+        },
+      ),
+      ChatBubbleMenuItem(
+        icon: CupertinoIcons.quote_bubble,
+        label: '引用',
+        onTap: () {
+          onClose();
+          onQuote();
+        },
+      ),
+    ];
+    if (isUser) {
+      if (onWithdraw != null) {
+        items.add(ChatBubbleMenuItem(
+          icon: CupertinoIcons.xmark_circle,
+          label: '撤回',
+          onTap: () {
+            onClose();
+            onWithdraw!();
+          },
+        ));
+      }
+      if (message.type == MessageType.narration && onEdit != null) {
+        items.add(ChatBubbleMenuItem(
+          icon: CupertinoIcons.pencil,
+          label: '编辑剧情',
+          onTap: () {
+            onClose();
+            onEdit!();
+          },
+        ));
+      }
+    } else {
+      if (message.hasReasoning && onShowReasoning != null) {
+        items.add(ChatBubbleMenuItem(
+          icon: CupertinoIcons.lightbulb,
+          label: '查看思考',
+          onTap: () {
+            onClose();
+            onShowReasoning!();
+          },
+        ));
+      }
+      if (onEdit != null) {
+        items.add(ChatBubbleMenuItem(
+          icon: CupertinoIcons.pencil,
+          label: '修改本条',
+          onTap: () {
+            onClose();
+            onEdit!();
+          },
+        ));
+      }
+      if (onReroll != null) {
+        items.add(ChatBubbleMenuItem(
+          icon: CupertinoIcons.refresh,
+          label: '重新回复',
+          onTap: () {
+            onClose();
+            onReroll!();
+          },
+        ));
+      }
+      if (onDelete != null) {
+        items.add(ChatBubbleMenuItem(
+          icon: CupertinoIcons.delete,
+          label: '删除',
+          onTap: () {
+            onClose();
+            onDelete!();
+          },
+        ));
+      }
+    }
+    items.add(ChatBubbleMenuItem(
+      icon: CupertinoIcons.bookmark,
+      label: '保存为记忆点',
+      onTap: () {
+        onClose();
+        onSaveMemory();
+      },
+    ));
+    items.add(ChatBubbleMenuItem(
+      icon: CupertinoIcons.square_stack,
+      label: '多选',
+      onTap: () {
+        onClose();
+        onMultiSelect();
+      },
+    ));
+    items.add(ChatBubbleMenuItem(
+      icon: CupertinoIcons.arrow_branch,
+      label: '增加分支',
+      onTap: () {
+        onClose();
+        onBranch();
+      },
+    ));
+    return items;
   }
 }

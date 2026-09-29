@@ -26,6 +26,7 @@ import 'image_crop_screen.dart';
 import 'memory_point_manage_screen.dart';
 import 'prompt_edit_screen.dart';
 import 'moment_visibility_screen.dart';
+import '../widgets/chat/auto_moment_pickers.dart';
 
 /// 聊天详情/角色资料：上半部分可编辑角色卡（备注/昵称/个性签名/定位地区），
 /// 中部聊天管理（聊天场景），最下方折叠的提示词设置 panel。
@@ -663,47 +664,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final chatProvider = context.watch<ChatProvider>();
-    final conversation = widget.conversationId.isEmpty
-        ? null
-        : chatProvider.conversations
-            .where((c) => c.id == widget.conversationId)
-            .firstOrNull;
-
-    final characterId = _characterId;
-    final character = characterId.isNotEmpty
-        ? context.watch<CharacterProvider>().getCharacterById(characterId)
-        : null;
-
-    final avatar = character?.avatar ?? conversation?.characterAvatar ?? '';
-    final displayName = character?.displayName ?? widget.characterName;
-
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(middle: Text(displayName)),
-      child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        children: [
-          _buildCharacterCard(conversation, avatar, displayName),
-          const SizedBox(height: 16),
-          _buildInfoSection(character),
-          if (widget.showChatManage && conversation != null) ...[
-            const SizedBox(height: 24),
-            _buildAutoMomentSection(),
-            const SizedBox(height: 16),
-            _buildProactiveGreetingSection(),
-            const SizedBox(height: 24),
-            _buildManageSection(),
-          ],
-          const SizedBox(height: 24),
-          _buildPromptPanel(character),
-        ],
-      ),
-    );
-  }
-
-  // ── 上半部分：角色卡 ──
   Widget _buildCharacterCard(
     Conversation? conversation,
     String avatar,
@@ -823,6 +783,49 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final chatProvider = context.watch<ChatProvider>();
+    final conversation = widget.conversationId.isEmpty
+        ? null
+        : chatProvider.conversations
+            .where((c) => c.id == widget.conversationId)
+            .firstOrNull;
+
+    final characterId = _characterId;
+    final character = characterId.isNotEmpty
+        ? context.watch<CharacterProvider>().getCharacterById(characterId)
+        : null;
+
+    final avatar = character?.avatar ?? conversation?.characterAvatar ?? '';
+    final displayName = character?.displayName ?? widget.characterName;
+
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(middle: Text(displayName)),
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        children: [
+          _buildCharacterCard(conversation, avatar, displayName),
+          const SizedBox(height: 16),
+          _buildInfoSection(character),
+          if (widget.showChatManage && conversation != null) ...[
+            const SizedBox(height: 24),
+            _buildAutoMomentSection(),
+            const SizedBox(height: 16),
+            _buildProactiveGreetingSection(),
+            const SizedBox(height: 24),
+            _buildManageSection(),
+          ],
+          const SizedBox(height: 24),
+          _buildPromptPanel(character),
+        ],
+      ),
+    );
+  }
+
+  // ── 上半部分：角色卡 ──
+
 
   /// 进入通讯录角色空间页（角色详情：背景图 + 朋友圈）
   void _openCharacterSpace() {
@@ -1369,7 +1372,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   margin: const EdgeInsets.only(left: 16),
                   color: context.separatorColor,
                 ),
-                _AutoMomentPickerSection(
+                AutoMomentPickerSection(
                   key: ValueKey('auto_moment_picker_$_characterId'),
                   initialPeriodHours: config.periodHours,
                   initialCount: config.count,
@@ -1463,7 +1466,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   margin: const EdgeInsets.only(left: 16),
                   color: context.separatorColor,
                 ),
-                _ProactiveGreetingPickerSection(
+                ProactiveGreetingPickerSection(
                   key: ValueKey('proactive_greeting_picker_$_characterId'),
                   initialIdleHours: config.idleHours,
                   onChanged: (h) =>
@@ -1796,337 +1799,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 }
 
-/// 「发送频率」可折叠区块（drawer 形式）：
-/// 平时只显示一行摘要，点击标题行伸出滚轮，修改后再点标题行收回。
-class _AutoMomentPickerSection extends StatefulWidget {
-  final int initialPeriodHours;
-  final int initialCount;
-  final ValueChanged<int> onPeriodChanged;
-  final ValueChanged<int> onCountChanged;
 
-  const _AutoMomentPickerSection({
-    super.key,
-    required this.initialPeriodHours,
-    required this.initialCount,
-    required this.onPeriodChanged,
-    required this.onCountChanged,
-  });
 
-  @override
-  State<_AutoMomentPickerSection> createState() =>
-      _AutoMomentPickerSectionState();
-}
 
-class _AutoMomentPickerSectionState extends State<_AutoMomentPickerSection> {
-  bool _expanded = false;
 
-  int _periodIndex(int hours) {
-    final idx = AutoMomentProvider.periodOptions.indexOf(hours);
-    return idx < 0 ? 3 : idx; // 默认 3 天（index 3）
-  }
 
-  void _toggle() => setState(() => _expanded = !_expanded);
 
-  @override
-  Widget build(BuildContext context) {
-    final label = AutoMomentProvider
-        .periodLabels[_periodIndex(widget.initialPeriodHours)];
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 标题行（父节点）：点击展开 / 收回滚轮
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _toggle,
-          child: Container(
-            color: context.listBgColor,
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-            child: Row(
-              children: [
-                Icon(
-                  CupertinoIcons.clock,
-                  size: 20,
-                  color: context.textPrimaryColor,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '发送频率',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: context.textPrimaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '每 $label 发 ${widget.initialCount} 条',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textSecondaryColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  _expanded
-                      ? CupertinoIcons.chevron_up
-                      : CupertinoIcons.chevron_down,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
-              ],
-            ),
-          ),
-        ),
-        // 展开内容：滚轮（AnimatedSize 平滑伸缩）
-        AnimatedSize(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          alignment: Alignment.topCenter,
-          child: _expanded
-              ? _AutoMomentPicker(
-                  initialPeriodHours: widget.initialPeriodHours,
-                  initialCount: widget.initialCount,
-                  onPeriodChanged: widget.onPeriodChanged,
-                  onCountChanged: widget.onCountChanged,
-                )
-              : const SizedBox(width: double.infinity),
-        ),
-      ],
-    );
-  }
-}
 
-class _AutoMomentPicker extends StatefulWidget {
-  final int initialPeriodHours;
-  final int initialCount;
-  final ValueChanged<int> onPeriodChanged;
-  final ValueChanged<int> onCountChanged;
 
-  const _AutoMomentPicker({
-    required this.initialPeriodHours,
-    required this.initialCount,
-    required this.onPeriodChanged,
-    required this.onCountChanged,
-  });
 
-  @override
-  State<_AutoMomentPicker> createState() => _AutoMomentPickerState();
-}
 
-class _AutoMomentPickerState extends State<_AutoMomentPicker> {
-  late FixedExtentScrollController _periodController;
-  late FixedExtentScrollController _countController;
 
-  @override
-  void initState() {
-    super.initState();
-    _periodController = FixedExtentScrollController(
-      initialItem: _periodIndex(widget.initialPeriodHours),
-    );
-    _countController = FixedExtentScrollController(
-      initialItem: widget.initialCount - 1,
-    );
-  }
-
-  @override
-  void dispose() {
-    _periodController.dispose();
-    _countController.dispose();
-    super.dispose();
-  }
-
-  int _periodIndex(int hours) {
-    final idx = AutoMomentProvider.periodOptions.indexOf(hours);
-    return idx < 0 ? 3 : idx; // 默认 3 天（index 3）
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 160,
-      child: Row(
-        children: [
-          Expanded(
-            child: CupertinoPicker(
-              scrollController: _periodController,
-              itemExtent: 32,
-              onSelectedItemChanged: (i) =>
-                  widget.onPeriodChanged(AutoMomentProvider.periodOptions[i]),
-              children: AutoMomentProvider.periodLabels
-                  .map((l) => Center(
-                        child: Text(
-                          l,
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: context.textPrimaryColor,
-                          ),
-                        ),
-                      ))
-                  .toList(),
-            ),
-          ),
-          Text(
-            '每',
-            style: TextStyle(fontSize: 13, color: context.textSecondaryColor),
-          ),
-          Expanded(
-            child: CupertinoPicker(
-              scrollController: _countController,
-              itemExtent: 32,
-              onSelectedItemChanged: (i) => widget.onCountChanged(i + 1),
-              children: [
-                for (var n = AutoMomentProvider.minCount;
-                    n <= AutoMomentProvider.maxCount;
-                    n++)
-                  Center(
-                    child: Text(
-                      '$n',
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: context.textPrimaryColor,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Text(
-            '条',
-            style: TextStyle(fontSize: 13, color: context.textSecondaryColor),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 主动问候频率选择器：类似朋友圈的 drawer 滚轮，选择空闲时长
-class _ProactiveGreetingPickerSection extends StatefulWidget {
-  final int initialIdleHours;
-  final ValueChanged<int> onChanged;
-
-  const _ProactiveGreetingPickerSection({
-    super.key,
-    required this.initialIdleHours,
-    required this.onChanged,
-  });
-
-  @override
-  State<_ProactiveGreetingPickerSection> createState() =>
-      _ProactiveGreetingPickerSectionState();
-}
-
-class _ProactiveGreetingPickerSectionState
-    extends State<_ProactiveGreetingPickerSection> {
-  bool _expanded = false;
-  late FixedExtentScrollController _controller;
-
-  int _idleIndex(int hours) {
-    final idx = ProactiveGreetingProvider.idleOptions.indexOf(hours);
-    return idx < 0 ? 3 : idx; // 默认 3 天
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = FixedExtentScrollController(
-      initialItem: _idleIndex(widget.initialIdleHours),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final label = ProactiveGreetingProvider
-        .idleLabels[_idleIndex(widget.initialIdleHours)];
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Container(
-            color: context.listBgColor,
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-            child: Row(
-              children: [
-                Icon(
-                  CupertinoIcons.clock,
-                  size: 20,
-                  color: context.textPrimaryColor,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '触发频率',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: context.textPrimaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textSecondaryColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  _expanded
-                      ? CupertinoIcons.chevron_up
-                      : CupertinoIcons.chevron_down,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
-              ],
-            ),
-          ),
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          alignment: Alignment.topCenter,
-          child: _expanded
-              ? SizedBox(
-                  height: 160,
-                  child: CupertinoPicker(
-                    scrollController: _controller,
-                    itemExtent: 32,
-                    onSelectedItemChanged: (i) => widget
-                        .onChanged(ProactiveGreetingProvider.idleOptions[i]),
-                    children: ProactiveGreetingProvider.idleLabels
-                        .map((l) => Center(
-                              child: Text(
-                                l,
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  color: context.textPrimaryColor,
-                                ),
-                              ),
-                            ))
-                        .toList(),
-                  ),
-                )
-              : const SizedBox(width: double.infinity),
-        ),
-      ],
-    );
-  }
-}
