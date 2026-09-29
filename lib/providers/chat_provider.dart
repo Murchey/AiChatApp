@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import '../data/local_data_store.dart';
 import '../models/message.dart';
 import '../models/conversation.dart';
 import '../services/llm_service.dart';
@@ -71,8 +72,8 @@ class ChatProvider extends ChangeNotifier {
       _roleplayChoices[conversationId] = clean;
     }
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
+    await LocalDataStore.saveChatMeta(
+      'roleplay_choices',
       _roleplayChoicesKey,
       jsonEncode(_roleplayChoices),
     );
@@ -215,12 +216,18 @@ class ChatProvider extends ChangeNotifier {
   /// 全部 JSON 反序列化与上下文 token 重算都在后台 isolate 中执行，
   /// 避免大量聊天记录在主线程解码拖慢启动。
   Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
+    // LocalDataStore：优先 SQLite，无数据回退 SharedPreferences
     final raw = _RawStore(
-      conversationsJson: prefs.getString(_conversationsKey),
-      messagesJson: prefs.getString(_messagesKey),
-      contextTokensJson: prefs.getString(_contextTokensKey),
-      systemTokensJson: prefs.getString(_systemTokensKey),
+      conversationsJson: await LocalDataStore.loadConversationsJson(),
+      messagesJson: await LocalDataStore.loadMessagesJson(),
+      contextTokensJson: await LocalDataStore.loadChatMeta(
+        'context_tokens',
+        _contextTokensKey,
+      ),
+      systemTokensJson: await LocalDataStore.loadChatMeta(
+        'system_tokens',
+        _systemTokensKey,
+      ),
     );
     _DecodedStore? decoded;
     try {
@@ -244,7 +251,10 @@ class ChatProvider extends ChangeNotifier {
     }
     try {
       _roleplayChoices.clear();
-      final rawChoices = prefs.getString(_roleplayChoicesKey);
+      final rawChoices = await LocalDataStore.loadChatMeta(
+        'roleplay_choices',
+        _roleplayChoicesKey,
+      );
       if (rawChoices != null && rawChoices.isNotEmpty) {
         final decodedChoices = jsonDecode(rawChoices) as Map<String, dynamic>;
         _roleplayChoices.addAll(decodedChoices.map(
@@ -290,11 +300,19 @@ class ChatProvider extends ChangeNotifier {
           systemTokens: Map.of(_systemTokens),
         );
         final encoded = await compute(_encodePersistSnapshot, snapshot);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_conversationsKey, encoded['conversations']!);
-        await prefs.setString(_messagesKey, encoded['messages']!);
-        await prefs.setString(_contextTokensKey, encoded['contextTokens']!);
-        await prefs.setString(_systemTokensKey, encoded['systemTokens']!);
+        // 双写：SharedPreferences + SQLite
+        await LocalDataStore.saveConversationsJson(encoded['conversations']!);
+        await LocalDataStore.saveMessagesJson(encoded['messages']!);
+        await LocalDataStore.saveChatMeta(
+          'context_tokens',
+          _contextTokensKey,
+          encoded['contextTokens']!,
+        );
+        await LocalDataStore.saveChatMeta(
+          'system_tokens',
+          _systemTokensKey,
+          encoded['systemTokens']!,
+        );
       } while (_persistDirty);
     } catch (e) {
       // 持久化失败不阻塞主流程（多为平台通道/磁盘异常），下次变更会再次尝试
@@ -1608,6 +1626,19 @@ class ChatProvider extends ChangeNotifier {
     await prefs.remove(_contextTokensKey);
     await prefs.remove(_systemTokensKey);
     await prefs.remove(_roleplayChoicesKey);
+    try {
+      await LocalDataStore.saveConversationsJson('[]');
+      await LocalDataStore.saveMessagesJson('{}');
+      await LocalDataStore.saveChatMeta('context_tokens', _contextTokensKey, '{}');
+      await LocalDataStore.saveChatMeta('system_tokens', _systemTokensKey, '{}');
+      await LocalDataStore.saveChatMeta(
+        'roleplay_choices',
+        _roleplayChoicesKey,
+        '{}',
+      );
+    } catch (e) {
+      debugPrint('[ChatProvider] 清空 SQLite 失败: $e');
+    }
     notifyListeners();
   }
 

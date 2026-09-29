@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/local_data_store.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
 import '../models/visibility_group.dart';
@@ -104,11 +105,16 @@ class CharacterProvider extends ChangeNotifier {
     // 读取本地原始数据（不含解析），随后把 JSON 反序列化、默认角色合并、
     // "自己"账号构建、动态 id 归一化等重活全部放到后台 isolate，
     // 避免含 base64 头像/背景的大 JSON 在主线程解码拖慢启动首帧。
+    // LocalDataStore：优先 SQLite，无数据回退 SharedPreferences。
     final prefs = await SharedPreferences.getInstance();
+    final stored = await LocalDataStore.loadCharactersJson();
+    final deletedIds = await LocalDataStore.loadDeletedDefaultIds();
+    final visibilityGroupsStr =
+        await LocalDataStore.loadVisibilityGroupsJson();
     final raw = _CharacterRawStore(
-      stored: prefs.getString(_storageKey),
-      deletedIds: prefs.getStringList(_deletedKey) ?? const [],
-      visibilityGroupsStr: prefs.getString(_visibilityGroupsKey),
+      stored: stored,
+      deletedIds: deletedIds,
+      visibilityGroupsStr: visibilityGroupsStr,
       nickname: prefs.getString('user_nickname') ?? '',
       avatar: prefs.getString('user_avatar') ?? '',
       signature: prefs.getString('user_signature') ?? '',
@@ -363,8 +369,7 @@ class CharacterProvider extends ChangeNotifier {
     final deletedDefaults = idSet.intersection(defaultIds);
     if (deletedDefaults.isNotEmpty) {
       _deletedDefaultIds.addAll(deletedDefaults);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(_deletedKey, _deletedDefaultIds.toList());
+      await LocalDataStore.saveDeletedDefaultIds(_deletedDefaultIds.toList());
     }
   }
 
@@ -383,8 +388,8 @@ class CharacterProvider extends ChangeNotifier {
         // 含 base64 头像/背景的大 JSON 在后台 isolate 序列化，避免主线程卡顿
         final snapshot = List<Character>.of(_characters);
         final encoded = await compute(_encodeCharacterStore, snapshot);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_storageKey, encoded);
+        // 双写：SharedPreferences + SQLite
+        await LocalDataStore.saveCharactersJson(encoded);
       } while (_persistDirty);
     } catch (e) {
       // 持久化失败不阻塞主流程（多为平台通道/磁盘异常），下次变更会再次尝试
@@ -395,9 +400,7 @@ class CharacterProvider extends ChangeNotifier {
   }
 
   Future<void> _persistVisibilityGroups() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _visibilityGroupsKey,
+    await LocalDataStore.saveVisibilityGroupsJson(
       jsonEncode(_visibilityGroups.map((g) => g.toJson()).toList()),
     );
   }
@@ -413,6 +416,14 @@ class CharacterProvider extends ChangeNotifier {
     await prefs.remove(_storageKey);
     await prefs.remove(_visibilityGroupsKey);
     await prefs.remove(_deletedKey);
+    // SQLite 侧同步清空角色数据（会话/消息由 ChatProvider 负责）
+    try {
+      await LocalDataStore.saveCharactersJson('{}');
+      await LocalDataStore.saveDeletedDefaultIds(const []);
+      await LocalDataStore.saveVisibilityGroupsJson('[]');
+    } catch (e) {
+      debugPrint('[CharacterProvider] 清空 SQLite 角色失败: $e');
+    }
     await loadCharacters();
   }
 }

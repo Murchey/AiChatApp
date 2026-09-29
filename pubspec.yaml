@@ -31,11 +31,15 @@ dependencies:
   file_picker: ^10.3.8
   audioplayers: ^6.1.0
   pointycastle: ^4.0.0
+  drift: ^2.25.1
+  drift_flutter: ^0.2.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.1
+  drift_dev: ^2.25.1
+  build_runner: ^2.4.13
 
 flutter:
   uses-material-design: true
