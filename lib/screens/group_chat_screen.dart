@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
@@ -25,6 +24,8 @@ import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
 import '../services/memory_pool_builder.dart';
 import '../utils/file_picker_helper.dart';
+import '../widgets/chat/chat_bubble_menu.dart';
+import '../widgets/chat/chat_message_chrome.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/chat_title_bar.dart';
 import '../widgets/character_avatar.dart';
@@ -47,9 +48,6 @@ class GroupChatScreen extends StatefulWidget {
 class _GroupChatScreenState extends State<GroupChatScreen>
     with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
-  static final DateFormat _timeFmt = DateFormat('HH:mm');
-  static final DateFormat _dateFmt = DateFormat('M月d日 HH:mm');
-  static final DateFormat _fullFmt = DateFormat('yyyy年M月d日 HH:mm');
 
   GroupChatProvider? _groupProvider;
 
@@ -544,7 +542,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       ),
     );
     try {
-      final result = await LLMService.generatePlotSuggestions(
+      final result = await generatePlotSuggestions(
         model: model,
         systemPrompt: systemPrompt,
         historyMessages: historyMessages,
@@ -869,78 +867,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         (_menuPadding + _menuBorder) * 2;
   }
 
-  Widget _buildMenuPanel(List<Widget> items) {
-    final rowCount = _menuRowCount(items.length);
-    // 各行尽量均分（7 项 → 3/2/2），避免出现只剩 1 项的孤行
-    final base = items.length ~/ rowCount;
-    final extra = items.length % rowCount;
-    final rows = <Widget>[];
-    var index = 0;
-    for (var r = 0; r < rowCount; r++) {
-      final count = base + (r < extra ? 1 : 0);
-      final rowItems = items.sublist(index, index + count);
-      index += count;
-      // 不满一行的居中，保持整体对称
-      rows.add(
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var i = 0; i < rowItems.length; i++) ...[
-              if (i > 0) const SizedBox(width: _menuSpacing),
-              rowItems[i],
-            ],
-          ],
-        ),
-      );
-      if (r != rowCount - 1) rows.add(const SizedBox(height: _menuSpacing));
-    }
-    return Container(
-      padding: const EdgeInsets.all(_menuPadding),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey6.resolveFrom(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: CupertinoColors.systemGrey4.resolveFrom(context),
-          width: _menuBorder,
-        ),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: rows),
-    );
-  }
+  Widget _buildMenuPanel(List<Widget> items) => ChatBubbleMenuPanel(items: items);
 
-  Widget _menuItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox(
-        width: _menuCellWidth,
-        height: _menuCellHeight,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 20, color: context.textPrimaryColor),
-            const SizedBox(height: 3),
-            // 网格为固定尺寸：忽略系统字号缩放，避免文字撑破按钮
-            MediaQuery.withNoTextScaling(
-              child: Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1.15,
-                  color: context.textPrimaryColor,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+
+  Widget _menuItem({required IconData icon, required String label, required VoidCallback onTap}) => ChatBubbleMenuItem(icon: icon, label: label, onTap: onTap);
+
 
   // ─── 功能检测（模型是否支持图片发送） ─────────────────────
 
@@ -1139,33 +1070,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
-  Widget _buildTimeLabel(DateTime time) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final day = DateTime(time.year, time.month, time.day);
-    String text;
-    if (day == today) {
-      text = _timeFmt.format(time);
-    } else if (day.year == now.year) {
-      text = _dateFmt.format(time);
-    } else {
-      text = _fullFmt.format(time);
-    }
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: context.textSecondaryColor.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(fontSize: 11, color: context.textSecondaryColor),
-        ),
-      ),
-    );
-  }
+  Widget _buildTimeLabel(DateTime time) => ChatTimeLabel(time: time);
+
 
   void _openGroupDetail() {
     Navigator.push(

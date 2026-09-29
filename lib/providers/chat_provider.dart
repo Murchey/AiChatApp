@@ -531,7 +531,7 @@ Future<List<String>> _doRunRoleplayStream({
     ChatUsage streamUsage = const ChatUsage();
     final streamWatch = Stopwatch()..start();
     try {
-      await for (final chunk in LLMService.streamCompletion(
+      await for (final chunk in streamCompletion(
         model: model,
         messages: [
           {'role': 'system', 'content': prompt},
@@ -708,7 +708,7 @@ Future<List<String>> _doRunRoleplayStream({
           historyMessages ?? _buildHistory(conversationId, contextCount);
       // 图片消息走 OpenAI 兼容视觉格式，让角色"看到"图片后回复
       if (imagePath != null && imagePath.isNotEmpty) {
-        return await LLMService.generateVisionReply(
+        return await generateVisionReply(
           model: model,
           systemPrompt: prompt,
           historyMessages: history,
@@ -717,7 +717,7 @@ Future<List<String>> _doRunRoleplayStream({
           roleplayMode: roleplayMode,
         );
       }
-      return await LLMService.generateMessages(
+      return await generateMessages(
         model: model,
         systemPrompt: prompt,
         historyMessages: history,

@@ -178,7 +178,7 @@ class ChatProactiveReply {
           roleplayProgressionStyle: chatSettings.roleplayProgressionStyle.name,
           roleplayMode: true,
         );
-        final choiceResult = await LLMService.generateRoleplayChoices(
+        final choiceResult = await generateRoleplayChoices(
           model: model,
           systemPrompt: choicePrompt,
           historyMessages: chatProvider.getRecentHistoryForCharacter(

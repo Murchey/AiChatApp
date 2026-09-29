@@ -629,7 +629,7 @@ class GroupChatProvider extends ChangeNotifier {
               '"${quote.content}"，请围绕这条消息回复。$outputInstruction';
         }
 
-        final result = await LLMService.generateMessages(
+        final result = await generateMessages(
           model: member.model,
           systemPrompt: systemPrompt,
           historyMessages: history,

@@ -23,6 +23,7 @@ import '../services/backup_schedule_service.dart';
 import '../services/backup_service.dart';
 import '../services/cloud_backup_service.dart';
 import '../utils/file_picker_helper.dart';
+import '../widgets/settings/backup_ui.dart';
 import 'backup_cloud_settings_screen.dart';
 import 'backup_password_screen.dart';
 import 'backup_schedule_screen.dart';
@@ -876,78 +877,14 @@ class _BackupScreenState extends State<BackupScreen> {
     );
   }
 
-  Widget _emptyHint(String text) {
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 13,
-          color: context.textSecondaryColor,
-        ),
-      ),
-    );
-  }
+  Widget _emptyHint(String text) => BackupEmptyHint(text: text);
 
-  Widget _section({
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            title,
-            style: TextStyle(
-              fontSize: 13,
-              color: context.textSecondaryColor,
-            ),
-          ),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: context.listBgColor,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(children: children),
-        ),
-      ],
-    );
-  }
 
-  Widget _actionTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    VoidCallback? onTap,
-    bool enabled = true,
-  }) {
-    final muted = !enabled || onTap == null;
-    return CupertinoListTile(
-      leading: Icon(
-        icon,
-        color: muted ? context.textSecondaryColor : context.accentColor,
-      ),
-      title: Text(title),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          color: context.textSecondaryColor,
-        ),
-      ),
-      trailing: Icon(
-        CupertinoIcons.chevron_right,
-        size: 16,
-        color: context.textSecondaryColor,
-      ),
-      onTap: muted ? null : onTap,
-    );
-  }
+  Widget _section({required String title, required List<Widget> children}) => BackupSection(title: title, children: children);
+
+
+  Widget _actionTile({required IconData icon, required String title, required String subtitle, VoidCallback? onTap, bool enabled = true}) => BackupActionTile(icon: icon, title: title, subtitle: subtitle, onTap: onTap, enabled: enabled);
+
 
   Widget _localBackupTile(File file) {
     final name = file.path.split(RegExp(r'[/\\]')).last;
@@ -1000,87 +937,11 @@ class _BackupScreenState extends State<BackupScreen> {
     );
   }
 
-  Widget _backupTileBody({
-    required String title,
-    required String meta,
-    required bool encrypted,
-    required List<Widget> actions,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: context.textPrimaryColor,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (encrypted)
-                Container(
-                  margin: const EdgeInsets.only(left: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: context.accentColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    '加密',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: context.accentColor,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            meta,
-            style: TextStyle(
-              fontSize: 12,
-              color: context.textSecondaryColor,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(spacing: 8, runSpacing: 8, children: actions),
-        ],
-      ),
-    );
-  }
+  Widget _backupTileBody({required String title, required String meta, required bool encrypted, required List<Widget> actions}) => BackupTileBody(title: title, meta: meta, encrypted: encrypted, actions: actions);
 
-  Widget _miniButton({
-    required String label,
-    required VoidCallback? onTap,
-    bool destructive = false,
-  }) {
-    final color = destructive
-        ? CupertinoColors.destructiveRed
-        : context.accentColor;
-    return CupertinoButton(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      minimumSize: const Size(0, 32),
-      color: color.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(8),
-      onPressed: onTap,
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 13,
-          color: color,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
+
+  Widget _miniButton({required String label, required VoidCallback? onTap, bool destructive = false}) => BackupMiniButton(label: label, onTap: onTap, destructive: destructive);
+
 }
 
 

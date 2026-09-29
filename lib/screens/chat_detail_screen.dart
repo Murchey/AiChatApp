@@ -6,11 +6,15 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../widgets/chat/chat_detail_manage_section.dart';
+import '../widgets/chat/chat_detail_character_card.dart';
+import '../widgets/chat/chat_detail_auto_sections.dart';
+import '../widgets/chat/chat_detail_prompt_panel.dart';
+import '../widgets/chat/character_model_picker.dart';
+import '../widgets/chat/edit_field_dialog.dart';
+import '../widgets/chat/chat_info_tile.dart';
 import '../models/character.dart';
 import '../models/conversation.dart';
-import '../models/visibility_group.dart';
-import '../providers/auto_moment_provider.dart';
-import '../providers/proactive_greeting_provider.dart';
 import '../providers/api_provider.dart';
 import '../providers/chat_background_provider.dart';
 import '../providers/chat_provider.dart';
@@ -19,14 +23,11 @@ import '../services/prompt_builder.dart';
 import '../utils/app_toast.dart';
 import '../utils/avatar_picker.dart';
 import '../utils/file_utils.dart';
-import '../widgets/character_avatar.dart';
 import 'character_detail_screen.dart';
 import 'create_group_screen.dart';
 import 'image_crop_screen.dart';
 import 'memory_point_manage_screen.dart';
 import 'prompt_edit_screen.dart';
-import 'moment_visibility_screen.dart';
-import '../widgets/chat/auto_moment_pickers.dart';
 
 /// 聊天详情/角色资料：上半部分可编辑角色卡（备注/昵称/个性签名/定位地区），
 /// 中部聊天管理（聊天场景），最下方折叠的提示词设置 panel。
@@ -196,7 +197,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         placeholder: '如 Cherry / 茉莉',
                         onTap: () {
                           Navigator.pop(ctx);
-                          _editField(
+                          showEditFieldDialog(context, 
                             title: '角色音色 ID',
                             initial: character?.voiceId ?? '',
                             hint: '填写 TTS 提供商的 voice',
@@ -213,7 +214,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         placeholder: '如：温柔、清晰、语速偏慢',
                         onTap: () {
                           Navigator.pop(ctx);
-                          _editField(
+                          showEditFieldDialog(context, 
                             title: '音色描述',
                             initial: character?.voiceInstructions ?? '',
                             hint: '例如：温柔、清晰、语速偏慢，带有亲近感',
@@ -244,7 +245,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         placeholder: '如：温柔、克制、语速稍慢',
                         onTap: () {
                           Navigator.pop(ctx);
-                          _editField(
+                          showEditFieldDialog(context, 
                             title: '音色描述',
                             initial: character?.voiceInstructions ?? '',
                             hint: '例如：温柔、清晰、语速偏慢，带有亲近感',
@@ -378,59 +379,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           onPressed: () => Navigator.pop(ctx),
           child: const Text('取消'),
         ),
-      ),
-    );
-  }
-
-  /// 弹出单字段编辑框
-  void _editField({
-    required String title,
-    required String initial,
-    required String hint,
-    bool multiline = false,
-    int? maxLength,
-    required void Function(String value) onSave,
-  }) {
-    final controller = TextEditingController(text: initial);
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text(title),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: multiline
-              ? CupertinoTextField(
-                  controller: controller,
-                  maxLines: 4,
-                  minLines: 2,
-                  padding: const EdgeInsets.all(10),
-                  placeholder: hint,
-                  maxLength: maxLength,
-                )
-              : CupertinoTextField(
-                  controller: controller,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  placeholder: hint,
-                  maxLength: maxLength,
-                ),
-        ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('取消'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () {
-              onSave(controller.text.trim());
-              Navigator.pop(ctx);
-            },
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
   }
@@ -673,114 +621,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final character = characterId.isNotEmpty
         ? context.read<CharacterProvider>().getCharacterById(characterId)
         : null;
-    final signature = character?.signature ?? '';
-    final region = character?.region ?? '';
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: context.listBgColor,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      // 点击角色栏目（头像除外）进入通讯录角色空间页
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _openCharacterSpace,
-        child: Row(
-          children: [
-            // 头像（点击更换，形状跟随全局设置）
-            GestureDetector(
-              onTap: _showAvatarSourceSheet,
-              child: Stack(
-                children: [
-                  CharacterAvatar(
-                    base64: avatar,
-                    size: 72,
-                    borderRadius: BorderRadius.circular(12),
-                    iconSize: 36,
-                  ),
-                  // 右下角相机角标
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: BoxDecoration(
-                        color: context.accentColor,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: context.listBgColor,
-                          width: 1.5,
-                        ),
-                      ),
-                      child: const Icon(
-                        CupertinoIcons.camera_fill,
-                        size: 10,
-                        color: CupertinoColors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayName,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: context.textPrimaryColor,
-                    ),
-                  ),
-                  if (signature.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      signature,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.4,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
-                  ],
-                  if (region.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Icon(
-                          CupertinoIcons.location,
-                          size: 13,
-                          color: context.textSecondaryColor,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          region,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textSecondaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            Icon(
-              CupertinoIcons.chevron_right,
-              size: 18,
-              color: context.textSecondaryColor,
-            ),
-          ],
-        ),
-      ),
+    return ChatDetailCharacterCard(
+      avatar: avatar,
+      displayName: displayName,
+      signature: character?.signature ?? '',
+      region: character?.region ?? '',
+      onTapCard: _openCharacterSpace,
+      onTapAvatar: _showAvatarSourceSheet,
     );
   }
 
@@ -811,14 +658,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           _buildInfoSection(character),
           if (widget.showChatManage && conversation != null) ...[
             const SizedBox(height: 24),
-            _buildAutoMomentSection(),
+            buildAutoMomentSection(context, _characterId, onChanged: () => setState(() {})),
             const SizedBox(height: 16),
-            _buildProactiveGreetingSection(),
+            buildProactiveGreetingSection(context, _characterId),
             const SizedBox(height: 24),
             _buildManageSection(),
           ],
           const SizedBox(height: 24),
-          _buildPromptPanel(character),
+          ChatDetailPromptPanel(onOpenPrompt: _togglePrompt, onOpenMemory: _openMemoryManage),
         ],
       ),
     );
@@ -871,38 +718,38 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       ),
       child: Column(
         children: [
-          _infoTile(
+          ChatInfoTile(
             icon: CupertinoIcons.person,
             label: '角色昵称',
             value: name,
             placeholder: '未设置',
-            onTap: () => _editField(
+            onTap: () => showEditFieldDialog(context, 
               title: '角色昵称',
               initial: name,
               hint: '请输入角色昵称',
               onSave: (v) => _saveField(name: v),
             ),
           ),
-          _separator(),
-          _infoTile(
+          const ChatSectionSeparator(),
+          ChatInfoTile(
             icon: CupertinoIcons.tag,
             label: '角色备注',
             value: remark,
             placeholder: '未设置，默认显示昵称',
-            onTap: () => _editField(
+            onTap: () => showEditFieldDialog(context, 
               title: '角色备注',
               initial: remark,
               hint: '设置后聊天列表将优先显示备注',
               onSave: (v) => _saveField(remark: v),
             ),
           ),
-          _separator(),
-          _infoTile(
+          const ChatSectionSeparator(),
+          ChatInfoTile(
             icon: CupertinoIcons.quote_bubble,
             label: '个性签名',
             value: signature,
             placeholder: '未设置',
-            onTap: () => _editField(
+            onTap: () => showEditFieldDialog(context, 
               title: '个性签名',
               initial: signature,
               hint: '填写角色的个性签名',
@@ -910,26 +757,26 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               onSave: (v) => _saveField(signature: v),
             ),
           ),
-          _separator(),
-          _infoTile(
+          const ChatSectionSeparator(),
+          ChatInfoTile(
             icon: CupertinoIcons.location,
             label: '定位地区',
             value: region,
             placeholder: '未设置',
-            onTap: () => _editField(
+            onTap: () => showEditFieldDialog(context, 
               title: '定位地区',
               initial: region,
               hint: '例如：中国 · 上海',
               onSave: (v) => _saveField(region: v),
             ),
           ),
-          _separator(),
-          _infoTile(
+          const ChatSectionSeparator(),
+          ChatInfoTile(
             icon: CupertinoIcons.person_2,
             label: '与我的关系',
             value: userRelationship,
             placeholder: '未设置',
-            onTap: () => _editField(
+            onTap: () => showEditFieldDialog(context, 
               title: '与我的关系',
               initial: userRelationship,
               hint: '例如：青梅竹马 / 刚认识',
@@ -937,8 +784,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               onSave: (v) => _saveField(userRelationship: v),
             ),
           ),
-          _separator(),
-          _infoTile(
+          const ChatSectionSeparator(),
+          ChatInfoTile(
             icon: CupertinoIcons.time,
             label: '活跃时段',
             value: activePeriod,
@@ -948,8 +795,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               activeEnd: activeEnd,
             ),
           ),
-          _separator(),
-          _infoTile(
+          const ChatSectionSeparator(),
+          ChatInfoTile(
             icon: CupertinoIcons.waveform,
             label: '音频与声音',
             value: (character?.voiceType ?? 'preset') == 'clone'
@@ -961,13 +808,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             placeholder: '未设置',
             onTap: () => _showVoiceDrawer(context),
           ),
-          _separator(),
-          _infoTile(
+          const ChatSectionSeparator(),
+          ChatInfoTile(
             icon: CupertinoIcons.chat_bubble_2,
             label: '使用的模型',
             value: modelLabel,
             placeholder: '跟随全局模型',
-            onTap: _showModelPicker,
+            onTap: () => showCharacterModelPicker(context, _characterId),
           ),
         ],
       ),
@@ -977,144 +824,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   /// 弹出角色模型选择面板：
   /// 1. 跟随全局模型（使用「聊天设置」中的全局聊天模型）
   /// 2. 缺省模型（全局模型未配置时的兜底，保证角色群聊中总能应答）
-  /// 3. 指定模型（该角色始终使用此模型）
-  void _showModelPicker() {
-    final characterId = _characterId;
-    if (characterId.isEmpty) return;
-    final api = context.read<ApiProvider>();
-    final character =
-        context.read<CharacterProvider>().getCharacterById(characterId);
-    final currentId = character?.modelId ?? '';
-    final defaultId = character?.defaultModelId ?? '';
 
-    showCupertinoModalPopup(
-      context: context,
-      builder: (ctx) => Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.7,
-        ),
-        decoration: BoxDecoration(
-          color: context.listBgColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 14),
-                child: Text(
-                  '选择角色使用的模型',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    CupertinoListTile(
-                      leading: Icon(
-                        currentId.isEmpty && defaultId.isEmpty
-                            ? CupertinoIcons.check_mark_circled_solid
-                            : CupertinoIcons.circle,
-                        color: currentId.isEmpty && defaultId.isEmpty
-                            ? context.accentColor
-                            : context.textSecondaryColor,
-                      ),
-                      title: const Text('跟随全局模型'),
-                      subtitle: Text(
-                        '使用「聊天设置」中选中的全局聊天模型',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textSecondaryColor,
-                        ),
-                      ),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        final provider = context.read<CharacterProvider>();
-                        provider.updateCharacterModel(characterId, '');
-                        provider.updateCharacterDefaultModel(characterId, '');
-                      },
-                    ),
-                    _pickerSectionLabel('缺省模型（全局模型未设置时的兜底）'),
-                    for (final m in api.models)
-                      CupertinoListTile(
-                        leading: Icon(
-                          currentId.isEmpty && m.id == defaultId
-                              ? CupertinoIcons.check_mark_circled_solid
-                              : CupertinoIcons.circle,
-                          color: currentId.isEmpty && m.id == defaultId
-                              ? context.accentColor
-                              : context.textSecondaryColor,
-                        ),
-                        title: Text(m.displayName),
-                        subtitle: Text(
-                          m.modelName,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textSecondaryColor,
-                          ),
-                        ),
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          final provider = context.read<CharacterProvider>();
-                          provider.updateCharacterDefaultModel(
-                            characterId,
-                            m.id,
-                          );
-                          provider.updateCharacterModel(characterId, '');
-                        },
-                      ),
-                    _pickerSectionLabel('指定模型（始终使用该模型）'),
-                    for (final m in api.models)
-                      CupertinoListTile(
-                        leading: Icon(
-                          m.id == currentId
-                              ? CupertinoIcons.check_mark_circled_solid
-                              : CupertinoIcons.circle,
-                          color: m.id == currentId
-                              ? context.accentColor
-                              : context.textSecondaryColor,
-                        ),
-                        title: Text(m.displayName),
-                        subtitle: Text(
-                          m.modelName,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textSecondaryColor,
-                          ),
-                        ),
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          final provider = context.read<CharacterProvider>();
-                          provider.updateCharacterModel(characterId, m.id);
-                          provider.updateCharacterDefaultModel(characterId, '');
-                        },
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   /// 模型选择面板里的分组小标题
-  Widget _pickerSectionLabel(String text) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      alignment: Alignment.centerLeft,
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 12,
-          color: context.textSecondaryColor,
-        ),
-      ),
-    );
-  }
+
 
   /// 弹出活跃时段编辑面板：开始/结束两个时间选择器 + 不限/保存。
   /// 设定后在活跃时段内角色不会主动道别/说晚安，保持活跃继续聊天。
@@ -1285,488 +998,33 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   static String _fmtHm(DateTime t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-  Widget _infoTile({
-    required IconData icon,
-    required String label,
-    required String value,
-    required String placeholder,
-    required VoidCallback onTap,
-  }) {
-    return CupertinoListTile(
-      leading: Icon(icon, color: context.textPrimaryColor),
-      title: Text(
-        label,
-        style: TextStyle(color: context.textPrimaryColor),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 140),
-            child: Text(
-              value.isEmpty ? placeholder : value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 14,
-                color: value.isEmpty
-                    ? context.textSecondaryColor.withValues(alpha: 0.6)
-                    : context.textSecondaryColor,
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          Icon(
-            CupertinoIcons.chevron_right,
-            size: 14,
-            color: context.textSecondaryColor,
-          ),
-        ],
-      ),
-      onTap: onTap,
-    );
-  }
 
   // ── 自动发朋友圈 ──
-  Widget _buildAutoMomentSection() {
-    return Consumer<AutoMomentProvider>(
-      builder: (context, autoProvider, _) {
-        final config = autoProvider.configFor(_characterId);
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: context.listBgColor,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.camera,
-                  color: context.textPrimaryColor,
-                ),
-                title: Text(
-                  '自动发朋友圈',
-                  style: TextStyle(color: context.textPrimaryColor),
-                ),
-                subtitle: Text(
-                  config.enabled
-                      ? _describeConfig(config)
-                      : '让角色定时自动发布朋友圈，其他角色会像真人一样点赞评论',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.4,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: CupertinoSwitch(
-                  value: config.enabled,
-                  onChanged: (v) => autoProvider.setEnabled(_characterId, v),
-                ),
-              ),
-              if (config.enabled) ...[
-                Container(
-                  height: 0.5,
-                  margin: const EdgeInsets.only(left: 16),
-                  color: context.separatorColor,
-                ),
-                AutoMomentPickerSection(
-                  key: ValueKey('auto_moment_picker_$_characterId'),
-                  initialPeriodHours: config.periodHours,
-                  initialCount: config.count,
-                  onPeriodChanged: (h) =>
-                      autoProvider.setPeriod(_characterId, h),
-                  onCountChanged: (c) => autoProvider.setCount(_characterId, c),
-                ),
-                Container(
-                  height: 0.5,
-                  margin: const EdgeInsets.only(left: 16),
-                  color: context.separatorColor,
-                ),
-                CupertinoListTile(
-                  leading: Icon(
-                    CupertinoIcons.person_2,
-                    color: context.textPrimaryColor,
-                  ),
-                  title: Text(
-                    '谁可以互动',
-                    style: TextStyle(color: context.textPrimaryColor),
-                  ),
-                  subtitle: Text(
-                    _visibilityLabel(context, config.visibility),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                  trailing: Icon(
-                    CupertinoIcons.chevron_right,
-                    size: 16,
-                    color: context.textSecondaryColor,
-                  ),
-                  onTap: () => _openAutoMomentVisibility(
-                    context,
-                    autoProvider,
-                    config.visibility,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
+
 
   // ── 主动问候 ──
-  Widget _buildProactiveGreetingSection() {
-    return Consumer<ProactiveGreetingProvider>(
-      builder: (context, greetingProvider, _) {
-        final config = greetingProvider.configFor(_characterId);
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: context.listBgColor,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.text_bubble,
-                  color: context.textPrimaryColor,
-                ),
-                title: Text(
-                  '主动问候',
-                  style: TextStyle(color: context.textPrimaryColor),
-                ),
-                subtitle: Text(
-                  config.enabled
-                      ? _describeGreetingConfig(config)
-                      : '用户长时间未聊天时，角色会主动发消息问候',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.4,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: CupertinoSwitch(
-                  value: config.enabled,
-                  onChanged: (v) =>
-                      greetingProvider.setEnabled(_characterId, v),
-                ),
-              ),
-              if (config.enabled) ...[
-                Container(
-                  height: 0.5,
-                  margin: const EdgeInsets.only(left: 16),
-                  color: context.separatorColor,
-                ),
-                ProactiveGreetingPickerSection(
-                  key: ValueKey('proactive_greeting_picker_$_characterId'),
-                  initialIdleHours: config.idleHours,
-                  onChanged: (h) =>
-                      greetingProvider.setIdleHours(_characterId, h),
-                ),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
 
-  String _describeGreetingConfig(ProactiveGreetingConfig config) {
-    final idx = ProactiveGreetingProvider.idleOptions.indexOf(config.idleHours);
-    final label = ProactiveGreetingProvider.idleLabels[idx < 0 ? 3 : idx];
-    return '$label后，角色会主动发消息问候你';
-  }
 
-  String _describeConfig(AutoMomentConfig config) {
-    final idx = AutoMomentProvider.periodOptions.indexOf(config.periodHours);
-    final label = AutoMomentProvider.periodLabels[idx < 0 ? 3 : idx];
-    return '每 $label 发 ${config.count} 条，其他角色会像真人一样点赞评论';
-  }
+
+
+
 
   /// 可见范围显示文案（分组被删除时回退到全部角色可见）
-  String _visibilityLabel(BuildContext context, String visibility) {
-    if (visibility == VisibilityScope.onlyMe) return '仅自己可见（无人互动）';
-    if (visibility == VisibilityScope.all) return '全部角色可见';
-    final groups = context.read<CharacterProvider>().visibilityGroups;
-    for (final g in groups) {
-      if (g.id == visibility) {
-        // 该角色即便在分组内，互动阶段也已排除发布者本人，不会自己点赞评论
-        return '分组「${g.name}」';
-      }
-    }
-    return '全部角色可见';
-  }
 
-  /// 打开可见范围选择页（固定选项 + 自定义分组），选中后保存到自动发朋友圈配置。
-  /// 不限制分组是否包含该角色自己：互动阶段已排除发布者本人，不会自己点赞评论。
-  Future<void> _openAutoMomentVisibility(
-    BuildContext context,
-    AutoMomentProvider autoProvider,
-    String currentId,
-  ) async {
-    final selected = await Navigator.push<String>(
-      context,
-      CupertinoPageRoute(
-        builder: (_) => MomentVisibilityScreen(selectedId: currentId),
-      ),
-    );
-    if (selected == null || !mounted) return;
-    await autoProvider.setVisibility(_characterId, selected);
-  }
 
   // ── 聊天管理 ──
   Widget _buildManageSection() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: context.listBgColor,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        children: [
-          Builder(builder: (context) {
-            final conversation = context
-                .read<ChatProvider>()
-                .conversations
-                .where((c) => c.id == widget.conversationId)
-                .firstOrNull;
-            return CupertinoListTile(
-              leading: Icon(CupertinoIcons.speaker_3_fill,
-                  color: context.accentColor),
-              title: Text('自动朗读',
-                  style: TextStyle(color: context.textPrimaryColor)),
-              subtitle: Text('角色生成回复后自动播放语音',
-                  style: TextStyle(
-                      fontSize: 12, color: context.textSecondaryColor)),
-              trailing: CupertinoSwitch(
-                value: conversation?.autoRead ?? false,
-                onChanged: (value) => context
-                    .read<ChatProvider>()
-                    .setConversationAutoRead(widget.conversationId, value),
-              ),
-            );
-          }),
-          Consumer<ChatProvider>(builder: (context, chatProvider, _) {
-            final conversation = chatProvider.conversations
-                .where((c) => c.id == widget.conversationId)
-                .firstOrNull;
-            return CupertinoListTile(
-              leading:
-                  Icon(CupertinoIcons.play_circle, color: context.accentColor),
-              title: Text('连续播放回复',
-                  style: TextStyle(color: context.textPrimaryColor)),
-              subtitle: Text('一轮多条角色回复按顺序连续播放',
-                  style: TextStyle(
-                      fontSize: 12, color: context.textSecondaryColor)),
-              trailing: CupertinoSwitch(
-                value: conversation?.continuousRead ?? false,
-                onChanged: (value) => context
-                    .read<ChatProvider>()
-                    .setConversationContinuousRead(
-                        widget.conversationId, value),
-              ),
-            );
-          }),
-          Consumer<ChatProvider>(builder: (context, chatProvider, _) {
-            final conversation = chatProvider.conversations
-                .where((c) => c.id == widget.conversationId)
-                .firstOrNull;
-            return CupertinoListTile(
-              leading:
-                  Icon(CupertinoIcons.speaker_1, color: context.accentColor),
-              title: Text('显示小喇叭图标',
-                  style: TextStyle(color: context.textPrimaryColor)),
-              subtitle: Text('角色气泡下方显示朗读按钮（默认关闭）',
-                  style: TextStyle(
-                      fontSize: 12, color: context.textSecondaryColor)),
-              trailing: CupertinoSwitch(
-                value: conversation?.showSpeakerIcon ?? false,
-                onChanged: (value) => context
-                    .read<ChatProvider>()
-                    .setConversationShowSpeakerIcon(
-                        widget.conversationId, value),
-              ),
-            );
-          }),
-          Container(
-            height: 0.5,
-            margin: const EdgeInsets.only(left: 16),
-            color: context.separatorColor,
-          ),
-          // ── 聊天背景设置入口 ──
-          CupertinoListTile(
-            leading: const Icon(
-              CupertinoIcons.photo_fill_on_rectangle_fill,
-              color: CupertinoColors.systemPink,
-            ),
-            title: Text(
-              '聊天背景',
-              style: TextStyle(color: context.textPrimaryColor),
-            ),
-            subtitle: Text(
-              '为当前会话设置独立背景与高斯模糊效果',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textSecondaryColor,
-              ),
-            ),
-            trailing: Icon(
-              CupertinoIcons.chevron_right,
-              size: 14,
-              color: context.textSecondaryColor,
-            ),
-            onTap: _showChatBackgroundDrawer,
-          ),
-          Container(
-            height: 0.5,
-            margin: const EdgeInsets.only(left: 16),
-            color: context.separatorColor,
-          ),
-          CupertinoListTile(
-            leading: Icon(
-              CupertinoIcons.person_3_fill,
-              color: context.textPrimaryColor,
-            ),
-            title: Text(
-              '组建群聊',
-              style: TextStyle(color: context.textPrimaryColor),
-            ),
-            subtitle: Text(
-              '把当前角色和其他角色拉进同一个群聊',
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textSecondaryColor,
-              ),
-            ),
-            onTap: _openCreateGroup,
-          ),
-          Container(
-            height: 0.5,
-            margin: const EdgeInsets.only(left: 16),
-            color: context.separatorColor,
-          ),
-          CupertinoListTile(
-            leading: Icon(
-              CupertinoIcons.clear_circled,
-              color: context.textPrimaryColor,
-            ),
-            title: Text(
-              '清空上下文',
-              style: TextStyle(color: context.textPrimaryColor),
-            ),
-            subtitle: Text(
-              '清除当前聊天的全部消息，再次打开时不会显示任何记录，AI 也不会继承此前的对话内容',
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: context.textSecondaryColor,
-              ),
-            ),
-            onTap: _clearContext,
-          ),
-          Container(
-            height: 0.5,
-            margin: const EdgeInsets.only(left: 16),
-            color: context.separatorColor,
-          ),
-          CupertinoListTile(
-            leading: const Icon(
-              CupertinoIcons.trash,
-              color: CupertinoColors.systemRed,
-            ),
-            title: const Text(
-              '删除聊天',
-              style: TextStyle(color: CupertinoColors.systemRed),
-            ),
-            subtitle: Text(
-              '从首页会话列表中移除该聊天，同时删除全部聊天记录与上下文，此操作不可恢复',
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: context.textSecondaryColor,
-              ),
-            ),
-            onTap: _deleteChat,
-          ),
-        ],
-      ),
+    return ChatDetailManageSection(
+      conversationId: widget.conversationId,
+      onShowBackground: _showChatBackgroundDrawer,
+      onCreateGroup: _openCreateGroup,
+      onClearContext: _clearContext,
+      onDeleteChat: _deleteChat,
     );
   }
 
   // ── 最下方：折叠的提示词设置 panel ──
-  Widget _buildPromptPanel(Character? character) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: context.listBgColor,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        children: [
-          CupertinoListTile(
-            leading: const Icon(CupertinoIcons.text_quote),
-            title: Text(
-              '提示词设置',
-              style: TextStyle(color: context.textPrimaryColor),
-            ),
-            subtitle: Text(
-              '定义角色对话时的行为与设定，点击进入编辑',
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textSecondaryColor,
-              ),
-            ),
-            trailing: Icon(
-              CupertinoIcons.chevron_right,
-              size: 16,
-              color: context.textSecondaryColor,
-            ),
-            onTap: _togglePrompt,
-          ),
-          Container(
-            height: 0.5,
-            margin: const EdgeInsets.only(left: 16),
-            color: context.separatorColor,
-          ),
-          CupertinoListTile(
-            leading: const Icon(CupertinoIcons.bookmark),
-            title: Text(
-              '记忆点管理',
-              style: TextStyle(color: context.textPrimaryColor),
-            ),
-            subtitle: Text(
-              '此处可以储存世界观、用户人设、对话中的记忆点等，可回传到上下文',
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textSecondaryColor,
-              ),
-            ),
-            trailing: Icon(
-              CupertinoIcons.chevron_right,
-              size: 16,
-              color: context.textSecondaryColor,
-            ),
-            onTap: _openMemoryManage,
-          ),
-        ],
-      ),
-    );
-  }
+
 
   /// 打开记忆点管理二级页
   void _openMemoryManage() {
@@ -1790,13 +1048,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  Widget _separator() {
-    return Container(
-      height: 0.5,
-      margin: const EdgeInsets.only(left: 16),
-      color: context.separatorColor,
-    );
-  }
+
 }
 
 

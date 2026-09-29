@@ -133,7 +133,7 @@ class ChatPlotSuggestion {
       ),
     );
     try {
-      final result = await LLMService.generatePlotSuggestions(
+      final result = await generatePlotSuggestions(
         model: model,
         systemPrompt: systemPrompt,
         historyMessages: historyMessages,

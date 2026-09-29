@@ -1,5 +1,3 @@
-import 'dart:io';
-import 'dart:ui' show ImageFilter;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
@@ -19,7 +17,9 @@ import '../services/llm_service.dart';
 import '../services/tts_playback_controller.dart';
 import '../utils/file_picker_helper.dart';
 import '../utils/app_toast.dart';
+import '../widgets/chat/chat_background_layer.dart';
 import '../widgets/chat/chat_bubble_menu.dart';
+import '../widgets/chat/chat_select_bar.dart';
 import '../widgets/chat/chat_message_chrome.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/chat_title_bar.dart';
@@ -569,87 +569,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget _buildTimeLabel(DateTime time) => ChatTimeLabel(time: time);
 
   Widget _buildSelectBar(BuildContext context) {
-    final count = _selectedIds.length;
-    return Container(
-      color: context.navBarColor,
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              onPressed: _exitSelectMode,
-              child: Text(
-                '取消',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: context.textSecondaryColor,
-                ),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                '已选 $count 条',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: context.textPrimaryColor,
-                ),
-              ),
-            ),
-            if (_selectingMemory)
-              CupertinoButton(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                onPressed: count > 0 ? _saveSelectedAsMemory : null,
-                child: Text(
-                  '存储记忆点',
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: count > 0
-                        ? context.accentColor
-                        : context.textSecondaryColor,
-                  ),
-                ),
-              )
-            else ...[
-              CupertinoButton(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                onPressed:
-                    count > 0 ? () => _forwardMessages(merge: false) : null,
-                child: Text(
-                  '逐条转发',
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: count > 0
-                        ? context.accentColor
-                        : context.textSecondaryColor,
-                  ),
-                ),
-              ),
-              CupertinoButton(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                onPressed:
-                    count > 0 ? () => _forwardMessages(merge: true) : null,
-                child: Text(
-                  '合并转发',
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: count > 0
-                        ? context.accentColor
-                        : context.textSecondaryColor,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+    return ChatSelectBar(
+      count: _selectedIds.length,
+      selectingMemory: _selectingMemory,
+      onCancel: _exitSelectMode,
+      onSaveMemory: _saveSelectedAsMemory,
+      onForwardSingle: () => _forwardMessages(merge: false),
+      onForwardMerge: () => _forwardMessages(merge: true),
     );
   }
+
 
   /// 点击"聊天记录"卡片进入合并转发详情页
   void _openForwardDetail(
@@ -1054,32 +983,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               // 背景层（已持久化图片 + 高斯模糊）。
               // RepaintBoundary：滚动消息列表时复用已光栅化结果，避免每帧重跑高斯模糊
               if (hasBg)
-                RepaintBoundary(
-                  child: Builder(
-                    builder: (ctx) {
-                      final bgSize = MediaQuery.of(ctx).size;
-                      final blur = bgInfo.blur > 0 ? bgInfo.blur : 0.1;
-                      // 按屏幕物理像素限制解码尺寸：模糊背景无需全分辨率，显著降低
-                      // 大图解码内存与每帧模糊计算量
-                      final decodeWidth =
-                          (bgSize.width * MediaQuery.devicePixelRatioOf(ctx))
-                              .ceil();
-                      return ImageFiltered(
-                        imageFilter:
-                            ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-                        child: Image.file(
-                          File(bgInfo.imagePath),
-                          fit: BoxFit.cover,
-                          width: bgSize.width,
-                          height: bgSize.height,
-                          // 只限制宽度：同时指定 cacheHeight 会把图片强制
-                          // 缩放到指定矩形导致宽高比失真（拉伸），这里让高度
-                          // 按原比例自动缩放，由 BoxFit.cover 负责裁剪铺满
-                          cacheWidth: decodeWidth,
-                        ),
-                      );
-                    },
-                  ),
+                ChatBackgroundLayer(
+                  imagePath: bgInfo.imagePath,
+                  blur: bgInfo.blur,
                 ),
               // 消息内容层
               Column(
