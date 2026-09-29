@@ -18,23 +18,22 @@ import '../providers/chat_background_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/character_provider.dart';
-import '../providers/group_chat_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/settings_provider.dart';
-import '../providers/sticker_provider.dart';
 import '../providers/token_usage_provider.dart';
 import 'sticker_picker_screen.dart';
-import '../services/chat_records_service.dart';
 import '../services/llm_service.dart';
 import '../services/prompt_builder.dart';
-import '../services/memory_pool_builder.dart';
 import '../services/tts_playback_controller.dart';
 import '../utils/file_picker_helper.dart';
 import '../utils/app_toast.dart';
+import '../widgets/chat/chat_bubble_menu.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/chat_title_bar.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/message_input.dart';
+import 'chat/chat_import_export.dart';
+import 'chat/chat_proactive_reply.dart';
 import 'chat_detail_screen.dart';
 import 'chat_settings_screen.dart';
 import 'character_detail_screen.dart';
@@ -283,159 +282,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// 导出当前聊天记录为 zip 包（chat.json + 聊天中的图片/文件），
-  /// 通过系统"保存文件"选择器由用户自选保存位置。
-  Future<void> _exportChat() async {
-    final messages =
-        context.read<ChatProvider>().getMessages(widget.conversationId);
-    if (messages.isEmpty) {
-      showCupertinoDialog(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('提示'),
-          content: const Text('暂无聊天记录可导出'),
-          actions: [
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('确定'),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-
-    final includeReasoning = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('导出聊天记录'),
-        content: const Text('是否将 AI 思考过程一并写入导出文件？'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('不含思考'),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('包含思考'),
-          ),
-        ],
-      ),
-    );
-    if (includeReasoning == null || !mounted) return;
-
-    try {
-      final bytes = await ChatRecordsService.buildExportZip(
+  /// 导出当前聊天记录为 zip 包
+  Future<void> _exportChat() => ChatImportExport.exportChat(
+        context,
+        conversationId: widget.conversationId,
         characterName: widget.characterName,
-        messages: messages,
-        includeReasoning: includeReasoning,
       );
-      if (!mounted) return;
 
-      final now = DateTime.now();
-      String two(int n) => n.toString().padLeft(2, '0');
-      final fileName = '${widget.characterName}_聊天记录_'
-          '${now.year}${two(now.month)}${two(now.day)}_'
-          '${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
-      final savedName = await FilePickerHelper.saveFile(
-        suggestedName: fileName,
-        mimeType: 'application/zip',
-        bytes: bytes,
-      );
-      if (!mounted) return;
-      if (savedName == null) return; // 用户取消保存
-
-      showCupertinoDialog(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('导出成功'),
-          content: Text(
-            '已将 ${messages.length} 条聊天记录（含聊天中的图片/文件）保存为 zip 文件：$savedName',
-          ),
-          actions: [
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('确定'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _showImportExportError('导出失败', '打包聊天记录时出错：$e');
-    }
-  }
-
-  /// 导入聊天记录 zip：选择 zip → 解析 → 提取图片/文件 → 追加到当前会话
-  Future<void> _importChat() async {
-    try {
-      final picked = await FilePickerHelper.pickFile();
-      if (picked == null || !mounted) return; // 用户取消选择
-      if (!picked.name.toLowerCase().endsWith('.zip')) {
-        _showImportExportError('导入失败', '请选择聊天记录 zip 文件');
-        return;
-      }
-
-      final chatProvider = context.read<ChatProvider>();
-      final messages = await ChatRecordsService.importZip(
-        zipPath: picked.path,
+  /// 导入聊天记录 zip 到当前会话
+  Future<void> _importChat() => ChatImportExport.importChat(
+        context,
         conversationId: widget.conversationId,
+        onImported: () {
+          if (mounted) _scrollToBottom();
+        },
       );
-      if (messages.isEmpty) {
-        _showImportExportError('导入失败', '压缩包中没有可导入的消息');
-        return;
-      }
-      await chatProvider.importMessages(
-        conversationId: widget.conversationId,
-        messages: messages,
-      );
-      if (!mounted) return;
-      _scrollToBottom();
-      showCupertinoDialog(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('导入成功'),
-          content: Text(
-            '已将 ${messages.length} 条聊天记录导入到当前会话（${picked.name}）',
-          ),
-          actions: [
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('确定'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _showImportExportError('导入失败', '$e');
-    }
-  }
-
-  void _showImportExportError(String title, String message) {
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-  }
 
   // ─── 长按气泡菜单 ───────────────────────────────────────────
 
@@ -457,8 +318,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final screenHeight = MediaQuery.of(context).size.height;
 
     // 菜单尺寸：按等宽等高按钮网格推算（见 _menuPanelWidth / _menuPanelHeight）
-    final double menuWidth = _menuPanelWidth(items.length);
-    final double menuHeight = _menuPanelHeight(items.length);
+    final double menuWidth = ChatBubbleMenuPanel.panelWidth(items.length);
+    final double menuHeight = ChatBubbleMenuPanel.panelHeight(items.length);
 
     // 计算 X：我方气泡在右侧，菜单靠左；对方气泡在左侧，菜单靠右
     double left;
@@ -494,7 +355,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             left: left,
             top: top,
             width: menuWidth,
-            child: _buildMenuPanel(message, items),
+            child: ChatBubbleMenuPanel(items: items),
           ),
         ],
       ),
@@ -609,7 +470,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   List<Widget> _buildMenuItems(Message message) {
     final isUser = message.isFromUser;
     final items = <Widget>[
-      _menuItem(
+      ChatBubbleMenuItem(
         icon: CupertinoIcons.doc_on_doc,
         label: '复制',
         onTap: () {
@@ -617,7 +478,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           Clipboard.setData(ClipboardData(text: message.content));
         },
       ),
-      _menuItem(
+      ChatBubbleMenuItem(
         icon: CupertinoIcons.text_badge_checkmark,
         label: '选择文本',
         onTap: () {
@@ -625,7 +486,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _showTextSelection(message);
         },
       ),
-      _menuItem(
+      ChatBubbleMenuItem(
         icon: CupertinoIcons.quote_bubble,
         label: '引用',
         onTap: () {
@@ -639,7 +500,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (isUser) {
       items.add(
-        _menuItem(
+        ChatBubbleMenuItem(
           icon: CupertinoIcons.xmark_circle,
           label: '撤回',
           onTap: () {
@@ -650,7 +511,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
       if (message.type == MessageType.narration) {
         items.add(
-          _menuItem(
+          ChatBubbleMenuItem(
             icon: CupertinoIcons.pencil,
             label: '编辑剧情',
             onTap: () {
@@ -663,7 +524,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } else {
       if (message.hasReasoning) {
         items.add(
-          _menuItem(
+          ChatBubbleMenuItem(
             icon: CupertinoIcons.lightbulb,
             label: '查看思考',
             onTap: () {
@@ -674,7 +535,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         );
       }
       items.add(
-        _menuItem(
+        ChatBubbleMenuItem(
           icon: CupertinoIcons.pencil,
           label: '修改本条',
           onTap: () {
@@ -684,7 +545,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ),
       );
       items.add(
-        _menuItem(
+        ChatBubbleMenuItem(
           icon: CupertinoIcons.refresh,
           label: '重新回复',
           onTap: () {
@@ -695,7 +556,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
       // 删除角色消息：移除后不再作为后续对话的上下文
       items.add(
-        _menuItem(
+        ChatBubbleMenuItem(
           icon: CupertinoIcons.delete,
           label: '删除',
           onTap: () {
@@ -709,7 +570,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     items.add(
-      _menuItem(
+      ChatBubbleMenuItem(
         icon: CupertinoIcons.bookmark,
         label: '保存为记忆点',
         onTap: () {
@@ -720,7 +581,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
 
     items.add(
-      _menuItem(
+      ChatBubbleMenuItem(
         icon: CupertinoIcons.square_stack,
         label: '多选',
         onTap: () {
@@ -732,7 +593,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     // 分支对话：从当前消息处带历史分出新角色会话
     items.add(
-      _menuItem(
+      ChatBubbleMenuItem(
         icon: CupertinoIcons.arrow_branch,
         label: '增加分支',
         onTap: () {
@@ -1180,116 +1041,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             child: const Text('关闭'),
           ),
         ],
-      ),
-    );
-  }
-
-  /// 长按菜单按钮：等宽等高，保证多行时纵向对齐
-  static const double _menuCellWidth = 74;
-  static const double _menuCellHeight = 46;
-  static const double _menuSpacing = 4;
-  static const double _menuPadding = 8;
-
-  /// Border.all 的线宽；Container 会把它计入内边距（decoration.padding），
-  /// 尺寸公式必须预留，否则 Positioned 约束会比面板固有宽高各窄 1dp（debug 溢出黄条）。
-  static const double _menuBorder = 0.5;
-
-  /// 单行最多按钮数（再宽会超出手机屏宽）
-  static const int _menuMaxColumns = 3;
-
-  /// 行数：按每行最多 [_menuMaxColumns] 个换行
-  int _menuRowCount(int itemCount) =>
-      (itemCount + _menuMaxColumns - 1) ~/ _menuMaxColumns;
-
-  /// 单行最大按钮数：用于推导面板宽度（各行尽量均分后最宽的一行）
-  int _menuColumns(int itemCount) {
-    final rows = _menuRowCount(itemCount);
-    return (itemCount + rows - 1) ~/ rows;
-  }
-
-  double _menuPanelWidth(int itemCount) {
-    final columns = _menuColumns(itemCount);
-    return columns * _menuCellWidth +
-        (columns - 1) * _menuSpacing +
-        (_menuPadding + _menuBorder) * 2;
-  }
-
-  double _menuPanelHeight(int itemCount) {
-    final rows = _menuRowCount(itemCount);
-    return rows * _menuCellHeight +
-        (rows - 1) * _menuSpacing +
-        (_menuPadding + _menuBorder) * 2;
-  }
-
-  Widget _buildMenuPanel(Message message, List<Widget> items) {
-    final rowCount = _menuRowCount(items.length);
-    // 各行尽量均分（7 项 → 3/2/2），避免出现只剩 1 项的孤行
-    final base = items.length ~/ rowCount;
-    final extra = items.length % rowCount;
-    final rows = <Widget>[];
-    var index = 0;
-    for (var r = 0; r < rowCount; r++) {
-      final count = base + (r < extra ? 1 : 0);
-      final rowItems = items.sublist(index, index + count);
-      index += count;
-      // 不满一行的居中，保持整体对称
-      rows.add(
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var i = 0; i < rowItems.length; i++) ...[
-              if (i > 0) const SizedBox(width: _menuSpacing),
-              rowItems[i],
-            ],
-          ],
-        ),
-      );
-      if (r != rowCount - 1) rows.add(const SizedBox(height: _menuSpacing));
-    }
-    return Container(
-      padding: const EdgeInsets.all(_menuPadding),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey6.resolveFrom(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: CupertinoColors.systemGrey4.resolveFrom(context),
-          width: _menuBorder,
-        ),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: rows),
-    );
-  }
-
-  Widget _menuItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox(
-        width: _menuCellWidth,
-        height: _menuCellHeight,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 20, color: context.textPrimaryColor),
-            const SizedBox(height: 3),
-            // 网格为固定尺寸：忽略系统字号缩放，避免文字撑破按钮
-            MediaQuery.withNoTextScaling(
-              child: Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1.15,
-                  color: context.textPrimaryColor,
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -2055,195 +1806,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     ));
   }
 
-  /// 触发"角色主动发消息/回复"：组装参数后交给 [ChatProvider.runProactiveReply]
-  /// 在应用级单例中执行——即使此时退出聊天界面，AI 回复也会继续生成并完整入库。
-  ///
-  /// [replyToUser] 为 true 时（输入框对号按钮触发）模型针对用户最近的消息分条回复。
-  /// [imagePath] 非空时表示"发送图片"：图片会以视觉消息传给模型，让角色看到图片后回复。
+  /// 触发角色回复：委托 ChatProactiveReply。
   Future<void> _triggerProactiveMessages({
     bool replyToUser = false,
     String? imagePath,
     String? stickerLabel,
   }) async {
-    debugPrint(
-        '[ChatScreen] _triggerProactiveMessages: replyToUser=$replyToUser imagePath=$imagePath');
-    final chatSettings = context.read<ChatSettingsProvider>();
-    final model =
-        context.read<ApiProvider>().getModelById(chatSettings.selectedModelId);
-    if (model == null) {
-      _showNoModelDialog('进行角色回复');
-      return;
-    }
-
-    final chatProvider = context.read<ChatProvider>();
-    final conversation = chatProvider.conversations
-        .where((c) => c.id == widget.conversationId)
-        .firstOrNull;
-    final character = conversation != null
-        ? context
-            .read<CharacterProvider>()
-            .getCharacterById(conversation.characterId)
-        : null;
-    final isRoleplayMode = chatSettings.isRoleplayMode;
-    // 语C不携带联系人备注；使用角色原始昵称，避免把资料卡信息带入演绎上下文。
-    final characterName = isRoleplayMode
-        ? (character?.name.trim().isNotEmpty == true
-            ? character!.name.trim()
-            : widget.characterName)
-        : character?.displayName ?? widget.characterName;
-
-    // 用户持久化记忆点：拼入系统提示词，让角色在本次回复中记住这些长期信息
-    final memoryPoints = conversation != null
-        ? context
-            .read<MemoryPointProvider>()
-            .pointsFor(conversation.characterId)
-            .map((p) => p.content)
-            .toList()
-        : const <String>[];
-
-    // 角色记忆池：聚合朋友圈 / 近期群聊 / 资料卡等场景外记忆，拼入系统提示词，
-    // 让角色在私聊中保持跨场景的记忆连贯。私聊历史已作为对话上下文传入，
-    // 因此 includePrivateHistory 传 false，避免重复拼接
-    final memoryPool = !isRoleplayMode && character != null
-        ? MemoryPoolBuilder.build(
-            character: character,
-            chatProvider: chatProvider,
-            groupChatProvider: context.read<GroupChatProvider>(),
-            chatSettings: chatSettings,
-            user: context.read<AuthProvider>().user,
-            includePrivateHistory: false,
-          )
-        : '';
-
-    // 会话压缩：压缩模型默认跟随聊天模型，可在「API 设置 → 会话压缩」中单独指定
-    final api = context.read<ApiProvider>();
-    final compressModel = api.getModelById(api.compressionModelId) ?? model;
-
-    final isVisionSupported = api.isVisionSupported(model.id) == true;
-    final modelImagePath =
-        stickerLabel == null || isVisionSupported ? imagePath : null;
-    final messages = isRoleplayMode && chatSettings.enableRoleplayStream
-        ? await chatProvider.runRoleplayStream(
-            conversationId: widget.conversationId,
-            model: model,
-            characterName: characterName,
-            characterSystemPrompt: character?.systemPrompt ?? '',
-            userRelationship: character?.userRelationship ?? '',
-            userNickname: context.read<AuthProvider>().user?.nickname ?? '用户',
-            memoryPoints: memoryPoints,
-            contextCount: chatSettings.contextCount,
-            progressionStyle: chatSettings.roleplayProgressionStyle.name,
-            includeChoices: chatSettings.enableRoleplayChoices,
-          )
-        : await chatProvider.runProactiveReply(
-            conversationId: widget.conversationId,
-            model: model,
-            characterName: characterName,
-            characterSystemPrompt: character?.systemPrompt ?? '',
-            userRelationship: character?.userRelationship ?? '',
-            userNickname: context.read<AuthProvider>().user?.nickname ?? '用户',
-            replyToUser: replyToUser,
-            contextCount: chatSettings.contextCount,
-            enableCompression: chatSettings.enableCompression,
-            compressModel: compressModel,
-            contextLength: model.contextLength,
-            compressThreshold: chatSettings.compressThreshold,
-            imagePath: modelImagePath,
-            activeStart: character?.activeStart ?? '',
-            activeEnd: character?.activeEnd ?? '',
-            memoryPoints: memoryPoints,
-            extraSystemContext: memoryPool,
-            roleplayMode: isRoleplayMode,
-            roleplayProgressionStyle:
-                chatSettings.roleplayProgressionStyle.name,
-            findSticker: context.read<SettingsProvider>().allowStickerSend
-                ? (query) =>
-                    context.read<StickerProvider>().pickStickerForRole(query)
-                : null,
-          );
-    debugPrint(
-        '[ChatScreen] runProactiveReply 完成: ${messages.length} 条, lastError=${chatProvider.lastError}, mounted=$mounted');
-    if (conversation?.autoRead == true && messages.isNotEmpty) {
-      if (!mounted) return;
-      final ttsModel = context.read<ApiProvider>().getModelById(
-            context.read<ApiProvider>().ttsModelId,
-          );
-      if (ttsModel != null) {
-        final characterVoice = conversation == null
-            ? null
-            : context
-                .read<CharacterProvider>()
-                .getCharacterById(conversation.characterId);
-        final replyMessages = chatProvider
-            .getMessages(widget.conversationId)
-            .where((m) => !m.isFromUser && m.content.trim().isNotEmpty)
-            .toList();
-        final roundMessages = replyMessages.length >= messages.length
-            ? replyMessages.sublist(replyMessages.length - messages.length)
-            : replyMessages;
-        final entries = roundMessages
-            .map((m) => TtsPlaybackEntry(
-                  messageId: m.id,
-                  model: ttsModel,
-                  text: m.content,
-                  voice: characterVoice?.voiceId ?? '',
-                  instructions: characterVoice?.voiceInstructions ?? '',
-                ))
-            .toList();
-        if (entries.isNotEmpty) {
-          if (conversation?.continuousRead == true && entries.length > 1) {
-            TtsPlaybackController.instance.playSequence(entries);
-          } else {
-            TtsPlaybackController.instance.enqueue(entries.last);
-          }
-        }
-      }
-    }
+    final messages = await ChatProactiveReply.trigger(
+      context: context,
+      conversationId: widget.conversationId,
+      fallbackName: widget.characterName,
+      replyToUser: replyToUser,
+      imagePath: imagePath,
+      stickerLabel: stickerLabel,
+      onNeedModel: () => _showNoModelDialog('进行角色回复'),
+    );
     if (!mounted) return;
-    // 流式语C在同一次正文回复中携带候选项；非流式接口保留二次请求作为兼容兜底。
-    if (isRoleplayMode &&
-        chatSettings.enableRoleplayChoices &&
-        !chatSettings.enableRoleplayStream &&
-        messages.isNotEmpty &&
-        conversation != null) {
-      try {
-        final choicePrompt = PromptBuilder.buildSystemPrompt(
-          baseSystemPrompt: character?.systemPrompt ?? '',
-          characterName: characterName,
-          userNickname: context.read<AuthProvider>().user?.nickname ?? '用户',
-          userRelationship: character?.userRelationship ?? '',
-          currentTime: DateTime.now(),
-          memoryPoints: memoryPoints,
-          roleplayProgressionStyle: chatSettings.roleplayProgressionStyle.name,
-          roleplayMode: true,
-        );
-        final choiceResult = await LLMService.generateRoleplayChoices(
-          model: model,
-          systemPrompt: choicePrompt,
-          historyMessages: chatProvider.getRecentHistoryForCharacter(
-            conversation.characterId,
-            chatSettings.contextCount,
-          ),
-        );
-        // 候选行动是一次真实的独立 LLM 调用；必须和正文一样纳入累计用量。
-        await TokenUsageProvider.instance.addUsage(
-          widget.conversationId,
-          choiceResult.usage,
-          label: widget.characterName,
-        );
-        if (mounted) {
-          await chatProvider.setRoleplayChoices(
-            widget.conversationId,
-            choiceResult.messages,
-          );
-        }
-      } catch (e) {
-        debugPrint('[ChatScreen] 语C候选行动生成失败: $e');
-      }
-    }
-    if (!mounted) return;
-    if (messages.isEmpty && chatProvider.lastError == null) {
-      // 模型主动返回空数组（如时间不合理）时给出轻提示
+    if (messages.isEmpty && context.read<ChatProvider>().lastError == null) {
       showCupertinoDialog(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
