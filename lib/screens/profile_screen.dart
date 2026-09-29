@@ -427,14 +427,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Container(
                 height: 260,
                 width: double.infinity,
-                color: const Color(0xFF0D1117),
+                color: context.isDark ? context.listBgColor : const Color(0xFF1E1E1E),
                 child: lines.isEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
+                    ? Padding(
+                        padding: const EdgeInsets.all(12),
                         child: Text(
                           '暂无日志',
                           style:
-                              TextStyle(fontSize: 12, color: Color(0xFF8B949E)),
+                              TextStyle(fontSize: 12, color: context.textSecondaryColor),
                         ),
                       )
                     : ListView.builder(
@@ -442,10 +442,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         itemCount: lines.length,
                         itemBuilder: (context, i) => Text(
                           lines[i],
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
                             height: 1.5,
-                            color: Color(0xFFC9D1D9),
+                            color: context.isDark ? context.textPrimaryColor : const Color(0xFFC9D1D9),
                             fontFamily: 'monospace',
                           ),
                         ),

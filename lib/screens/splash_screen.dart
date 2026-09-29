@@ -81,7 +81,7 @@ class _SplashScreenState extends State<SplashScreen> {
     final settings = context.watch<SettingsProvider>();
     return CupertinoPageScaffold(
       backgroundColor:
-          context.isDark ? const Color(0xFF000000) : const Color(0xFFFFFFFF),
+          context.scaffoldColor,
       child: SizedBox.expand(
         child: SplashIconView(imagePath: settings.splashIconPath),
       ),

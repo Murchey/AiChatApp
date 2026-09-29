@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../config/theme.dart';
+import '../../config/ui_spec.dart';
 
 /// 备份页共享 UI 构件
 class BackupEmptyHint extends StatelessWidget {
@@ -14,7 +15,7 @@ class BackupEmptyHint extends StatelessWidget {
       child: Text(
         text,
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 13, color: context.textSecondaryColor),
+        style: TextStyle(fontSize: UiSpec.fontCaption, color: context.textSecondaryColor),
       ),
     );
   }
@@ -34,13 +35,13 @@ class BackupSection extends StatelessWidget {
           padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
             title,
-            style: TextStyle(fontSize: 13, color: context.textSecondaryColor),
+            style: TextStyle(fontSize: UiSpec.fontCaption, color: context.textSecondaryColor),
           ),
         ),
         Container(
           decoration: BoxDecoration(
             color: context.listBgColor,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(UiSpec.radiusCard),
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(children: children),
@@ -77,7 +78,7 @@ class BackupActionTile extends StatelessWidget {
       title: Text(title),
       subtitle: Text(
         subtitle,
-        style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+        style: TextStyle(fontSize: UiSpec.fontCaption, color: context.textSecondaryColor),
       ),
       trailing: Icon(
         CupertinoIcons.chevron_right,
@@ -106,7 +107,7 @@ class BackupTileBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: UiSpec.listTilePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -116,7 +117,7 @@ class BackupTileBody extends StatelessWidget {
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: UiSpec.fontBodySm,
                     color: context.textPrimaryColor,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -141,7 +142,7 @@ class BackupTileBody extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             meta,
-            style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+            style: TextStyle(fontSize: UiSpec.fontCaption, color: context.textSecondaryColor),
           ),
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 8, children: actions),
@@ -171,12 +172,12 @@ class BackupMiniButton extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       minimumSize: const Size(0, 32),
       color: color.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(UiSpec.radiusButton),
       onPressed: onTap,
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 13,
+          fontSize: UiSpec.fontCaption,
           color: color,
           fontWeight: FontWeight.w500,
         ),
