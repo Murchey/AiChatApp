@@ -32,13 +32,21 @@ class LlmModelRegistry {
     'gemini-2.0-flash': 1048576,
     'gemini-1.5-pro': 2097152,
     'gemini-1.5-flash': 1048576,
-    // DeepSeek（deepseek-chat / deepseek-reasoner 已于 2026-07-24 下线，统一为 V4 系列）
-    'deepseek-v4-flash': 1048576,
+    // DeepSeek
+    'deepseek-flash': 1048576,
     'deepseek-v4-pro': 1048576,
-    // 旧模型名仍路由到 V4-Flash（非思考/思考模式），保留以兼容老配置
+    // 旧模型名仍路由到新系（非思考/思考模式），保留以兼容老配置
+    'deepseek-v4-flash': 1048576,
     'deepseek-chat': 1048576,
     'deepseek-reasoner': 1048576,
+    // 智谱 GLM（上下文 1M）
+    'glm-5.3': 1048576,
+    'glm-5.3-flash': 1048576,
+    'glm-5.3-flashx': 1048576,
+    'glm-5.2': 1048576,
     // 小米 MiMo
+    'mimo-v2.6-pro': 1048576,
+    'mimo-2.6-flash': 1048576,
     'mimo-v2.5-pro': 1048576,
     'mimo-v2.5-omni': 1048576,
     'mimo-v2-flash': 57344,

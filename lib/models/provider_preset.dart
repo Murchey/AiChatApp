@@ -50,9 +50,8 @@ const List<ProviderPreset> providerPresets = [
     description: '按量付费，官方平台 platform.xiaomimimo.com',
     baseUrl: 'https://api.xiaomimimo.com/v1',
     models: [
-      (displayName: 'MiMo V2.5 Pro', modelName: 'mimo-v2.5-pro'),
-      (displayName: 'MiMo V2 Flash', modelName: 'mimo-v2-flash'),
-      (displayName: 'MiMo V2.5 Omni', modelName: 'mimo-v2.5-omni'),
+      (displayName: 'MiMo V2.6 Pro', modelName: 'mimo-v2.6-pro'),
+      (displayName: 'MiMo 2.6 Flash', modelName: 'mimo-2.6-flash'),
     ],
   ),
   ProviderPreset(
@@ -60,8 +59,8 @@ const List<ProviderPreset> providerPresets = [
     description: '订阅制套餐，API Key 以 tp- 开头',
     baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
     models: [
-      (displayName: 'MiMo V2.5 Pro', modelName: 'mimo-v2.5-pro'),
-      (displayName: 'MiMo V2 Flash', modelName: 'mimo-v2-flash'),
+      (displayName: 'MiMo V2.6 Pro', modelName: 'mimo-v2.6-pro'),
+      (displayName: 'MiMo 2.6 Flash', modelName: 'mimo-2.6-flash'),
     ],
   ),
   ProviderPreset(
@@ -69,7 +68,7 @@ const List<ProviderPreset> providerPresets = [
     description: 'V4 系列，baseUrl 与官方一致',
     baseUrl: 'https://api.deepseek.com',
     models: [
-      (displayName: 'DeepSeek V4 Flash', modelName: 'deepseek-v4-flash'),
+      (displayName: 'DeepSeek Flash', modelName: 'deepseek-flash'),
       (displayName: 'DeepSeek V4 Pro', modelName: 'deepseek-v4-pro'),
     ],
   ),
@@ -96,6 +95,17 @@ const List<ProviderPreset> providerPresets = [
       (displayName: '通义千问 Turbo', modelName: 'qwen-turbo'),
       (displayName: '通义千问 Long', modelName: 'qwen-long'),
       (displayName: '通义千问 VL Max', modelName: 'qwen-vl-max'),
+    ],
+  ),
+  ProviderPreset(
+    name: '智谱 GLM',
+    description: '智谱 AI 开放平台，GLM-5.3 / 5.2 系列（OpenAI 兼容）',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    models: [
+      (displayName: 'GLM-5.3', modelName: 'glm-5.3'),
+      (displayName: 'GLM-5.3-Flash', modelName: 'glm-5.3-flash'),
+      (displayName: 'GLM-5.3-FlashX', modelName: 'glm-5.3-flashx'),
+      (displayName: 'GLM-5.2', modelName: 'glm-5.2'),
     ],
   ),
   ProviderPreset(
