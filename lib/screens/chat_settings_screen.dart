@@ -546,7 +546,7 @@ class ChatSettingsScreen extends StatelessWidget {
             children: [
               CupertinoListTile(
                 title: const Text('语C推进风格'),
-                subtitle: const Text('只决定世界与关系如何回应，用户仍决定自己的行动与结果'),
+                
                 trailing:
                     CupertinoSlidingSegmentedControl<RoleplayProgressionStyle>(
                   groupValue: settings.roleplayProgressionStyle,
@@ -567,15 +567,7 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
               CupertinoListTile(
                 title: const Text('语C/短信模式'),
-                subtitle: Text(
-                  settings.isRoleplayMode
-                      ? '语C：括号动作流，例如（抬眼看向你）你来了。'
-                      : '短信：当前使用的短消息分条格式',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                
                 trailing: CupertinoSlidingSegmentedControl<ChatMessageMode>(
                   // 不使用 Cupertino 默认蓝灰配色，跟随应用自定义浅色/暗色主题。
                   backgroundColor: context.fieldBgColor,
@@ -610,15 +602,7 @@ class ChatSettingsScreen extends StatelessWidget {
             children: [
               CupertinoListTile(
                 title: const Text('生成语C候选行动'),
-                subtitle: Text(
-                  settings.enableRoleplayChoices
-                      ? '每次语C回复提供 4 个可填入输入框的行动候选'
-                      : '关闭后不再生成或显示候选行动',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                
                 trailing: CupertinoSwitch(
                   value: settings.enableRoleplayChoices,
                   onChanged: settings.isRoleplayMode
@@ -628,15 +612,7 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
               CupertinoListTile(
                 title: const Text('语C流式回复'),
-                subtitle: Text(
-                  settings.enableRoleplayStream
-                      ? '语C模式下实时显示角色回复'
-                      : '关闭后使用普通请求，兼容不支持流式的接口',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                
                 trailing: CupertinoSwitch(
                   value: settings.enableRoleplayStream,
                   onChanged: settings.isRoleplayMode
@@ -646,13 +622,7 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
               CupertinoListTile(
                 title: const Text('显示表情按钮'),
-                subtitle: Text(
-                  settings.showStickerButton ? '在输入框左侧显示表情按钮' : '已隐藏',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                
                 trailing: CupertinoSwitch(
                   value: settings.showStickerButton,
                   onChanged: settings.setShowStickerButton,
@@ -671,15 +641,7 @@ class ChatSettingsScreen extends StatelessWidget {
             children: [
               CupertinoListTile(
                 title: const Text('自动压缩历史消息'),
-                subtitle: Text(
-                  settings.enableCompression
-                      ? '根据所选模型上下文长度，达到 70% 时自动压缩更早的历史消息'
-                      : '已关闭',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                
                 trailing: CupertinoSwitch(
                   value: settings.enableCompression,
                   onChanged: (v) => settings.setEnableCompression(v),
@@ -846,13 +808,7 @@ class ChatSettingsScreen extends StatelessWidget {
             children: [
               CupertinoListTile(
                 title: const Text('思考强度'),
-                subtitle: Text(
-                  settings.thinkingLevel.description,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -890,13 +846,7 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
               CupertinoListTile(
                 title: const Text('显示 AI 思考时长'),
-                subtitle: Text(
-                  '在角色回复上方显示本次思考耗时（不作为正文回传）',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                
                 trailing: CupertinoSwitch(
                   value: settings.showThinkingDuration,
                   onChanged: (v) => settings.setShowThinkingDuration(v),
