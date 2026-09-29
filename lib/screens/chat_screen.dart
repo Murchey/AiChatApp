@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math';
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
@@ -30,16 +29,14 @@ import '../utils/app_toast.dart';
 import '../widgets/chat/chat_bubble_menu.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/chat_title_bar.dart';
-import '../widgets/character_avatar.dart';
 import '../widgets/message_input.dart';
 import 'chat/chat_import_export.dart';
 import 'chat/chat_proactive_reply.dart';
+import 'chat/chat_select_forward.dart';
 import 'chat_detail_screen.dart';
 import 'chat_settings_screen.dart';
 import 'character_detail_screen.dart';
 import 'forward_detail_screen.dart';
-
-enum _MemorySaveMode { direct, compress }
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -1138,208 +1135,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
-  /// 保存选中的消息为角色的持久化记忆点：
-  /// 仅取文本类消息，内容带发送者标识（用户/角色名），便于模型理解语境。
-  /// 单次选取的多条消息合并为**一条**记忆点（一个栏目），
-  /// 在管理页作为整体编辑 / 删除。
-  Future<void> _saveSelectedAsMemory() async {
-    final chatProvider = context.read<ChatProvider>();
-    final conversation = chatProvider.conversations
-        .where((c) => c.id == widget.conversationId)
-        .firstOrNull;
-    if (conversation == null) {
-      _exitSelectMode();
-      return;
-    }
-    final character = context
-        .read<CharacterProvider>()
-        .getCharacterById(conversation.characterId);
-    final characterName = character?.displayName ?? widget.characterName;
-    final userName = context.read<AuthProvider>().user?.nickname ?? '用户';
-
-    final messages = chatProvider
-        .getMessages(widget.conversationId)
-        .where((m) => _selectedIds.contains(m.id))
-        .toList();
-    // 仅文本消息可作记忆点（图片/文件内容是路径，无语义）
-    final texts = messages
-        .where((m) => m.type == MessageType.text && m.content.trim().isNotEmpty)
-        .map((m) =>
-            '${m.isFromUser ? userName : characterName}说："${m.content.trim()}"')
-        .toList();
-    if (texts.isEmpty) {
-      showCupertinoDialog(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('提示'),
-          content: const Text('选中的消息中不包含可保存的文字内容'),
-          actions: [
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('确定'),
-            ),
-          ],
-        ),
+  /// 保存选中的消息为角色记忆点
+  Future<void> _saveSelectedAsMemory() => ChatSelectForward.saveSelectedAsMemory(
+        context,
+        conversationId: widget.conversationId,
+        fallbackCharacterName: widget.characterName,
+        selectedIds: _selectedIds,
+        onSaved: () {
+          if (mounted) _exitSelectMode();
+        },
       );
-      return;
-    }
-    // 多条消息合并为一条记忆点（换行分隔），作为整体存储
-    final mergedContent = texts.join('\n');
-
-    final memoryProvider = context.read<MemoryPointProvider>();
-    // 弹窗确认要保存的内容，并允许在保存前交给模型总结压缩。
-    final saveMode = await showCupertinoDialog<_MemorySaveMode>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('保存为记忆点'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '将以下 ${texts.length} 条消息保存为「$characterName」的一条记忆点：',
-                style: const TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 8),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 220),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final t in texts)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Text(t, style: const TextStyle(fontSize: 13)),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, _MemorySaveMode.direct),
-            child: const Text('直接保存'),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx, _MemorySaveMode.compress),
-            child: const Text('总结压缩后保存'),
-          ),
-        ],
-      ),
-    );
-    if (saveMode == null || !mounted) return;
-
-    var memoryContent = mergedContent;
-    if (saveMode == _MemorySaveMode.compress) {
-      final chatSettings = context.read<ChatSettingsProvider>();
-      final model = context
-          .read<ApiProvider>()
-          .getModelById(chatSettings.selectedModelId);
-      if (model == null) {
-        showCupertinoDialog(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text('无法总结'),
-            content: const Text('尚未配置当前聊天模型，请先到「API 设置」中选择可用模型。'),
-            actions: [
-              CupertinoDialogAction(
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('确定'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-
-      final compressionHistory = messages
-          .where(
-              (m) => m.type == MessageType.text && m.content.trim().isNotEmpty)
-          .map((m) => <String, String>{
-                'role': m.isFromUser ? 'user' : 'assistant',
-                'content':
-                    '${m.isFromUser ? userName : characterName}：${m.content.trim()}',
-              })
-          .toList();
-
-      showCupertinoDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => const CupertinoAlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CupertinoActivityIndicator(),
-              SizedBox(height: 12),
-              Text('正在总结记忆，请稍候……'),
-            ],
-          ),
-        ),
-      );
-      try {
-        final summary = await LLMService.compressHistory(
-          model: model,
-          historyMessages: compressionHistory,
-        );
-        if (summary.trim().isEmpty) {
-          throw const LLMException('模型没有返回有效的总结内容');
-        }
-        memoryContent = summary.trim();
-      } catch (e) {
-        if (mounted) Navigator.of(context, rootNavigator: true).pop();
-        if (!mounted) return;
-        showCupertinoDialog(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text('总结失败'),
-            content: Text(LLMService.describeException(e)),
-            actions: [
-              CupertinoDialogAction(
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('确定'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-      if (!mounted) return;
-    }
-
-    await memoryProvider.addPoints(conversation.characterId, [memoryContent]);
-    if (!mounted) return;
-    _exitSelectMode();
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('已保存'),
-        content: Text(
-          '已将 ${texts.length} 条消息合并为一条记忆点保存，后续对话中「$characterName」会自动记住这些内容。可在聊天详情「提示词设置 → 记忆点管理」中查看或修改。',
-        ),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// 多选模式下点击气泡切换选中状态
   void _toggleSelect(Message message) {
@@ -1350,143 +1155,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
-  /// 转发选中的消息到其他会话；merge=true 合并转发，否则逐条转发
-  Future<void> _forwardMessages({required bool merge}) async {
-    final chatProvider = context.read<ChatProvider>();
-    final messages = chatProvider
-        .getMessages(widget.conversationId)
-        .where((m) => _selectedIds.contains(m.id))
-        .toList();
-    if (messages.isEmpty) return;
-
-    final target = await _pickTargetConversation();
-    if (target == null || !mounted) return;
-
-    final conversation = chatProvider.conversations
-        .where((c) => c.id == widget.conversationId)
-        .firstOrNull;
-    final character = conversation != null
-        ? context
-            .read<CharacterProvider>()
-            .getCharacterById(conversation.characterId)
-        : null;
-    final sourceName = character?.displayName ?? widget.characterName;
-    final sourceAvatar = character?.avatar ?? '';
-
-    if (merge) {
-      await chatProvider.forwardMerged(
-        conversationId: target.id,
-        sourceName: sourceName,
-        sourceAvatar: sourceAvatar,
-        messages: messages,
+  /// 转发选中的消息到其他会话
+  Future<void> _forwardMessages({required bool merge}) =>
+      ChatSelectForward.forwardMessages(
+        context,
+        conversationId: widget.conversationId,
+        fallbackCharacterName: widget.characterName,
+        selectedIds: _selectedIds,
+        merge: merge,
+        onDone: () {
+          if (mounted) _exitSelectMode();
+        },
       );
-    } else {
-      await chatProvider.forwardIndividually(
-        conversationId: target.id,
-        messages: messages,
-      );
-    }
-    if (!mounted) return;
-    _exitSelectMode();
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('转发成功'),
-        content: Text(
-          '已将 ${messages.length} 条消息${merge ? '（合并）' : ''}转发到「${target.characterName}」',
-        ),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-  }
 
-  /// 弹出目标会话选择器（排除当前会话）
-  Future<Conversation?> _pickTargetConversation() async {
-    final chatProvider = context.read<ChatProvider>();
-    final candidates = chatProvider.conversations
-        .where((c) => c.id != widget.conversationId)
-        .toList();
-    if (candidates.isEmpty) {
-      showCupertinoDialog(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('提示'),
-          content: const Text('暂无可转发的聊天，请先创建其他聊天'),
-          actions: [
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('确定'),
-            ),
-          ],
-        ),
-      );
-      return null;
-    }
-    return showCupertinoModalPopup<Conversation>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Container(
-          margin: const EdgeInsets.all(8),
-          height: min(360.0, candidates.length * 56.0 + 96.0),
-          decoration: BoxDecoration(
-            color: context.listBgColor,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  '转发到',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: context.textPrimaryColor,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                height: 0.5,
-                color: context.separatorColor,
-              ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: candidates.length,
-                  itemBuilder: (context, index) {
-                    final c = candidates[index];
-                    return CupertinoListTile(
-                      leading: _buildConvAvatar(c),
-                      title: Text(
-                        c.characterName,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: context.textPrimaryColor,
-                        ),
-                      ),
-                      onTap: () => Navigator.pop(ctx, c),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 消息时间标签：居中显示在聊天气泡间隙上，
-  /// 仅在会话首条或与上一条消息间隔超过 10 分钟时展示
   Widget _buildTimeLabel(DateTime time) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -1518,16 +1199,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildConvAvatar(Conversation c) {
-    // 头像框样式跟随全局设置（方形 / 仿 QQ 圆形）
-    return CharacterAvatar(
-      base64: c.characterAvatar,
-      size: 40,
-      borderRadius: BorderRadius.circular(6),
-    );
-  }
-
-  /// 多选模式底部操作栏：取消 + 已选数量 + 转发/存储记忆点操作
   Widget _buildSelectBar(BuildContext context) {
     final count = _selectedIds.length;
     return Container(
