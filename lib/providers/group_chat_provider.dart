@@ -593,12 +593,14 @@ class GroupChatProvider extends ChangeNotifier {
     _replyTotal = speakers.length;
     notifyListeners();
 
+    // 群历史对所有发言成员相同，循环外构建一次（含最近图片的视觉上下文）
+    final historyForAll = _buildGroupHistory(groupId, contextCount);
+
     for (final member in speakers) {
       if (generation != _replyGeneration) break; // 被打断
       try {
         final systemPrompt = _buildGroupSystemPrompt(
             groupId, member, userNickname, roleplayMode);
-        final history = _buildGroupHistory(groupId, contextCount);
 
         final isMentioned = mentionedSet.contains(member.characterId);
         // 沉默成员已在外层过滤，speakers 均为本轮实际发言者
@@ -632,7 +634,7 @@ class GroupChatProvider extends ChangeNotifier {
         final result = await generateMessages(
           model: member.model,
           systemPrompt: systemPrompt,
-          historyMessages: history,
+          historyMessages: historyForAll,
           outputInstruction: outputInstruction,
           roleplayMode: roleplayMode,
         );
@@ -867,8 +869,16 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
         .trim();
   }
 
+  /// 群聊上下文里最多附带的「最近图片」张数（控制请求体体积）。
+  static const _kMaxVisionImages = 3;
+
   /// 构建群聊上下文（供模型理解语境）：用户消息 role=user，
   /// 角色消息 role=assistant 并带发送者名前缀，便于区分是谁说的。
+  ///
+  /// 历史里的图片消息不再只塞文字占位：最近若干张可读图片会按
+  /// OpenAI 视觉格式（content 为 [{type:text},{type:image_url}]）附带
+  /// 真实图片字节，与私聊 generateVisionReply 同一套多模态约定；
+  /// 更早或读不到的图片仍退化为占位文案，避免请求体过大。
   List<Map<String, Object>> _buildGroupHistory(
       String groupId, int contextCount) {
     final messages = _messages[groupId] ?? const <Message>[];
@@ -876,6 +886,17 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
         ? messages.length - contextCount
         : 0;
     final result = <Map<String, Object>>[];
+
+    // 从最近往前挑最多 _kMaxVisionImages 张可读图片，编码为 image_url part
+    final visionParts = <int, Map<String, Object>>{};
+    for (var i = messages.length - 1; i >= start; i--) {
+      if (visionParts.length >= _kMaxVisionImages) break;
+      final m = messages[i];
+      if (m.type != MessageType.image) continue;
+      final part = _encodeImagePart(m.content);
+      if (part != null) visionParts[i] = part;
+    }
+
     for (int i = start; i < messages.length; i++) {
       final m = messages[i];
       // 系统事件（成员加入/移除）：以「群通知」形式进入上下文，
@@ -884,12 +905,32 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
         result.add({'role': 'user', 'content': '【群通知】${m.content}'});
         continue;
       }
+      if (m.type == MessageType.image) {
+        final placeholder = m.isFromUser
+            ? '[用户发送了一张图片]'
+            : '[${m.senderName.isEmpty ? '角色' : m.senderName}发送了一张图片]';
+        final part = visionParts[i];
+        if (part != null) {
+          // 视觉消息：文本占位 + 图片字节，模型可真正「看到」图
+          result.add({
+            'role': m.isFromUser ? 'user' : 'assistant',
+            'content': [
+              {'type': 'text', 'text': placeholder},
+              part,
+            ],
+          });
+        } else {
+          result.add({
+            'role': m.isFromUser ? 'user' : 'assistant',
+            'content': placeholder,
+          });
+        }
+        continue;
+      }
       if (m.isFromUser) {
         switch (m.type) {
           case MessageType.image:
-            // 用户发的图片无法随文本传给各角色模型（群内模型可能不支持视觉），
-            // 以文本提示占位，让角色感知"用户刚发了一张图片"
-            result.add({'role': 'user', 'content': '[用户发送了一张图片]'});
+            break; // 已在上方处理为视觉消息
           case MessageType.file:
             result.add({
               'role': 'user',
@@ -916,11 +957,53 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
           'content':
               label.isEmpty ? '[$name发送了一张表情包]' : '[$name发送了一张表情包（备注：$label）]',
         });
+      } else if (m.type == MessageType.file) {
+        // 角色发送的文件：只给文件名，绝不暴露本地路径。
+        final name = m.senderName.isEmpty ? '角色' : m.senderName;
+        result.add({
+          'role': 'assistant',
+          'content': '[$name发送了一个文件：${m.content.split('/').last}]',
+        });
       } else {
         final name = m.senderName.isEmpty ? '角色' : m.senderName;
         result.add({'role': 'assistant', 'content': '$name：${m.content}'});
       }
     }
     return result;
+  }
+
+  /// 把本地图片读成 OpenAI 视觉格式的 image_url part（data URL + base64）。
+  /// 文件不存在 / 读取失败 / 内容为空时返回 null，调用方退化为文字占位。
+  Map<String, Object>? _encodeImagePart(String imagePath) {
+    final path = imagePath.trim();
+    if (path.isEmpty) return null;
+    try {
+      final bytes = File(path).readAsBytesSync();
+      if (bytes.isEmpty) return null;
+      return {
+        'type': 'image_url',
+        'image_url': {
+          'url': 'data:${_imageMime(path)};base64,${base64Encode(bytes)}',
+        },
+      };
+    } catch (e) {
+      debugPrint('[GroupChat] 读取图片失败，退化为占位文案: $path ($e)');
+      return null;
+    }
+  }
+
+  /// 按文件扩展名推断图片 MIME（OpenAI 视觉格式要求 data URL 带类型）。
+  String _imageMime(String path) {
+    final ext = path.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'gif':
+        return 'image/gif';
+      default:
+        return 'image/jpeg';
+    }
   }
 }
