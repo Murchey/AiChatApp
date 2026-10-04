@@ -153,15 +153,21 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() => _currentTab = index);
   }
 
-  /// 底部 tab 点击切换时，同步滑动主内容 PageView
+  /// 底部 tab 点击切换时，同步主内容 PageView：
+  /// 相邻页用平滑滑动，跨页（如 0→2）直接跳转无动画，避免长距离滑页。
   void _onTabTap(int index) {
     if (_currentTab == index) return;
+    final previous = _currentTab;
     setState(() => _currentTab = index);
-    _pageController.animateToPage(
-      index,
-      duration: AppMotion.base,
-      curve: AppMotion.soft,
-    );
+    if ((index - previous).abs() == 1) {
+      _pageController.animateToPage(
+        index,
+        duration: AppMotion.base,
+        curve: AppMotion.soft,
+      );
+    } else {
+      _pageController.jumpToPage(index);
+    }
   }
 
   /// 从聊天等二级页面返回主页时，强制刷新底部导航栏未读角标。
