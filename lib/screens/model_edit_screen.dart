@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/api_provider.dart';
+import '../providers/chat_settings_provider.dart';
 import '../services/llm_service.dart';
 
 /// 快捷预设：从提供商预设进入添加模型页面时自动预填的信息
@@ -120,6 +121,12 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
         apiKey: _apiKeyController.text.trim(),
         contextLength: contextLength,
       );
+      // 首个（或唯一）模型添加后自动选为聊天模型，免去手动设置
+      if (mounted) {
+        await context
+            .read<ChatSettingsProvider>()
+            .ensureSoleModelSelected(api.models.map((m) => m.id).toList());
+      }
       if (mounted) Navigator.pop(context);
       // 添加成功后后台自动检测上下文长度并保存：
       // 本地注册表未命中的模型联网探测 /models，探测成功自动更新

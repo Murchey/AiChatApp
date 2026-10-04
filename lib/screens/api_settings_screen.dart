@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/api_provider.dart';
+import '../providers/chat_settings_provider.dart';
 import '../services/tts_service.dart';
 import 'chat_settings_screen.dart';
 import 'model_edit_screen.dart';
@@ -350,6 +351,12 @@ class ApiSettingsScreen extends StatelessWidget {
             isDestructiveAction: true,
             onPressed: () async {
               await context.read<ApiProvider>().deleteModel(model.id);
+              if (!ctx.mounted) return;
+              // 删到只剩一个模型且当前聊天模型已失效时，自动切到剩余模型
+              final api = context.read<ApiProvider>();
+              final settings = context.read<ChatSettingsProvider>();
+              await settings
+                  .ensureSoleModelSelected(api.models.map((m) => m.id).toList());
               if (ctx.mounted) Navigator.pop(ctx);
             },
             child: const Text('删除'),

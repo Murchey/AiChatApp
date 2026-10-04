@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/provider_preset.dart';
 import '../providers/api_provider.dart';
+import '../providers/chat_settings_provider.dart';
 import '../services/llm_service.dart';
 
 /// 厂商设置二级页面：填写请求地址与 API Key，
@@ -143,6 +144,11 @@ class _ProviderConfigScreenState extends State<ProviderConfigScreen> {
         contextLength: contextLength,
       ));
     }
+    if (!mounted) return;
+    // 首个（或唯一）模型添加后自动选为聊天模型，免去手动设置
+    await context
+        .read<ChatSettingsProvider>()
+        .ensureSoleModelSelected(api.models.map((m) => m.id).toList());
     if (!mounted) return;
     _showDialog('添加成功', '已添加 ${added.length} 个模型。', thenPop: true);
     // 添加成功后后台自动检测上下文长度并保存：

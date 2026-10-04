@@ -37,8 +37,7 @@ class _AiChatAppState extends State<AiChatApp> {
   @override
   void initState() {
     super.initState();
-    context.read<ApiProvider>().init();
-    context.read<ChatSettingsProvider>().init();
+    _initProviders();
     context.read<GroupChatProvider>().init();
     context.read<MomentNotificationProvider>().init();
     context.read<MemoryPointProvider>().init();
@@ -58,6 +57,16 @@ class _AiChatAppState extends State<AiChatApp> {
     _setupNavigationHandler();
     // 初始化时同步数据到小组件
     _syncWidgetData();
+  }
+
+  /// 先加载 API 与聊天设置；仅有一个模型且未选聊天模型时自动选中，
+  /// 免去用户手动到「聊天设置」里点一次。
+  Future<void> _initProviders() async {
+    final api = context.read<ApiProvider>();
+    final settings = context.read<ChatSettingsProvider>();
+    await Future.wait([api.init(), settings.init()]);
+    if (!mounted) return;
+    await settings.ensureSoleModelSelected(api.models.map((m) => m.id).toList());
   }
 
   /// 打开 APP 时执行到期的自动备份（延迟，等 Provider 加载完再打包）

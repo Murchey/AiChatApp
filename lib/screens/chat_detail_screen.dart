@@ -24,6 +24,7 @@ import '../utils/app_toast.dart';
 import '../utils/avatar_picker.dart';
 import '../utils/file_utils.dart';
 import 'character_detail_screen.dart';
+import 'chat_settings_screen.dart';
 import 'create_group_screen.dart';
 import 'image_crop_screen.dart';
 import 'memory_point_manage_screen.dart';
@@ -666,6 +667,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           ],
           const SizedBox(height: 24),
           ChatDetailPromptPanel(onOpenPrompt: _togglePrompt, onOpenMemory: _openMemoryManage),
+          const SizedBox(height: 24),
+          _buildChatSettingsEntry(),
         ],
       ),
     );
@@ -1032,6 +1035,48 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       context,
       CupertinoPageRoute(
         builder: (_) => MemoryPointManageScreen(characterId: _characterId),
+      ),
+    );
+  }
+
+  /// 资料卡底部「聊天设置」入口：模型 / 上下文条数 / 压缩等全局聊天配置。
+  Widget _buildChatSettingsEntry() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: context.listBgColor,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: CupertinoListTile(
+        leading: Icon(CupertinoIcons.gear_alt, color: context.accentColor),
+        title: Text(
+          '聊天设置',
+          style: TextStyle(color: context.textPrimaryColor),
+        ),
+        subtitle: Text(
+          '模型、上下文条数、自动压缩等聊天相关配置',
+          style: TextStyle(
+            fontSize: 12,
+            color: context.textSecondaryColor,
+          ),
+        ),
+        trailing: Icon(
+          CupertinoIcons.chevron_right,
+          size: 16,
+          color: context.textSecondaryColor,
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (_) => ChatSettingsScreen(
+                conversationId: widget.conversationId.isEmpty
+                    ? null
+                    : widget.conversationId,
+              ),
+            ),
+          );
+        },
       ),
     );
   }

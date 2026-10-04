@@ -153,6 +153,23 @@ class ChatSettingsProvider extends ChangeNotifier {
     }
   }
 
+  /// 未选择聊天模型（或已选模型已被删除）且当前仅有一个可用模型时，
+  /// 自动选中它，免去用户手动到「聊天设置」里点一次。
+  /// 返回是否发生了自动选中。
+  Future<bool> ensureSoleModelSelected(List<String> availableModelIds) async {
+    if (availableModelIds.length != 1) return false;
+    final sole = availableModelIds.first;
+    if (_selectedModelId == sole) return false;
+    // 已选且仍有效时不覆盖用户的选择
+    if (_selectedModelId != null &&
+        _selectedModelId!.isNotEmpty &&
+        availableModelIds.contains(_selectedModelId)) {
+      return false;
+    }
+    await setSelectedModel(sole);
+    return true;
+  }
+
   Future<void> setEnableCompression(bool value) async {
     _enableCompression = value;
     notifyListeners();
