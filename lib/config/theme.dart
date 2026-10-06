@@ -90,9 +90,7 @@ class ZmdBubbleColors {
 class AppColors {
   // 亮色模式
   static const scaffoldLight = Color(0xFFF5F5F7); // Apple grouped background
-  // 二级页面使用 CupertinoPageScaffold 的自动顶部安全区消费。
-  // 完全不透明可避免列表首项被半透明导航栏覆盖。
-  static const navBarLight = Color(0xFFFFFFFF);
+  static const navBarLight = Color(0xF2FFFFFF); // translucent system surface
   static const listBgLight = Color(0xFFFFFFFF); // surface
   static const chatBgLight = Color(0xFFF9F9FB); // calm conversation canvas
   // iMessage / ChatGPT style default conversation colors.
@@ -105,7 +103,7 @@ class AppColors {
 
   // 暗色模式（Apple system background / surface 层级）
   static const scaffoldDark = Color(0xFF0B0B0F);
-  static const navBarDark = Color(0xFF111318);
+  static const navBarDark = Color(0xF2111318);
   static const listBgDark = Color(0xFF111318);
   static const chatBgDark = Color(0xFF0B0B0F);
   static const bubbleSelfDark = Color(0xFF0A84FF); // 自己气泡

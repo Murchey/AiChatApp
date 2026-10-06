@@ -8,11 +8,11 @@ import '../providers/character_provider.dart';
 import '../providers/moment_notification_provider.dart';
 import '../widgets/moment_card.dart';
 import '../widgets/publish_moment_screen.dart';
-import 'moment_detail_screen.dart';
+import 'character_detail_screen.dart';
 import 'moment_notifications_screen.dart';
 
 /// 朋友圈页：按发布时间倒序展示全部通讯录好友（含"自己"）的朋友圈动态。
-/// 点击某条动态可进入动态详情页；右上角相机按钮可发布朋友圈；
+/// 点击某条动态可进入对应角色/自己的空间页；右上角相机按钮可发布朋友圈；
 /// 左上角铃铛图标查看角色互动通知（带未读红点角标）。
 class MomentsScreen extends StatefulWidget {
   const MomentsScreen({super.key});
@@ -124,7 +124,7 @@ class _MomentsScreenState extends State<MomentsScreen> {
 
           return ListView.builder(
             padding: EdgeInsets.only(
-              top: MediaQuery.paddingOf(context).top + 12,
+              top: 12,
               bottom: UiSpec.floatingContentBottomInset +
                   MediaQuery.viewPaddingOf(context).bottom +
                   24,
@@ -143,44 +143,19 @@ class _MomentsScreenState extends State<MomentsScreen> {
                       Navigator.push(
                         context,
                         CupertinoPageRoute(
-                          builder: (_) => MomentDetailScreen(
+                          builder: (_) => CharacterDetailScreen(
                             characterId: character.id,
-                            momentId: moment.id,
                           ),
                         ),
                       );
                     },
-                    child: MomentCard(
-                      character: character,
-                      moment: moment,
-                      onOpenDetail: () => _openMomentDetail(
-                        context,
-                        character.id,
-                        moment.id,
-                      ),
-                    ),
+                    child: MomentCard(character: character, moment: moment),
                   ),
                 ),
               );
             },
           );
         },
-      ),
-    );
-  }
-
-  void _openMomentDetail(
-    BuildContext context,
-    String characterId,
-    String momentId,
-  ) {
-    Navigator.push(
-      context,
-      CupertinoPageRoute(
-        builder: (_) => MomentDetailScreen(
-          characterId: characterId,
-          momentId: momentId,
-        ),
       ),
     );
   }

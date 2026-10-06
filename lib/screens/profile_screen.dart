@@ -70,7 +70,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final settings = context.watch<SettingsProvider>();
           return ListView(
             padding: EdgeInsets.only(
-              top: MediaQuery.paddingOf(context).top + UiSpec.spaceSm,
               bottom: UiSpec.floatingContentBottomInset +
                   MediaQuery.viewPaddingOf(context).bottom,
             ),

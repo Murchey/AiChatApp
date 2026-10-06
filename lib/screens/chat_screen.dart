@@ -364,6 +364,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ChatMessageActions.showReasoning(context, message);
 
   /// 角色气泡下方的思考时长标签
+  Widget _buildThinkingDurationLabel(Message msg) =>
+      ThinkingDurationLabel(message: msg);
+
   List<Widget> _buildMenuItems(Message message) {
     return ChatBubbleMenuItems(
       message: message,
@@ -999,14 +1002,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               Column(
                 children: [
                   Expanded(
-                    child: Selector<ChatProvider, int>(
-                      // The list structure only changes when a message is
-                      // inserted or removed. Content replacements during an
-                      // SSE stream are handled by the keyed row below.
-                      selector: (_, provider) =>
-                          provider.getMessages(widget.conversationId).length,
-                      builder: (context, _, __) {
-                        final chatProvider = context.read<ChatProvider>();
+                    child: Consumer<ChatProvider>(
+                      builder: (context, chatProvider, _) {
                         final messages =
                             chatProvider.getMessages(widget.conversationId);
 
@@ -1118,37 +1115,57 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   children: [
                                     if (showTime)
                                       _buildTimeLabel(msg.createdAt),
-                                    _ChatMessageTile(
-                                      conversationId: widget.conversationId,
-                                      message: msg,
-                                      userAvatar: userAvatar,
-                                      characterAvatar: characterAvatar,
-                                      selectMode: _selectMode,
-                                      selected: _selectedIds.contains(msg.id),
-                                      showSpeakerIcon: showSpeakerIcon,
-                                      onCancelPlayback: (messageId) =>
-                                          TtsPlaybackController.instance
-                                              .cancelMessage(messageId),
-                                      onUserAvatarTap:
-                                          _selectMode ? null : _openSelfSpace,
-                                      onCharacterAvatarTap: _selectMode
-                                          ? null
-                                          : _openCharacterSpace,
-                                      onTap: _selectMode ? _toggleSelect : null,
-                                      onForwardTap: (message) =>
-                                          _openForwardDetail(
-                                        message,
-                                        userAvatar: userAvatar,
-                                        characterAvatar: characterAvatar,
-                                      ),
-                                      onFileTap:
-                                          _selectMode ? null : _openFileMessage,
-                                      onSpeak: (_selectMode || !showSpeakerIcon)
-                                          ? null
-                                          : _speakMessage,
-                                      onLongPress: (message, bubbleKey) =>
-                                          _showBubbleMenu(message, bubbleKey),
+                                    ListenableBuilder(
+                                      listenable:
+                                          TtsPlaybackController.instance,
+                                      builder: (context, _) {
+                                        final playback =
+                                            TtsPlaybackController.instance;
+                                        return ChatBubble(
+                                          message: msg,
+                                          userAvatar: userAvatar,
+                                          characterAvatar: characterAvatar,
+                                          selectMode: _selectMode,
+                                          selected:
+                                              _selectedIds.contains(msg.id),
+                                          playbackPhase:
+                                              playback.phaseFor(msg.id),
+                                          playbackQueuedCount:
+                                              playback.queuedCountFor(msg.id),
+                                          onCancelPlayback: () =>
+                                              playback.cancelMessage(msg.id),
+                                          // 点击头像进入对应空间页（多选模式下禁用，避免误触）
+                                          onUserAvatarTap: _selectMode
+                                              ? null
+                                              : _openSelfSpace,
+                                          onCharacterAvatarTap: _selectMode
+                                              ? null
+                                              : _openCharacterSpace,
+                                          onTap: _selectMode
+                                              ? () => _toggleSelect(msg)
+                                              : null,
+                                          onForwardTap: () =>
+                                              _openForwardDetail(
+                                            msg,
+                                            userAvatar: userAvatar,
+                                            characterAvatar: characterAvatar,
+                                          ),
+                                          onFileTap: _selectMode
+                                              ? null
+                                              : _openFileMessage,
+                                          onSpeak:
+                                              (_selectMode || !showSpeakerIcon)
+                                                  ? null
+                                                  : () => _speakMessage(msg),
+                                          onLongPress: (message, bubbleKey) =>
+                                              _showBubbleMenu(
+                                                  message, bubbleKey),
+                                        );
+                                      },
                                     ),
+                                    // 思考时长：角色气泡下方，左对齐气泡列
+                                    if (!msg.isFromUser)
+                                      _buildThinkingDurationLabel(msg),
                                   ],
                                 ),
                               );
@@ -1328,141 +1345,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           );
         },
       ),
-    );
-  }
-}
-
-/// A row-level subscription for chat messages. Provider notifications are
-/// frequent while an SSE reply is streaming, so the row checks its own
-/// revision before rebuilding the protected bubble subtree.
-class _ChatMessageTile extends StatefulWidget {
-  final String conversationId;
-  final Message message;
-  final String userAvatar;
-  final String characterAvatar;
-  final bool selectMode;
-  final bool selected;
-  final bool showSpeakerIcon;
-  final void Function(String messageId) onCancelPlayback;
-  final VoidCallback? onUserAvatarTap;
-  final VoidCallback? onCharacterAvatarTap;
-  final ValueChanged<Message>? onTap;
-  final ValueChanged<Message>? onForwardTap;
-  final Future<void> Function(String filePath)? onFileTap;
-  final ValueChanged<Message>? onSpeak;
-  final void Function(Message message, GlobalKey bubbleKey)? onLongPress;
-
-  const _ChatMessageTile({
-    required this.conversationId,
-    required this.message,
-    required this.userAvatar,
-    required this.characterAvatar,
-    required this.selectMode,
-    required this.selected,
-    required this.showSpeakerIcon,
-    required this.onCancelPlayback,
-    this.onUserAvatarTap,
-    this.onCharacterAvatarTap,
-    this.onTap,
-    this.onForwardTap,
-    this.onFileTap,
-    this.onSpeak,
-    this.onLongPress,
-  });
-
-  @override
-  State<_ChatMessageTile> createState() => _ChatMessageTileState();
-}
-
-class _ChatMessageTileState extends State<_ChatMessageTile> {
-  late final ChatProvider _chatProvider;
-  final TtsPlaybackController _playback = TtsPlaybackController.instance;
-  late int _messageRevision;
-  late (TtsPlaybackPhase, int) _playbackState;
-
-  @override
-  void initState() {
-    super.initState();
-    _chatProvider = context.read<ChatProvider>();
-    _messageRevision = _chatProvider.messageRevisionFor(
-      widget.conversationId,
-      widget.message.id,
-    );
-    _playbackState = _readPlaybackState();
-    _chatProvider.addListener(_handleChatProviderChanged);
-    _playback.addListener(_handlePlaybackChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant _ChatMessageTile oldWidget) {
-    super.didUpdateWidget(oldWidget);
-  }
-
-  (TtsPlaybackPhase, int) _readPlaybackState() => (
-        _playback.phaseFor(widget.message.id),
-        _playback.queuedCountFor(widget.message.id),
-      );
-
-  void _handleChatProviderChanged() {
-    if (!mounted) return;
-    final next = _chatProvider.messageRevisionFor(
-      widget.conversationId,
-      widget.message.id,
-    );
-    if (next == _messageRevision) return;
-    _messageRevision = next;
-    setState(() {});
-  }
-
-  void _handlePlaybackChanged() {
-    if (!mounted) return;
-    final next = _readPlaybackState();
-    if (next == _playbackState) return;
-    _playbackState = next;
-    setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _chatProvider.removeListener(_handleChatProviderChanged);
-    _playback.removeListener(_handlePlaybackChanged);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final message = _chatProvider.messageFor(
-          widget.conversationId,
-          widget.message.id,
-        ) ??
-        widget.message;
-    final (phase, queuedCount) = _playbackState;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ChatBubble(
-          message: message,
-          userAvatar: widget.userAvatar,
-          characterAvatar: widget.characterAvatar,
-          selectMode: widget.selectMode,
-          selected: widget.selected,
-          playbackPhase: phase,
-          playbackQueuedCount: queuedCount,
-          onCancelPlayback: () => widget.onCancelPlayback(message.id),
-          onUserAvatarTap: widget.onUserAvatarTap,
-          onCharacterAvatarTap: widget.onCharacterAvatarTap,
-          onTap: widget.selectMode ? () => widget.onTap?.call(message) : null,
-          onForwardTap: widget.selectMode
-              ? null
-              : () => widget.onForwardTap?.call(message),
-          onFileTap: widget.selectMode ? null : widget.onFileTap,
-          onSpeak: widget.selectMode || !widget.showSpeakerIcon
-              ? null
-              : () => widget.onSpeak?.call(message),
-          onLongPress: widget.onLongPress,
-        ),
-        if (!message.isFromUser) ThinkingDurationLabel(message: message),
-      ],
     );
   }
 }

@@ -7,7 +7,6 @@ import '../providers/settings_provider.dart';
 import '../services/tts_playback_controller.dart';
 import 'character_avatar.dart';
 import 'chat/sticker_preview_dialog.dart';
-import 'moments/moment_media_widgets.dart';
 
 /// 微信表情代码 → emoji 映射：AI 按输出规则会携带表情包文字（如 [捂脸]），
 /// 渲染时转成真实 emoji 图标，贴近微信聊天观感。未收录的代码原样保留。
@@ -770,57 +769,38 @@ class _ChatBubbleState extends State<ChatBubble> {
     // 按实际显示尺寸（240 * 屏幕像素密度）解码图片，避免把原始大图全量解码到内存，
     // 图片消息较多时能显著降低内存占用与滚动卡顿
     final decodeSize = (240 * MediaQuery.devicePixelRatioOf(context)).ceil();
-    final path = widget.message.content;
-    return GestureDetector(
-      onTap: () async {
-        if (widget.selectMode) {
-          widget.onTap?.call();
-          return;
-        }
-        if (!await File(path).exists()) return;
-        if (!context.mounted) return;
-        Navigator.of(context).push(
-          PageRouteBuilder(
-            opaque: true,
-            transitionDuration: const Duration(milliseconds: 220),
-            reverseTransitionDuration: const Duration(milliseconds: 160),
-            pageBuilder: (_, __, ___) => ImagePreviewPage(path: path),
-          ),
-        );
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 240, maxHeight: 240),
-          child: Image.file(
-            File(path),
-            // 只限制最大尺寸并保持原始宽高比，避免缩略图被压成正方形。
-            fit: BoxFit.contain,
-            cacheWidth: decodeSize,
-            gaplessPlayback: true, // 列表重建时复用上一帧，避免图片闪烁
-            errorBuilder: (_, __, ___) => Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: context.listBgColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    CupertinoIcons.photo,
-                    size: 40,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 240, maxHeight: 240),
+        child: Image.file(
+          File(widget.message.content),
+          fit: BoxFit.cover,
+          cacheWidth: decodeSize,
+          cacheHeight: decodeSize,
+          gaplessPlayback: true, // 列表重建时复用上一帧，避免图片闪烁
+          errorBuilder: (_, __, ___) => Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  CupertinoIcons.photo,
+                  size: 40,
+                  color: context.textSecondaryColor,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '图片加载失败',
+                  style: TextStyle(
+                    fontSize: 13,
                     color: context.textSecondaryColor,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '图片加载失败',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -867,6 +847,8 @@ class _ChatBubbleState extends State<ChatBubble> {
     );
   }
 }
+
+
 
 /// 构建「上边共线尾巴 + 圆角」的气泡路径（ww/zmd 共用）。
 /// 尾巴尖端在气泡顶边（与头像中线对齐），回程弧线圆心在气泡外侧尖端一侧，

@@ -34,22 +34,6 @@ import 'contacts_search_screen.dart';
 import 'create_group_screen.dart';
 import 'group_chat_screen.dart';
 
-enum _ContactListItemKind { self, section, contact, divider }
-
-class _ContactListItem {
-  final _ContactListItemKind kind;
-  final String keyValue;
-  final Character? character;
-  final double height;
-
-  const _ContactListItem({
-    required this.kind,
-    required this.keyValue,
-    required this.height,
-    this.character,
-  });
-}
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -65,12 +49,9 @@ class _HomeScreenState extends State<HomeScreen>
   int? _pressedTab;
 
   // 通讯录字母导航状态
-  final ScrollController _contactsScrollController = ScrollController();
-  final Map<String, double> _contactSectionOffsets = {};
-  Set<String> _contactAvailableLetters = const <String>{};
+  final Map<String, GlobalKey> _sectionKeys = {};
   bool _showCharIndexTooltip = false;
   String _currentCharTooltipLetter = '';
-  bool _indexDragging = false;
   bool _routeSubscribed = false;
 
   // 会话长按悬浮菜单（Overlay，长按位置旁弹出）
@@ -132,7 +113,6 @@ class _HomeScreenState extends State<HomeScreen>
     routeObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
-    _contactsScrollController.dispose();
     super.dispose();
   }
 
@@ -225,21 +205,14 @@ class _HomeScreenState extends State<HomeScreen>
 
   /// 滚动到指定分组标题（对齐顶部）
   void _scrollToSection(String letter) {
-    if (!_contactsScrollController.hasClients) return;
-    final offset = _contactSectionOffsets[letter];
-    if (offset == null) return;
-    final position = _contactsScrollController.position;
-    final target = offset.clamp(0.0, position.maxScrollExtent).toDouble();
-    // 拖动索引时不要排队启动多个动画；每次移动直接跟手定位。
-    if (_indexDragging) {
-      _contactsScrollController.jumpTo(target);
-    } else {
-      _contactsScrollController.animateTo(
-        target,
-        duration: AppMotion.base,
-        curve: AppMotion.soft,
-      );
-    }
+    final key = _sectionKeys[letter];
+    if (key?.currentContext == null) return;
+    Scrollable.ensureVisible(
+      key!.currentContext!,
+      duration: AppMotion.base,
+      curve: AppMotion.soft,
+      alignment: 0.0,
+    );
   }
 
   /// 无数据字母就近滚动到下一个有数据的分组
@@ -583,10 +556,9 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         ),
       ),
-      child: Selector2<ChatProvider, GroupChatProvider, List<HomeChatEntry>>(
-        selector: (_, chatProvider, groupProvider) =>
-            _buildChatEntries(chatProvider, groupProvider),
-        builder: (context, entries, _) {
+      child: Consumer2<ChatProvider, GroupChatProvider>(
+        builder: (context, chatProvider, groupProvider, _) {
+          final entries = _buildChatEntries(chatProvider, groupProvider);
           if (entries.isEmpty) {
             return Center(
               child: Text(
@@ -813,136 +785,120 @@ class _HomeScreenState extends State<HomeScreen>
               .where((g) => g.value.isNotEmpty)
               .toList();
           final availableLetters = groups.map((g) => g.key).toSet();
-          final topPadding = MediaQuery.paddingOf(context).top + UiSpec.spaceSm;
-          final entries = <_ContactListItem>[];
-          var offset = topPadding;
-          if (self != null) {
-            entries.add(const _ContactListItem(
-              kind: _ContactListItemKind.self,
-              keyValue: 'self',
-              height: 76,
-            ));
-            offset += 76;
-            entries.add(const _ContactListItem(
-              kind: _ContactListItemKind.divider,
-              keyValue: 'self-divider',
-              height: 1,
-            ));
-            offset += 1;
-          }
-          final sectionOffsets = <String, double>{};
           for (final group in groups) {
-            sectionOffsets[group.key] = offset;
-            entries.add(_ContactListItem(
-              kind: _ContactListItemKind.section,
-              keyValue: 'section-${group.key}',
-              height: 34,
-            ));
-            offset += 34;
-            for (final character in group.value) {
-              entries.add(_ContactListItem(
-                kind: _ContactListItemKind.contact,
-                keyValue: 'contact-${character.id}',
-                character: character,
-                height: 76,
-              ));
-              offset += 76;
-            }
-            entries.add(_ContactListItem(
-              kind: _ContactListItemKind.divider,
-              keyValue: 'divider-${group.key}',
-              height: 1,
-            ));
-            offset += 1;
+            _sectionKeys.putIfAbsent(group.key, () => GlobalKey());
           }
-          // These values are consumed by the index callbacks. They are derived
-          // from the current provider snapshot and do not represent UI state.
-          _contactSectionOffsets
-            ..clear()
-            ..addAll(sectionOffsets);
-          _contactAvailableLetters = availableLetters;
 
           return Stack(
             children: [
-              // 主列表：扁平化后懒构建，滚动时只创建可见联系人行。
-              ColoredBox(
+              // 主列表（普通 ListView 一次性构建，GlobalKey 定位有效）
+              Container(
                 color: context.scaffoldColor,
-                child: ListView.builder(
-                  controller: _contactsScrollController,
+                child: ListView(
                   padding: EdgeInsets.only(
-                    top: topPadding,
                     right: 28,
                     bottom: _floatingContentBottomInset(context),
                   ),
-                  itemCount: entries.length,
-                  itemExtentBuilder: (index, _) => entries[index].height,
-                  itemBuilder: (context, index) {
-                    final item = entries[index];
-                    switch (item.kind) {
-                      case _ContactListItemKind.self:
-                        return KeyedSubtree(
-                          key: const ValueKey('contact-self'),
-                          child: _buildSelfTile(context, self!),
-                        );
-                      case _ContactListItemKind.section:
-                        return KeyedSubtree(
-                          key: ValueKey(item.keyValue),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                item.keyValue.substring('section-'.length),
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: context.textSecondaryColor,
-                                ),
+                  children: [
+                    // 顶部固定的"自己"账号：不能发起聊天，进入自己的空间页
+                    if (self != null) ...[
+                      _buildSelfTile(context, self),
+                      Container(
+                        height: 0.5,
+                        margin: const EdgeInsets.only(left: 76),
+                        color: context.separatorColor.withValues(alpha: 0.62),
+                      ),
+                    ],
+                    for (final group in groups) ...[
+                      // 字母标题
+                      Container(
+                        key: _sectionKeys[group.key],
+                        width: double.infinity,
+                        color: context.scaffoldColor,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          group.key,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                      ),
+                      for (final character in group.value)
+                        CupertinoListTile(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          // 同消息列表：显式放宽 leading 尺寸约束
+                          leadingSize: UiSpec.conversationAvatar,
+                          leading: _buildSquareAvatar(
+                            context,
+                            character.displayName,
+                            character.avatar,
+                          ),
+                          title: Text(
+                            _contactName(character),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: context.textPrimaryColor,
+                            ),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              character.description,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 1.3,
+                                color: context.textSecondaryColor,
                               ),
                             ),
                           ),
-                        );
-                      case _ContactListItemKind.contact:
-                        return KeyedSubtree(
-                          key: ValueKey(item.keyValue),
-                          child: _buildContactTile(context, item.character!),
-                        );
-                      case _ContactListItemKind.divider:
-                        return KeyedSubtree(
-                          key: ValueKey(item.keyValue),
-                          child: Container(
-                            margin: const EdgeInsets.only(left: 76),
-                            color:
-                                context.separatorColor.withValues(alpha: 0.62),
+                          trailing: Icon(
+                            CupertinoIcons.chevron_right,
+                            size: 16,
+                            color: context.textSecondaryColor,
                           ),
-                        );
-                    }
-                  },
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              AppRoutes.characterDetail,
+                              arguments: character.id,
+                            );
+                          },
+                        ),
+                      Container(
+                        height: 0.5,
+                        margin: const EdgeInsets.only(left: 76),
+                        color: context.separatorColor.withValues(alpha: 0.62),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               // 右侧字母索引栏
               Positioned(
                 right: 0,
-                top: MediaQuery.paddingOf(context).top + 8,
-                bottom: _floatingContentBottomInset(context) + 8,
+                top: 0,
+                bottom: 0,
                 child: AlphabetIndexBar(
                   availableLetters: availableLetters,
-                  onDragStart: () {
-                    _indexDragging = true;
-                  },
                   onLetterChanged: (letter) {
-                    if (!_showCharIndexTooltip ||
-                        _currentCharTooltipLetter != letter) {
-                      setState(() {
-                        _showCharIndexTooltip = true;
-                        _currentCharTooltipLetter = letter;
-                      });
-                    }
-                    _scrollToNearest(letter, _contactAvailableLetters);
+                    setState(() {
+                      _showCharIndexTooltip = true;
+                      _currentCharTooltipLetter = letter;
+                    });
+                    _scrollToNearest(letter, availableLetters);
                   },
                   onDragEnd: () {
-                    _indexDragging = false;
                     setState(() {
                       _showCharIndexTooltip = false;
                     });
@@ -1023,51 +979,6 @@ class _HomeScreenState extends State<HomeScreen>
           context,
           AppRoutes.characterDetail,
           arguments: CharacterProvider.selfCharacterId,
-        );
-      },
-    );
-  }
-
-  Widget _buildContactTile(BuildContext context, Character character) {
-    return CupertinoListTile(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      leadingSize: UiSpec.conversationAvatar,
-      leading: _buildSquareAvatar(
-        context,
-        character.displayName,
-        character.avatar,
-      ),
-      title: Text(
-        _contactName(character),
-        style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-          color: context.textPrimaryColor,
-        ),
-      ),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 2),
-        child: Text(
-          character.description,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13,
-            height: 1.3,
-            color: context.textSecondaryColor,
-          ),
-        ),
-      ),
-      trailing: Icon(
-        CupertinoIcons.chevron_right,
-        size: 16,
-        color: context.textSecondaryColor,
-      ),
-      onTap: () {
-        Navigator.pushNamed(
-          context,
-          AppRoutes.characterDetail,
-          arguments: character.id,
         );
       },
     );

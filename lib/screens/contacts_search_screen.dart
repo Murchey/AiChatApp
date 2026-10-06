@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
-import '../config/motion.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
@@ -20,23 +19,11 @@ class ContactsSearchScreen extends StatefulWidget {
 
 class _ContactsSearchScreenState extends State<ContactsSearchScreen> {
   final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
   String _keyword = '';
-
-  @override
-  void initState() {
-    super.initState();
-    // 让路由/导航栏先完成转场，再弹出键盘，避免首次进入时明显掉帧。
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await Future<void>.delayed(AppMotion.quick);
-      if (mounted) _focusNode.requestFocus();
-    });
-  }
 
   @override
   void dispose() {
     _controller.dispose();
-    _focusNode.dispose();
     super.dispose();
   }
 
@@ -59,8 +46,7 @@ class _ContactsSearchScreenState extends State<ContactsSearchScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: CupertinoSearchTextField(
               controller: _controller,
-              focusNode: _focusNode,
-              autofocus: false,
+              autofocus: true,
               placeholder: '搜索昵称、备注（支持中文或拼音）',
               onChanged: _onChanged,
             ),

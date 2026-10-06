@@ -36,10 +36,6 @@ class ChatProvider extends ChangeNotifier {
   static const int kPerMessageJsonTokens = 5;
 
   final Map<String, List<Message>> _messagesMap = {};
-  // In-memory revisions used by chat message rows to refresh only the
-  // message whose content changed (for example during an SSE stream).
-  // Revisions are intentionally not persisted.
-  final Map<String, Map<String, int>> _messageRevisions = {};
   final List<Conversation> _conversations = [];
   String? _lastError; // 最近一次 AI 请求失败的错误提示（界面展示用）
   String? _activeConversationId; // 当前打开的聊天会话（其内新增角色消息不记未读）
@@ -148,26 +144,6 @@ class ChatProvider extends ChangeNotifier {
 
   List<Message> getMessages(String conversationId) {
     return _messagesMap[conversationId] ?? [];
-  }
-
-  /// Returns the current immutable message object for a row-level selector.
-  Message? messageFor(String conversationId, String messageId) {
-    final messages = _messagesMap[conversationId];
-    if (messages == null) return null;
-    for (final message in messages) {
-      if (message.id == messageId) return message;
-    }
-    return null;
-  }
-
-  /// In-memory revision for one message. A changed revision means the row
-  /// should rebuild; unrelated provider notifications are ignored by rows.
-  int messageRevisionFor(String conversationId, String messageId) =>
-      _messageRevisions[conversationId]?[messageId] ?? 0;
-
-  void _markMessageChanged(String conversationId, String messageId) {
-    final revisions = _messageRevisions.putIfAbsent(conversationId, () => {});
-    revisions[messageId] = (revisions[messageId] ?? 0) + 1;
   }
 
   /// 聊天记录搜索：在所有会话的文本消息中查找包含 [keyword] 的消息。
@@ -527,25 +503,15 @@ class ChatProvider extends ChangeNotifier {
           appendMessage: (id, msg) {
             _messagesMap[id] ??= [];
             _messagesMap[id]!.add(msg);
-            _markMessageChanged(id, msg.id);
           },
           replaceMessage: (id, msgId, updated) {
             final list = _messagesMap[id];
             if (list == null) return;
             final i = list.indexWhere((m) => m.id == msgId);
-            if (i >= 0) {
-              list[i] = updated;
-              _markMessageChanged(id, msgId);
-            }
+            if (i >= 0) list[i] = updated;
           },
           removeMessage: (id, msgId) {
-            final list = _messagesMap[id];
-            if (list == null) return;
-            final before = list.length;
-            list.removeWhere((m) => m.id == msgId);
-            if (list.length != before) {
-              _markMessageChanged(id, msgId);
-            }
+            _messagesMap[id]?.removeWhere((m) => m.id == msgId);
           },
           notify: notifyListeners,
           persist: _persist,
@@ -769,8 +735,7 @@ class ChatProvider extends ChangeNotifier {
       return await processProactiveReplyMessages(
         hooks: ProactiveReplyHooks(
           addProactiveMessage: addProactiveMessage,
-          addSticker: (
-              {required conversationId, required stickerPath, required label}) {
+          addSticker: ({required conversationId, required stickerPath, required label}) {
             addCharacterStickerMessage(
               conversationId: conversationId,
               stickerPath: stickerPath,
@@ -846,6 +811,7 @@ class ChatProvider extends ChangeNotifier {
         force: force,
       );
 
+
   /// 手动压缩会话（聊天设置页「压缩对话」按钮）：
   /// 忽略阈值判断，直接压缩更早的历史消息。
   /// 无可压缩消息或压缩失败时返回 false。
@@ -873,6 +839,7 @@ class ChatProvider extends ChangeNotifier {
   static int _estimateTokens(List<Message> messages) =>
       ChatTokenEstimator.estimateMessages(messages);
 
+
   /// 本地分词估算某会话的上下文 token（从最后一条压缩摘要消息起取全部 + 可选额外文本），
   /// 每条消息计入 JSON 结构开销。作为无真实 usage 记录时的兜底粗估。
   int _estimateConversationTokens(String conversationId,
@@ -892,6 +859,7 @@ class ChatProvider extends ChangeNotifier {
         extra: extra,
       );
 
+
   /// 按实际会发送给模型的 history payload 估算输入预算。
   ///
   /// 与 [_buildHistory] 共用同一套消息筛选和转换逻辑，因而会正确计入语C
@@ -908,6 +876,7 @@ class ChatProvider extends ChangeNotifier {
       systemTokens: sys,
     );
   }
+
 
   /// 估算会话当前"发送输入预算"（进度条口径，即公式的分子）：
   /// = 系统提示词 + 输出指令（[systemTokens] 或上次记录的缓存）+
@@ -949,12 +918,13 @@ class ChatProvider extends ChangeNotifier {
   /// 压缩后原文不删除：历史起点定位到最后一条压缩摘要消息（含），
   /// 摘要之前的原文已被摘要替代、不再发送给模型。
   List<Map<String, String>> _buildHistory(
-          String conversationId, int contextCount) =>
+      String conversationId, int contextCount) =>
       buildChatHistory(
         _messagesMap[conversationId] ?? const [],
         contextCount,
         describe: _describeMessageForModel,
       );
+
 
   /// 把消息转换为模型可读的上下文描述：
   /// - 表情包绝不暴露本地文件路径；
@@ -962,6 +932,7 @@ class ChatProvider extends ChangeNotifier {
   ///   角色发的表情错记成用户发的；
   /// - 图片/文件以占位说明进入上下文。
   String _describeMessageForModel(Message m) => describeMessageForModel(m);
+
 
   /// 将一条角色主动消息加入会话并持久化（渲染阶段逐条调用）。
   /// [reasoningContent] / [reasoningDurationMs] 仅挂在第一条文本消息上。
@@ -1130,7 +1101,6 @@ class ChatProvider extends ChangeNotifier {
     final index = messages.indexWhere((m) => m.id == messageId);
     if (index == -1) return;
     messages[index] = messages[index].copyWith(content: text);
-    _markMessageChanged(conversationId, messageId);
     _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
     _updateConversationLastMessage(conversationId, text);
     notifyListeners();
@@ -1142,11 +1112,7 @@ class ChatProvider extends ChangeNotifier {
     final messages = _messagesMap[conversationId];
     if (messages == null) return;
 
-    final before = messages.length;
     messages.removeWhere((m) => m.id == messageId);
-    if (messages.length != before) {
-      _markMessageChanged(conversationId, messageId);
-    }
     // 撤回后按剩余消息重新估算上下文 token
     _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
     if (messages.isNotEmpty) {
@@ -1358,7 +1324,6 @@ class ChatProvider extends ChangeNotifier {
   void deleteConversation(String conversationId) {
     _conversations.removeWhere((c) => c.id == conversationId);
     _messagesMap.remove(conversationId);
-    _messageRevisions.remove(conversationId);
     _contextTokens.remove(conversationId);
     setRoleplayChoices(conversationId, const []);
     notifyListeners();
@@ -1370,7 +1335,6 @@ class ChatProvider extends ChangeNotifier {
   Future<void> clearAllData() async {
     _conversations.clear();
     _messagesMap.clear();
-    _messageRevisions.clear();
     _contextTokens.clear();
     _systemTokens.clear();
     _roleplayChoices.clear();
@@ -1387,10 +1351,8 @@ class ChatProvider extends ChangeNotifier {
     try {
       await LocalDataStore.saveConversationsJson('[]');
       await LocalDataStore.saveMessagesJson('{}');
-      await LocalDataStore.saveChatMeta(
-          'context_tokens', _contextTokensKey, '{}');
-      await LocalDataStore.saveChatMeta(
-          'system_tokens', _systemTokensKey, '{}');
+      await LocalDataStore.saveChatMeta('context_tokens', _contextTokensKey, '{}');
+      await LocalDataStore.saveChatMeta('system_tokens', _systemTokensKey, '{}');
       await LocalDataStore.saveChatMeta(
         'roleplay_choices',
         _roleplayChoicesKey,

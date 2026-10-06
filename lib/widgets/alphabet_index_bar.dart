@@ -8,14 +8,12 @@ import '../config/theme.dart';
 /// 字母高度按可用高度均分铺满，任意位置按下都与字母 1:1 对应。
 class AlphabetIndexBar extends StatelessWidget {
   final Set<String> availableLetters;
-  final VoidCallback? onDragStart;
   final ValueChanged<String> onLetterChanged;
   final VoidCallback onDragEnd;
 
   const AlphabetIndexBar({
     super.key,
     required this.availableLetters,
-    this.onDragStart,
     required this.onLetterChanged,
     required this.onDragEnd,
   });
@@ -34,7 +32,8 @@ class AlphabetIndexBar extends StatelessWidget {
         final maxH = constraints.maxHeight;
         // 均分铺满侧边条；高度异常时退回保底值并整体居中
         final double itemHeight;
-        final bool fillHeight = maxH.isFinite && maxH > count * _minItemHeight;
+        final bool fillHeight =
+            maxH.isFinite && maxH > count * _minItemHeight;
         itemHeight = fillHeight ? maxH / count : _minItemHeight;
 
         void handle(Offset local) {
@@ -60,16 +59,15 @@ class AlphabetIndexBar extends StatelessWidget {
 
         return Listener(
           behavior: HitTestBehavior.opaque,
-          onPointerDown: (e) {
-            onDragStart?.call();
-            handle(e.localPosition);
-          },
+          onPointerDown: (e) => handle(e.localPosition),
           onPointerMove: (e) => handle(e.localPosition),
           onPointerUp: (_) => onDragEnd(),
           onPointerCancel: (_) => onDragEnd(),
           child: SizedBox(
             width: _hitWidth,
-            child: fillHeight ? letterColumn : Center(child: letterColumn),
+            child: fillHeight
+                ? letterColumn
+                : Center(child: letterColumn),
           ),
         );
       },
@@ -88,7 +86,9 @@ class _LetterCell extends StatelessWidget {
     return Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: isAvailable ? context.accentColor.withValues(alpha: 0.12) : null,
+        color: isAvailable
+            ? context.accentColor.withValues(alpha: 0.12)
+            : null,
         borderRadius: BorderRadius.circular(3),
       ),
       child: Text(
