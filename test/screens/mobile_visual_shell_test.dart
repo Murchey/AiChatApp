@@ -47,6 +47,11 @@ void main() {
     expect(UiSpec.floatingNavBlurSigma, 22);
     expect(UiSpec.floatingNavDarkOpacity, 0.58);
     expect(UiSpec.floatingNavLightOpacity, 0.70);
+    expect(UiSpec.floatingSelectedSurfaceLightOpacity, 0.86);
+    expect(UiSpec.floatingSelectedSurfaceDarkOpacity, 0.82);
+    expect(UiSpec.floatingSelectedBorderLightOpacity, 0.24);
+    expect(UiSpec.floatingSelectedBorderDarkOpacity, 0.32);
+    expect(UiSpec.floatingSelectedShadowBlur, 10);
     expect(UiSpec.floatingContentBottomInset, 88);
     expect(AppMotion.tabSelection, const Duration(milliseconds: 240));
     expect(AppMotion.tabIconFade, const Duration(milliseconds: 140));
@@ -209,6 +214,15 @@ void main() {
     expect(find.byKey(const ValueKey('home-floating-nav')), findsOneWidget);
     expect(find.byKey(const ValueKey('home-floating-nav-indicator')),
         findsOneWidget);
+    final indicator = tester.widget<DecoratedBox>(
+      find.byKey(
+        const ValueKey('home-floating-nav-selected-indicator'),
+      ),
+    );
+    final indicatorDecoration = indicator.decoration as BoxDecoration;
+    expect(indicatorDecoration.color, isNot(settings.accentColor));
+    expect(indicatorDecoration.border, isNotNull);
+    expect(indicatorDecoration.boxShadow, isNotEmpty);
     expect(find.text('AiChat'), findsAtLeastNWidgets(1));
     expect(find.text('通讯录'), findsOneWidget);
     expect(find.text('朋友圈'), findsOneWidget);

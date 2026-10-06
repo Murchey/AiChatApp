@@ -356,15 +356,37 @@ class _HomeScreenState extends State<HomeScreen>
                     bottom: 4,
                     width: itemWidth - 8,
                     child: DecoratedBox(
+                      key: const ValueKey(
+                        'home-floating-nav-selected-indicator',
+                      ),
                       decoration: BoxDecoration(
-                        color: context.accentColor.withValues(
+                        color: context.fieldBgColor.withValues(
                           alpha: context.isDark
-                              ? UiSpec.floatingSelectedDarkOpacity
-                              : UiSpec.floatingSelectedLightOpacity,
+                              ? UiSpec.floatingSelectedSurfaceDarkOpacity
+                              : UiSpec.floatingSelectedSurfaceLightOpacity,
                         ),
                         borderRadius: BorderRadius.circular(
                           UiSpec.floatingIndicatorRadius,
                         ),
+                        border: Border.all(
+                          color: context.accentColor.withValues(
+                            alpha: context.isDark
+                                ? UiSpec.floatingSelectedBorderDarkOpacity
+                                : UiSpec.floatingSelectedBorderLightOpacity,
+                          ),
+                          width: 0.7,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: CupertinoColors.black.withValues(
+                              alpha: context.isDark
+                                  ? UiSpec.floatingSelectedShadowDarkOpacity
+                                  : UiSpec.floatingSelectedShadowLightOpacity,
+                            ),
+                            blurRadius: UiSpec.floatingSelectedShadowBlur,
+                            offset: UiSpec.floatingSelectedShadowOffset,
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -442,7 +464,7 @@ class _HomeScreenState extends State<HomeScreen>
                         child: Icon(
                           selected ? activeIcon : icon,
                           key: ValueKey(selected),
-                          size: 21,
+                          size: selected ? 22 : 21,
                           color: selected
                               ? context.accentColor
                               : context.textSecondaryColor,

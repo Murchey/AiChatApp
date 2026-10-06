@@ -64,9 +64,19 @@ class UiSpec {
   static const double floatingIndicatorHeight = 48;
   static const double floatingIndicatorRadius = 24;
 
-  /// 导航选中指示器透明度
-  static const double floatingSelectedLightOpacity = 0.16;
-  static const double floatingSelectedDarkOpacity = 0.22;
+  /// 导航选中指示器的中性表面透明度
+  static const double floatingSelectedSurfaceLightOpacity = 0.86;
+  static const double floatingSelectedSurfaceDarkOpacity = 0.82;
+
+  /// 导航选中指示器的主题色细描边透明度
+  static const double floatingSelectedBorderLightOpacity = 0.24;
+  static const double floatingSelectedBorderDarkOpacity = 0.32;
+
+  /// 导航选中指示器的抬升阴影
+  static const double floatingSelectedShadowLightOpacity = 0.10;
+  static const double floatingSelectedShadowDarkOpacity = 0.28;
+  static const double floatingSelectedShadowBlur = 10;
+  static const Offset floatingSelectedShadowOffset = Offset(0, 2);
 
   // ── 字号阶梯 ──
   static const double fontTitle = 17;
