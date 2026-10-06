@@ -1,4 +1,6 @@
 import 'package:ai_chat/providers/settings_provider.dart';
+import 'package:ai_chat/config/theme.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -41,5 +43,34 @@ void main() {
 
     await settings.setBubbleFontSize(10);
     expect(settings.bubbleFontSize, 12);
+  });
+
+  test('theme presets restore the green default without duplicate colors',
+      () async {
+    final values =
+        AppColors.presetColors.map((color) => color.toARGB32()).toSet();
+
+    expect(AppColors.presetColors.first, const Color(0xFF07C160));
+    expect(AppColors.presetColors, hasLength(5));
+    expect(values, hasLength(AppColors.presetColors.length));
+
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider();
+    await settings.init();
+
+    expect(settings.accentColor, const Color(0xFF07C160));
+  });
+
+  test('saved accent color remains unchanged when settings are restored',
+      () async {
+    const savedColor = Color(0xFF007AFF);
+    SharedPreferences.setMockInitialValues({
+      'accent_color': savedColor.toARGB32(),
+    });
+
+    final settings = SettingsProvider();
+    await settings.init();
+
+    expect(settings.accentColor, savedColor);
   });
 }

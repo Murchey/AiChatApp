@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/theme.dart';
+import '../config/ui_spec.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/settings_provider.dart';
@@ -68,6 +69,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final user = auth.user;
           final settings = context.watch<SettingsProvider>();
           return ListView(
+            padding: EdgeInsets.only(
+              bottom: UiSpec.floatingContentBottomInset +
+                  MediaQuery.viewPaddingOf(context).bottom,
+            ),
             children: [
               // 资料卡（微信个人页样式：方形头像靠左）
               GestureDetector(
@@ -137,7 +142,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.person_2_fill,
-                      color: context.accentColor,
+                      color: context.textSecondaryColor,
                     ),
                     title: const Text('管理当前角色'),
                     trailing: Icon(
@@ -157,7 +162,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.photo,
-                      color: context.accentColor,
+                      color: context.textSecondaryColor,
                     ),
                     title: const Text('管理当前朋友圈'),
                     trailing: Icon(
@@ -177,7 +182,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.hammer_fill,
-                      color: context.accentColor,
+                      color: context.textSecondaryColor,
                     ),
                     title: const Text('创意工坊'),
                     trailing: Icon(
@@ -197,7 +202,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.waveform,
-                      color: context.accentColor,
+                      color: context.textSecondaryColor,
                     ),
                     title: const Text('声音工作台'),
                     trailing: Icon(
@@ -227,7 +232,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.settings,
-                      color: context.accentColor,
+                      color: context.textSecondaryColor,
                     ),
                     title: const Text('设置'),
                     trailing: Icon(
@@ -247,7 +252,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.lock,
-                      color: context.accentColor,
+                      color: context.textSecondaryColor,
                     ),
                     title: const Text('API 设置'),
                     trailing: Icon(
@@ -267,7 +272,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.chart_bar_alt_fill,
-                      color: context.accentColor,
+                      color: context.textSecondaryColor,
                     ),
                     title: const Text('累计消耗tokens'),
                     trailing: Icon(
@@ -297,7 +302,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.info_circle,
-                      color: context.accentColor,
+                      color: context.textSecondaryColor,
                     ),
                     title: const Text('软件版本'),
                     trailing: Row(
@@ -323,7 +328,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.link,
-                      color: context.accentColor,
+                      color: context.textSecondaryColor,
                     ),
                     title: const Text('项目仓库'),
                     trailing: Row(
@@ -349,7 +354,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoListTile(
                     leading: Icon(
                       CupertinoIcons.person_2,
-                      color: context.accentColor,
+                      color: context.textSecondaryColor,
                     ),
                     title: const Text('角色卡项目地址'),
                     subtitle: Text(
@@ -427,14 +432,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Container(
                 height: 260,
                 width: double.infinity,
-                color: context.isDark ? context.listBgColor : const Color(0xFF1E1E1E),
+                color: context.isDark
+                    ? context.listBgColor
+                    : const Color(0xFF1E1E1E),
                 child: lines.isEmpty
                     ? Padding(
                         padding: const EdgeInsets.all(12),
                         child: Text(
                           '暂无日志',
-                          style:
-                              TextStyle(fontSize: 12, color: context.textSecondaryColor),
+                          style: TextStyle(
+                              fontSize: 12, color: context.textSecondaryColor),
                         ),
                       )
                     : ListView.builder(
@@ -445,7 +452,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           style: TextStyle(
                             fontSize: 11,
                             height: 1.5,
-                            color: context.isDark ? context.textPrimaryColor : const Color(0xFFC9D1D9),
+                            color: context.isDark
+                                ? context.textPrimaryColor
+                                : const Color(0xFFC9D1D9),
                             fontFamily: 'monospace',
                           ),
                         ),
@@ -497,7 +506,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               style: TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.bold,
-                color: context.accentColor,
+                color: context.textSecondaryColor,
               ),
             ),
     );

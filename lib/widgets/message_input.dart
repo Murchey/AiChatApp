@@ -1,8 +1,11 @@
+import 'dart:ui';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/motion.dart';
 import '../config/theme.dart';
+import '../config/ui_spec.dart';
 import '../screens/sticker_picker_screen.dart';
 import 'chat_send_button.dart';
 
@@ -26,8 +29,10 @@ class MessageInput extends StatefulWidget {
   final bool replyEnabled; // 对号按钮是否可点：上一条消息是用户发送时才可点
   /// 剧情建议：询问补充后生成可填入输入框的建议（语C/短信通用）
   final VoidCallback? onPlotSuggestion;
+
   /// 桌面端：Enter 发送、Shift+Enter 换行（默认 false，不影响手机端）
   final bool enterToSend;
+
   /// 外部可通过此 key 调用 setText / focus
   final GlobalKey<MessageInputState>? inputKey;
 
@@ -195,98 +200,126 @@ class MessageInputState extends State<MessageInput>
       mainAxisSize: MainAxisSize.min,
       children: [
         // 输入栏
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            color: context.navBarColor,
-            border: Border(
-              top: BorderSide(color: context.separatorColor),
-            ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            UiSpec.floatingHorizontal - 4,
+            UiSpec.spaceSm,
+            UiSpec.floatingHorizontal - 4,
+            _panel == _InputPanel.none ? UiSpec.spaceXs : 0,
           ),
-          child: SafeArea(
-            top: false,
-            // 加号/表情面板在输入栏下方时，底部安全区只由面板负责；
-            // 否则输入栏和面板会重复占用导航栏高度，导致与键盘顶端不齐。
-            bottom: _panel == _InputPanel.none,
-            child: Row(
-              children: [
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  minimumSize: const Size(28, 28),
-                  onPressed: _handleToggleGrid,
-                  child: Icon(
-                    _panel == _InputPanel.grid
-                        ? CupertinoIcons.keyboard
-                        : CupertinoIcons.add_circled,
-                    size: 26,
-                    color: context.textSecondaryColor,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(UiSpec.radiusInputCapsule),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: UiSpec.glassBlurSigma,
+                sigmaY: UiSpec.glassBlurSigma,
+              ),
+              child: Container(
+                key: const ValueKey('message-input-capsule'),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                constraints: const BoxConstraints(
+                  minHeight: UiSpec.inputCapsuleMinHeight,
+                  maxHeight: UiSpec.inputCapsuleMaxHeight,
+                ),
+                decoration: BoxDecoration(
+                  color: context.navBarColor.withValues(
+                    alpha: context.isDark ? 0.78 : 0.84,
+                  ),
+                  borderRadius:
+                      BorderRadius.circular(UiSpec.radiusInputCapsule),
+                  border: Border.all(
+                    color: context.outlineColor.withValues(alpha: 0.45),
+                    width: 0.6,
                   ),
                 ),
-                if (widget.showStickerButton) ...[
-                  const SizedBox(width: 2),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(28, 28),
-                    onPressed: _handleStickerTap,
-                    child: Icon(
-                      CupertinoIcons.smiley,
-                      size: 26,
-                      color: context.accentColor,
-                    ),
-                  ),
-                ],
-                const SizedBox(width: 4),
-                Expanded(
-                  child: CupertinoTextField(
-                    controller: _controller,
-                    focusNode: _inputFocusNode,
-                    placeholder: '输入消息...',
-                    maxLines: 4,
-                    minLines: 1,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: context.textPrimaryColor,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.fieldBgColor,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    // 桌面端 Enter 发送；手机端保持默认（回车换行由系统键盘决定）
-                    textInputAction: widget.enterToSend
-                        ? TextInputAction.send
-                        : TextInputAction.newline,
-                    onSubmitted: widget.enterToSend
-                        ? (_) {
-                            final text = _controller.text.trim();
-                            if (text.isNotEmpty) _handleSend();
-                          }
-                        : null,
+                child: SafeArea(
+                  top: false,
+                  // 加号/表情面板在输入栏下方时，底部安全区只由面板负责；
+                  // 否则输入栏和面板会重复占用导航栏高度，导致与键盘顶端不齐。
+                  bottom: _panel == _InputPanel.none,
+                  child: Row(
+                    children: [
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(32, 32),
+                        onPressed: _handleToggleGrid,
+                        child: Icon(
+                          _panel == _InputPanel.grid
+                              ? CupertinoIcons.keyboard
+                              : CupertinoIcons.add_circled,
+                          size: 24,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                      if (widget.showStickerButton) ...[
+                        const SizedBox(width: 2),
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(32, 32),
+                          onPressed: _handleStickerTap,
+                          child: Icon(
+                            CupertinoIcons.smiley,
+                            size: 24,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: CupertinoTextField(
+                          controller: _controller,
+                          focusNode: _inputFocusNode,
+                          placeholder: '输入消息...',
+                          maxLines: 4,
+                          minLines: 1,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: context.textPrimaryColor,
+                          ),
+                          decoration: BoxDecoration(
+                            color: context.fieldBgColor.withValues(alpha: 0.82),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          // 桌面端 Enter 发送；手机端保持默认（回车换行由系统键盘决定）
+                          textInputAction: widget.enterToSend
+                              ? TextInputAction.send
+                              : TextInputAction.newline,
+                          onSubmitted: widget.enterToSend
+                              ? (_) {
+                                  final text = _controller.text.trim();
+                                  if (text.isNotEmpty) _handleSend();
+                                }
+                              : null,
+                        ),
+                      ),
+                      // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（点击请求角色回复）
+                      if (_hasText) ...[
+                        const SizedBox(width: 6),
+                        // 经典 36 圆形箭头 / zmd 深底金边文字按钮
+                        ChatSendButton(onPressed: _handleSend),
+                      ] else if (widget.onRequestReply != null) ...[
+                        const SizedBox(width: 6),
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(36, 36),
+                          onPressed: widget.replyEnabled
+                              ? widget.onRequestReply
+                              : null,
+                          child: Icon(
+                            CupertinoIcons.checkmark_circle_fill,
+                            size: 28,
+                            color: widget.replyEnabled
+                                ? context.accentColor
+                                : context.textSecondaryColor,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（点击请求角色回复）
-                if (_hasText) ...[
-                  const SizedBox(width: 6),
-                  // 经典 36 圆形箭头 / zmd 深底金边文字按钮
-                  ChatSendButton(onPressed: _handleSend),
-                ] else if (widget.onRequestReply != null) ...[
-                  const SizedBox(width: 6),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(36, 36),
-                    onPressed:
-                        widget.replyEnabled ? widget.onRequestReply : null,
-                    child: Icon(
-                      CupertinoIcons.checkmark_circle_fill,
-                      size: 30,
-                      color: widget.replyEnabled
-                          ? context.accentColor
-                          : context.textSecondaryColor,
-                    ),
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
         ),

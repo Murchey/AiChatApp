@@ -101,7 +101,7 @@ class SplashIconScreen extends StatelessWidget {
                 CupertinoListTile(
                   leading: Icon(
                     CupertinoIcons.photo,
-                    color: context.accentColor,
+                    color: context.textSecondaryColor,
                   ),
                   title: const Text('选择图片'),
                   subtitle: Text(

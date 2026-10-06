@@ -293,7 +293,7 @@ class _MomentCardState extends State<MomentCard> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: color ?? context.accentColor),
+            Icon(icon, size: 18, color: color ?? context.textSecondaryColor),
             const SizedBox(width: 10),
             Text(
               label,
@@ -911,21 +911,7 @@ class _MomentCardState extends State<MomentCard> {
 
 /// 图片解码失败占位：文件损坏等异常时不白屏，显示灰色相机占位
 
-
-
-
-
-
 /// 按 BoxFit.cover 所需像素等比计算解码目标尺寸。
 /// Flutter 在 cacheWidth/Height 同时非空时会忽略原图比例硬缩放，
 /// 必须用原图宽高换算，否则长图会被压成矮胖。
 /// [image] 为空时只约束宽度，高度不传（跟随原图比例）。
-
-
-
-
-
-
-
-
-

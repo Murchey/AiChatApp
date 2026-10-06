@@ -13,11 +13,20 @@ import '../../providers/settings_provider.dart';
 import '../../providers/sticker_provider.dart';
 import '../../models/message.dart';
 import '../../services/memory_pool_builder.dart';
+import '../../services/llm_service.dart';
+import '../../services/tts_playback_controller.dart';
+import '../../utils/file_picker_helper.dart';
+import '../../utils/app_toast.dart';
 import '../../widgets/chat_bubble.dart';
+import '../../widgets/chat/chat_message_chrome.dart';
 import '../../widgets/message_input.dart';
 import '../chat_detail_screen.dart';
 import '../chat_settings_screen.dart';
+import '../chat_search_screen.dart';
 import '../sticker_picker_screen.dart';
+import '../chat/chat_import_export.dart';
+import '../chat/chat_message_actions.dart';
+import '../chat/chat_plot_suggestion.dart';
 import 'desktop_context_menu.dart';
 import 'desktop_theme.dart';
 
@@ -57,7 +66,9 @@ class _DesktopChatViewState extends State<DesktopChatView> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ChatProvider>().markConversationActive(widget.conversationId);
+      context
+          .read<ChatProvider>()
+          .markConversationActive(widget.conversationId);
       _scrollToBottom();
       _shortcutsFocus.requestFocus();
     });
@@ -137,7 +148,8 @@ class _DesktopChatViewState extends State<DesktopChatView> {
   /// 触发角色回复（对号按钮）
   Future<void> _requestReply() async {
     final imagePath = _pendingImagePath ?? _pendingStickerPath;
-    final stickerLabel = _pendingStickerPath == null ? null : _pendingStickerLabel;
+    final stickerLabel =
+        _pendingStickerPath == null ? null : _pendingStickerLabel;
     _pendingImagePath = null;
     _pendingStickerPath = null;
     _pendingStickerLabel = null;
@@ -158,6 +170,16 @@ class _DesktopChatViewState extends State<DesktopChatView> {
     return Focus(
       focusNode: _shortcutsFocus,
       onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.keyF &&
+            (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed) &&
+            HardwareKeyboard.instance.isShiftPressed) {
+          Navigator.of(context).push(
+            CupertinoPageRoute(builder: (_) => const ChatSearchScreen()),
+          );
+          return KeyEventResult.handled;
+        }
         if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.escape) {
           if (_panel != _DesktopChatPanel.none) {
@@ -213,14 +235,28 @@ class _DesktopChatViewState extends State<DesktopChatView> {
                   itemCount: messages.length,
                   itemBuilder: (context, i) {
                     final m = messages[i];
+                    final previous = i > 0 ? messages[i - 1] : null;
+                    final showTime = previous == null ||
+                        m.createdAt.difference(previous.createdAt).inMinutes >=
+                            10;
                     return GestureDetector(
                       onSecondaryTapUp: (e) =>
                           _showMessageMenu(e.globalPosition, m),
-                      child: ChatBubble(
-                        message: m,
-                        userAvatar:
-                            context.read<AuthProvider>().user?.avatar ?? '',
-                        characterAvatar: widget.characterAvatar,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (showTime) ChatTimeLabel(time: m.createdAt),
+                          ChatBubble(
+                            message: m,
+                            userAvatar:
+                                context.read<AuthProvider>().user?.avatar ?? '',
+                            characterAvatar: widget.characterAvatar,
+                            onFileTap: _openFileMessage,
+                            onSpeak:
+                                m.isFromUser ? null : () => _speakMessage(m),
+                          ),
+                          ThinkingDurationLabel(message: m),
+                        ],
                       ),
                     );
                   },
@@ -230,6 +266,112 @@ class _DesktopChatViewState extends State<DesktopChatView> {
           ),
           _buildInput(p),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openFileMessage(String path) async {
+    final error = await FilePickerHelper.openFile(path);
+    if (!mounted || error == null) return;
+    await showCupertinoDialog<void>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('无法打开文件'),
+        content: Text(error),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportChat() => ChatImportExport.exportChat(
+        context,
+        conversationId: widget.conversationId,
+        characterName: widget.characterName,
+      );
+
+  Future<void> _importChat() => ChatImportExport.importChat(
+        context,
+        conversationId: widget.conversationId,
+        onImported: _scrollToBottom,
+      );
+
+  Future<bool> _runFeatureDetect() async {
+    final settings = context.read<ChatSettingsProvider>();
+    final model =
+        context.read<ApiProvider>().getModelById(settings.selectedModelId);
+    if (model == null) {
+      await _showInfo('请先在聊天设置或 API 设置中选择模型');
+      return false;
+    }
+    try {
+      final supported = await LLMService.testImageSupport(model);
+      if (!mounted) return supported;
+      await context.read<ApiProvider>().setVisionSupported(model.id, supported);
+      await _showInfo(
+          supported ? '「${model.displayName}」支持图片识别。' : '当前模型未识别为支持图片的模型。');
+      return supported;
+    } catch (e) {
+      if (mounted) await _showInfo('功能检测失败：${LLMService.describeException(e)}');
+      return false;
+    }
+  }
+
+  Future<void> _plotSuggestion() => ChatPlotSuggestion.run(
+        context,
+        conversationId: widget.conversationId,
+        fallbackName: widget.characterName,
+        fillInput: (text) => _inputKey.currentState?.setText(text),
+        onNeedModel: () => _showInfo('请先选择聊天模型'),
+      );
+
+  Future<void> _showInfo(String message) {
+    return showCupertinoDialog<void>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('提示'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _speakMessage(Message message) async {
+    if (message.isFromUser || message.content.trim().isEmpty) return;
+    final api = context.read<ApiProvider>();
+    final model = api.getModelById(api.ttsModelId);
+    if (model == null) {
+      showAppToast('请先在 API 设置中选择语音模型');
+      return;
+    }
+    final conversation = context
+        .read<ChatProvider>()
+        .conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    final character = conversation == null
+        ? null
+        : context
+            .read<CharacterProvider>()
+            .getCharacterById(conversation.characterId);
+    TtsPlaybackController.instance.enqueue(
+      TtsPlaybackEntry(
+        messageId: message.id,
+        model: model,
+        text: message.content,
+        voice: character?.voiceId ?? '',
+        instructions: character?.voiceInstructions ?? '',
       ),
     );
   }
@@ -247,10 +389,62 @@ class _DesktopChatViewState extends State<DesktopChatView> {
           },
         ),
         DesktopMenuItem(
+          label: '选择文本',
+          icon: CupertinoIcons.text_badge_checkmark,
+          onTap: () => ChatMessageActions.showTextSelection(context, m),
+        ),
+        DesktopMenuItem(
           label: '引用回复',
           icon: CupertinoIcons.reply,
           onTap: () => setState(() => _quoteMessage = m),
         ),
+        if (!m.isFromUser && m.type == MessageType.text)
+          DesktopMenuItem(
+            label: '朗读',
+            icon: CupertinoIcons.speaker_2,
+            onTap: () => _speakMessage(m),
+          ),
+        DesktopMenuItem(
+          label: '保存为记忆点',
+          icon: CupertinoIcons.bookmark,
+          onTap: () => _saveAsMemory(m),
+        ),
+        if (m.hasReasoning)
+          DesktopMenuItem(
+            label: '查看思考过程',
+            icon: CupertinoIcons.lightbulb,
+            onTap: () => ChatMessageActions.showReasoning(context, m),
+          ),
+        if (!m.isFromUser)
+          DesktopMenuItem(
+            label: '重新生成',
+            icon: CupertinoIcons.refresh,
+            onTap: () => ChatMessageActions.reroll(
+              context: context,
+              conversationId: widget.conversationId,
+              aiMessage: m,
+              resend: (text) {
+                context.read<ChatProvider>().sendMessage(
+                      conversationId: widget.conversationId,
+                      content: text,
+                    );
+                _requestReply();
+              },
+            ),
+          ),
+        if (m.isFromUser)
+          DesktopMenuItem(
+            label: '撤回并编辑',
+            icon: CupertinoIcons.arrow_uturn_left,
+            onTap: () {
+              context.read<ChatProvider>().withdrawMessage(
+                    widget.conversationId,
+                    m.id,
+                  );
+              _inputKey.currentState?.setText(m.content);
+              _inputKey.currentState?.focus();
+            },
+          ),
         DesktopMenuItem(
           label: '删除',
           icon: CupertinoIcons.delete,
@@ -264,6 +458,44 @@ class _DesktopChatViewState extends State<DesktopChatView> {
         ),
       ],
     );
+  }
+
+  Future<void> _saveAsMemory(Message message) async {
+    if (message.type != MessageType.text || message.content.trim().isEmpty) {
+      await _showInfo('选中的消息不包含可保存的文字内容');
+      return;
+    }
+    final conversation = context
+        .read<ChatProvider>()
+        .conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    if (conversation == null) return;
+    final name = message.isFromUser ? '用户' : widget.characterName;
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('保存为记忆点'),
+        content: Text('将「$name」的这条消息保存到角色记忆中？\n\n${message.content}'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await context.read<MemoryPointProvider>().addPoints(
+      conversation.characterId,
+      [message.content.trim()],
+    );
+    if (mounted) await _showInfo('已保存到角色记忆点');
   }
 
   Widget _buildSidePanel(DesktopPalette p) {
@@ -356,6 +588,14 @@ class _DesktopChatViewState extends State<DesktopChatView> {
           ),
           _headerBtn(
             p,
+            icon: CupertinoIcons.search,
+            label: '搜索消息',
+            onTap: () => Navigator.of(context).push(
+              CupertinoPageRoute(builder: (_) => const ChatSearchScreen()),
+            ),
+          ),
+          _headerBtn(
+            p,
             icon: CupertinoIcons.gear,
             label: '聊天设置',
             active: _panel == _DesktopChatPanel.settings,
@@ -409,6 +649,36 @@ class _DesktopChatViewState extends State<DesktopChatView> {
   Widget _buildInput(DesktopPalette p) {
     return Column(
       children: [
+        Selector<ChatProvider, String?>(
+          selector: (_, chat) => chat.lastError,
+          builder: (context, error, _) {
+            if (error == null || error.isEmpty) return const SizedBox.shrink();
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: p.inputBarBg,
+              child: Row(
+                children: [
+                  Icon(CupertinoIcons.exclamationmark_triangle_fill,
+                      size: 15, color: p.danger),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(error,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, color: p.danger)),
+                  ),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(24, 24),
+                    onPressed: context.read<ChatProvider>().clearError,
+                    child: Icon(CupertinoIcons.xmark_circle_fill,
+                        size: 16, color: p.textSecondary),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
         if (_quoteMessage != null)
           Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -451,15 +721,17 @@ class _DesktopChatViewState extends State<DesktopChatView> {
                         quoteContent: quote?.content ?? '',
                         quoteSender: quote == null
                             ? ''
-                            : (quote.isFromUser
-                                ? '我'
-                                : widget.characterName),
+                            : (quote.isFromUser ? '我' : widget.characterName),
                       );
                   setState(() => _quoteMessage = null);
                   _scrollToBottom();
                 },
                 onPickImage: _handlePickImage,
                 onPickFile: _handlePickFile,
+                onExport: _exportChat,
+                onImport: _importChat,
+                onFeatureDetect: _runFeatureDetect,
+                onPlotSuggestion: _plotSuggestion,
                 onStickerSelected: _handleSticker,
                 onSettings: () => setState(
                   () => _panel = _DesktopChatPanel.settings,
@@ -630,8 +902,7 @@ class DesktopChatReply {
           memoryPoints: memoryPoints,
           extraSystemContext: memoryPool,
           roleplayMode: isRoleplayMode,
-          roleplayProgressionStyle:
-              chatSettings.roleplayProgressionStyle.name,
+          roleplayProgressionStyle: chatSettings.roleplayProgressionStyle.name,
           findSticker: context.read<SettingsProvider>().allowStickerSend
               ? (query) =>
                   context.read<StickerProvider>().pickStickerForRole(query)

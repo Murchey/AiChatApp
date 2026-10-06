@@ -145,7 +145,7 @@ class _MomentVisibilityScreenState extends State<MomentVisibilityScreen> {
                           Icon(
                             CupertinoIcons.person_3_fill,
                             size: 20,
-                            color: context.accentColor,
+                            color: context.textSecondaryColor,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -251,7 +251,7 @@ class _MomentVisibilityScreenState extends State<MomentVisibilityScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: context.accentColor),
+            Icon(icon, size: 20, color: context.textSecondaryColor),
             const SizedBox(width: 12),
             Expanded(
               child: Text(

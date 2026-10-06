@@ -293,7 +293,7 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
-                            color: context.accentColor,
+                            color: context.textPrimaryColor,
                           ),
                         ),
                       ),

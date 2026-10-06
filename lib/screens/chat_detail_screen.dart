@@ -198,7 +198,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         placeholder: '如 Cherry / 茉莉',
                         onTap: () {
                           Navigator.pop(ctx);
-                          showEditFieldDialog(context, 
+                          showEditFieldDialog(
+                            context,
                             title: '角色音色 ID',
                             initial: character?.voiceId ?? '',
                             hint: '填写 TTS 提供商的 voice',
@@ -215,7 +216,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         placeholder: '如：温柔、清晰、语速偏慢',
                         onTap: () {
                           Navigator.pop(ctx);
-                          showEditFieldDialog(context, 
+                          showEditFieldDialog(
+                            context,
                             title: '音色描述',
                             initial: character?.voiceInstructions ?? '',
                             hint: '例如：温柔、清晰、语速偏慢，带有亲近感',
@@ -246,7 +248,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         placeholder: '如：温柔、克制、语速稍慢',
                         onTap: () {
                           Navigator.pop(ctx);
-                          showEditFieldDialog(context, 
+                          showEditFieldDialog(
+                            context,
                             title: '音色描述',
                             initial: character?.voiceInstructions ?? '',
                             hint: '例如：温柔、清晰、语速偏慢，带有亲近感',
@@ -659,14 +662,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           _buildInfoSection(character),
           if (widget.showChatManage && conversation != null) ...[
             const SizedBox(height: 24),
-            buildAutoMomentSection(context, _characterId, onChanged: () => setState(() {})),
+            buildAutoMomentSection(context, _characterId,
+                onChanged: () => setState(() {})),
             const SizedBox(height: 16),
             buildProactiveGreetingSection(context, _characterId),
             const SizedBox(height: 24),
             _buildManageSection(),
           ],
           const SizedBox(height: 24),
-          ChatDetailPromptPanel(onOpenPrompt: _togglePrompt, onOpenMemory: _openMemoryManage),
+          ChatDetailPromptPanel(
+              onOpenPrompt: _togglePrompt, onOpenMemory: _openMemoryManage),
           const SizedBox(height: 24),
           _buildChatSettingsEntry(),
         ],
@@ -675,7 +680,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   // ── 上半部分：角色卡 ──
-
 
   /// 进入通讯录角色空间页（角色详情：背景图 + 朋友圈）
   void _openCharacterSpace() {
@@ -726,7 +730,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             label: '角色昵称',
             value: name,
             placeholder: '未设置',
-            onTap: () => showEditFieldDialog(context, 
+            onTap: () => showEditFieldDialog(
+              context,
               title: '角色昵称',
               initial: name,
               hint: '请输入角色昵称',
@@ -739,7 +744,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             label: '角色备注',
             value: remark,
             placeholder: '未设置，默认显示昵称',
-            onTap: () => showEditFieldDialog(context, 
+            onTap: () => showEditFieldDialog(
+              context,
               title: '角色备注',
               initial: remark,
               hint: '设置后聊天列表将优先显示备注',
@@ -752,7 +758,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             label: '个性签名',
             value: signature,
             placeholder: '未设置',
-            onTap: () => showEditFieldDialog(context, 
+            onTap: () => showEditFieldDialog(
+              context,
               title: '个性签名',
               initial: signature,
               hint: '填写角色的个性签名',
@@ -766,7 +773,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             label: '定位地区',
             value: region,
             placeholder: '未设置',
-            onTap: () => showEditFieldDialog(context, 
+            onTap: () => showEditFieldDialog(
+              context,
               title: '定位地区',
               initial: region,
               hint: '例如：中国 · 上海',
@@ -779,7 +787,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             label: '与我的关系',
             value: userRelationship,
             placeholder: '未设置',
-            onTap: () => showEditFieldDialog(context, 
+            onTap: () => showEditFieldDialog(
+              context,
               title: '与我的关系',
               initial: userRelationship,
               hint: '例如：青梅竹马 / 刚认识',
@@ -828,9 +837,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   /// 1. 跟随全局模型（使用「聊天设置」中的全局聊天模型）
   /// 2. 缺省模型（全局模型未配置时的兜底，保证角色群聊中总能应答）
 
-
   /// 模型选择面板里的分组小标题
-
 
   /// 弹出活跃时段编辑面板：开始/结束两个时间选择器 + 不限/保存。
   /// 设定后在活跃时段内角色不会主动道别/说晚安，保持活跃继续聊天。
@@ -1001,19 +1008,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   static String _fmtHm(DateTime t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-
   // ── 自动发朋友圈 ──
-
 
   // ── 主动问候 ──
 
-
-
-
-
-
   /// 可见范围显示文案（分组被删除时回退到全部角色可见）
-
 
   // ── 聊天管理 ──
   Widget _buildManageSection() {
@@ -1027,7 +1026,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   // ── 最下方：折叠的提示词设置 panel ──
-
 
   /// 打开记忆点管理二级页
   void _openMemoryManage() {
@@ -1048,7 +1046,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         borderRadius: BorderRadius.circular(14),
       ),
       child: CupertinoListTile(
-        leading: Icon(CupertinoIcons.gear_alt, color: context.accentColor),
+        leading:
+            Icon(CupertinoIcons.gear_alt, color: context.textSecondaryColor),
         title: Text(
           '聊天设置',
           style: TextStyle(color: context.textPrimaryColor),
@@ -1092,18 +1091,4 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       ),
     );
   }
-
-
 }
-
-
-
-
-
-
-
-
-
-
-
-

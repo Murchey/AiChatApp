@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import '../config/theme.dart';
+import '../config/ui_spec.dart';
 import '../providers/settings_provider.dart';
 import '../services/prompt_builder.dart';
 
@@ -48,10 +49,33 @@ class ChatTitleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (context.uiStyle != UiStyle.zmd) {
-      return Text(
-        name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      final subtitle = inputStatus ??
+          (isGroup ? groupIntro.trim() : truncateSignature(signature));
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: UiSpec.fontBody,
+              fontWeight: FontWeight.w600,
+              color: context.textPrimaryColor,
+            ),
+          ),
+          if (subtitle.isNotEmpty)
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: UiSpec.fontTiny,
+                color: context.textSecondaryColor,
+              ),
+            ),
+        ],
       );
     }
     final active =

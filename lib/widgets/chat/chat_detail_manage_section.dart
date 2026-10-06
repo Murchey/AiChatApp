@@ -43,7 +43,7 @@ class ChatDetailManageSection extends StatelessWidget {
                 .firstOrNull;
             return CupertinoListTile(
               leading: Icon(CupertinoIcons.speaker_3_fill,
-                  color: context.accentColor),
+                  color: context.textSecondaryColor),
               title: Text('自动朗读',
                   style: TextStyle(color: context.textPrimaryColor)),
               subtitle: Text('角色生成回复后自动播放语音',
@@ -62,8 +62,8 @@ class ChatDetailManageSection extends StatelessWidget {
                 .where((c) => c.id == conversationId)
                 .firstOrNull;
             return CupertinoListTile(
-              leading:
-                  Icon(CupertinoIcons.play_circle, color: context.accentColor),
+              leading: Icon(CupertinoIcons.play_circle,
+                  color: context.textSecondaryColor),
               title: Text('连续播放回复',
                   style: TextStyle(color: context.textPrimaryColor)),
               subtitle: Text('一轮多条角色回复按顺序连续播放',
@@ -82,8 +82,8 @@ class ChatDetailManageSection extends StatelessWidget {
                 .where((c) => c.id == conversationId)
                 .firstOrNull;
             return CupertinoListTile(
-              leading:
-                  Icon(CupertinoIcons.speaker_1, color: context.accentColor),
+              leading: Icon(CupertinoIcons.speaker_1,
+                  color: context.textSecondaryColor),
               title: Text('显示小喇叭图标',
                   style: TextStyle(color: context.textPrimaryColor)),
               subtitle: Text('角色气泡下方显示朗读按钮（默认关闭）',
@@ -103,8 +103,8 @@ class ChatDetailManageSection extends StatelessWidget {
               CupertinoIcons.photo_fill_on_rectangle_fill,
               color: CupertinoColors.systemPink,
             ),
-            title: Text('聊天背景',
-                style: TextStyle(color: context.textPrimaryColor)),
+            title:
+                Text('聊天背景', style: TextStyle(color: context.textPrimaryColor)),
             subtitle: Text(
               '为当前会话设置独立背景与高斯模糊效果',
               maxLines: 2,
@@ -119,24 +119,25 @@ class ChatDetailManageSection extends StatelessWidget {
           CupertinoListTile(
             leading: Icon(CupertinoIcons.person_3_fill,
                 color: context.textPrimaryColor),
-            title: Text('组建群聊',
-                style: TextStyle(color: context.textPrimaryColor)),
+            title:
+                Text('组建群聊', style: TextStyle(color: context.textPrimaryColor)),
             subtitle: Text('把当前角色和其他角色拉进同一个群聊',
-                style: TextStyle(fontSize: 12, color: context.textSecondaryColor)),
+                style:
+                    TextStyle(fontSize: 12, color: context.textSecondaryColor)),
             onTap: onCreateGroup,
           ),
           _sep(context),
           CupertinoListTile(
-            leading:
-                Icon(CupertinoIcons.clear_circled, color: context.textPrimaryColor),
+            leading: Icon(CupertinoIcons.clear_circled,
+                color: context.textPrimaryColor),
             title: Text('清空上下文',
                 style: TextStyle(color: context.textPrimaryColor)),
             subtitle: Text(
               '清除当前聊天的全部消息，再次打开时不会显示任何记录，AI 也不会继承此前的对话内容',
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style:
-                  TextStyle(fontSize: 12, height: 1.4, color: context.textSecondaryColor),
+              style: TextStyle(
+                  fontSize: 12, height: 1.4, color: context.textSecondaryColor),
             ),
             onTap: onClearContext,
           ),
@@ -150,8 +151,8 @@ class ChatDetailManageSection extends StatelessWidget {
               '从首页会话列表中移除该聊天，同时删除全部聊天记录与上下文，此操作不可恢复',
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style:
-                  TextStyle(fontSize: 12, height: 1.4, color: context.textSecondaryColor),
+              style: TextStyle(
+                  fontSize: 12, height: 1.4, color: context.textSecondaryColor),
             ),
             onTap: onDeleteChat,
           ),

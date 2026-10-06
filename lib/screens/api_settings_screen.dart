@@ -355,8 +355,8 @@ class ApiSettingsScreen extends StatelessWidget {
               // 删到只剩一个模型且当前聊天模型已失效时，自动切到剩余模型
               final api = context.read<ApiProvider>();
               final settings = context.read<ChatSettingsProvider>();
-              await settings
-                  .ensureSoleModelSelected(api.models.map((m) => m.id).toList());
+              await settings.ensureSoleModelSelected(
+                  api.models.map((m) => m.id).toList());
               if (ctx.mounted) Navigator.pop(ctx);
             },
             child: const Text('删除'),
@@ -389,7 +389,7 @@ class ApiSettingsScreen extends StatelessWidget {
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.speedometer,
-                  color: context.accentColor,
+                  color: context.textSecondaryColor,
                 ),
                 title: Text(
                   '从常用提供商快速添加',
@@ -433,7 +433,7 @@ class ApiSettingsScreen extends StatelessWidget {
                 CupertinoListTile(
                   leading: Icon(
                     CupertinoIcons.gear,
-                    color: context.accentColor,
+                    color: context.textSecondaryColor,
                   ),
                   title: Text(
                     model.displayName,
@@ -504,7 +504,7 @@ class ApiSettingsScreen extends StatelessWidget {
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.archivebox,
-                  color: context.accentColor,
+                  color: context.textSecondaryColor,
                 ),
                 title: const Text('压缩会话使用的模型'),
                 subtitle: Text(
@@ -537,7 +537,7 @@ class ApiSettingsScreen extends StatelessWidget {
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.bell_fill,
-                  color: context.accentColor,
+                  color: context.textSecondaryColor,
                 ),
                 title: const Text('读取朋友圈的模型'),
                 subtitle: Text(
@@ -568,8 +568,8 @@ class ApiSettingsScreen extends StatelessWidget {
             header: const Text('语音合成'),
             children: [
               CupertinoListTile(
-                leading:
-                    Icon(CupertinoIcons.waveform, color: context.accentColor),
+                leading: Icon(CupertinoIcons.waveform,
+                    color: context.textSecondaryColor),
                 title: const Text('语音模型'),
                 subtitle: Text(
                   _ttsModelLabel(api),
@@ -596,7 +596,7 @@ class ApiSettingsScreen extends StatelessWidget {
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.settings,
-                  color: context.accentColor,
+                  color: context.textSecondaryColor,
                 ),
                 title: const Text('上下文、压缩与使用的模型'),
                 subtitle: Text(

@@ -410,7 +410,7 @@ class _VoiceWorkbenchScreenState extends State<VoiceWorkbenchScreen> {
                 ),
                 trailing: Icon(
                   CupertinoIcons.folder,
-                  color: context.accentColor,
+                  color: context.textSecondaryColor,
                 ),
                 onTap: _busy ? null : _pickSample,
               ),

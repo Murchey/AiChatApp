@@ -31,8 +31,6 @@ class WorkshopScreen extends StatefulWidget {
   State<WorkshopScreen> createState() => _WorkshopScreenState();
 }
 
-
-
 class _WorkshopScreenState extends State<WorkshopScreen> {
   final Map<String, bool> _checked = {
     kCharacterPackTag: false,
@@ -49,6 +47,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     kGamePackTag: false,
     kStickerPackTag: false,
   };
+
   /// 分类是否还有更多（COS 首页截断时为 true）
   final Map<String, bool> _hasMore = {
     kCharacterPackTag: false,
@@ -142,7 +141,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
                     child: Row(
                       children: [
                         Icon(CupertinoIcons.slider_horizontal_3,
-                            color: context.accentColor),
+                            color: context.textSecondaryColor),
                         const SizedBox(width: 8),
                         Text(
                           '筛选分类',
@@ -237,7 +236,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: CupertinoListTile(
-        leading: Icon(icon, color: context.accentColor),
+        leading: Icon(icon, color: context.textSecondaryColor),
         title: Text(title),
         subtitle: Text(
           loading
@@ -427,9 +426,8 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
           CupertinoPageRoute(
             builder: (_) => CharacterImportScreen(
               entries: charEntries,
-              zipName: charZipCount > 1
-                  ? '创意工坊（$charZipCount 个角色包）'
-                  : '创意工坊角色包',
+              zipName:
+                  charZipCount > 1 ? '创意工坊（$charZipCount 个角色包）' : '创意工坊角色包',
             ),
           ),
         );
@@ -599,7 +597,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
               child: Icon(
                 CupertinoIcons.slider_horizontal_3,
                 size: 22,
-                color: context.accentColor,
+                color: context.textSecondaryColor,
               ),
             ),
             CupertinoButton(
@@ -608,7 +606,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
               child: Icon(
                 CupertinoIcons.gear,
                 size: 22,
-                color: context.accentColor,
+                color: context.textSecondaryColor,
               ),
             ),
           ],
@@ -869,7 +867,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
                         ? CupertinoIcons.gamecontroller_fill
                         : CupertinoIcons.smiley),
                 size: 15,
-                color: context.accentColor,
+                color: context.textSecondaryColor,
               ),
               const SizedBox(width: 6),
               Text(
@@ -908,9 +906,8 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
                 width: double.infinity,
                 child: CupertinoButton.filled(
                   padding: const EdgeInsets.symmetric(vertical: 10),
-                  onPressed: loading
-                      ? null
-                      : () => _loadCategory(tag, loadAll: true),
+                  onPressed:
+                      loading ? null : () => _loadCategory(tag, loadAll: true),
                   child: Text(
                     '加载更多（当前 ${items.length} 个）',
                     style: const TextStyle(fontSize: 14),
@@ -936,7 +933,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
             Icon(
               CupertinoIcons.archivebox,
               size: 22,
-              color: context.accentColor,
+              color: context.textSecondaryColor,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1010,11 +1007,3 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
     return '$bytes B';
   }
 }
-
-
-
-
-
-
-
-

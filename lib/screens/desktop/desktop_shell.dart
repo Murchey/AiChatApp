@@ -9,12 +9,15 @@ import '../../models/conversation.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/group_chat_provider.dart';
+import '../../models/group_chat.dart';
 import '../../screens/character_detail_screen.dart';
 import '../../screens/moments_screen.dart';
-import '../../screens/settings_screen.dart';
 import '../../screens/lan_sync_screen.dart';
 import '../../widgets/character_avatar.dart';
 import 'desktop_chat_view.dart';
+import 'desktop_group_chat_view.dart';
+import 'desktop_settings_view.dart';
 import 'desktop_context_menu.dart';
 import 'desktop_theme.dart';
 
@@ -30,6 +33,7 @@ class DesktopShell extends StatefulWidget {
 class _DesktopShellState extends State<DesktopShell> {
   int _rail = 0; // 0消息 1联系人 2朋友圈 3设置 4同步
   String? _selectedConversationId;
+  String? _selectedGroupId;
   String? _selectedCharacterId;
   String _search = '';
   final _searchFocus = FocusNode();
@@ -58,6 +62,19 @@ class _DesktopShellState extends State<DesktopShell> {
           _searchFocus.requestFocus();
           return KeyEventResult.handled;
         }
+        if (event.logicalKey == LogicalKeyboardKey.keyK &&
+            (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed)) {
+          if (_fullWidthTab) return KeyEventResult.ignored;
+          _searchFocus.requestFocus();
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.comma &&
+            (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed)) {
+          setState(() => _rail = 3);
+          return KeyEventResult.handled;
+        }
         if (event.logicalKey == LogicalKeyboardKey.escape &&
             _search.isNotEmpty &&
             !_fullWidthTab) {
@@ -67,22 +84,27 @@ class _DesktopShellState extends State<DesktopShell> {
         }
         return KeyEventResult.ignored;
       },
-      child: ColoredBox(
-        color: p.shellBg,
-        child: Row(
-          children: [
-            _buildRail(p),
-            if (!_fullWidthTab) _buildListPanel(p),
-            Expanded(child: _buildMainPanel(p)),
-          ],
-        ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 920;
+          return ColoredBox(
+            color: p.shellBg,
+            child: Row(
+              children: [
+                _buildRail(p, compact: compact),
+                if (!_fullWidthTab) _buildListPanel(p, compact: compact),
+                Expanded(child: _buildMainPanel(p)),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildRail(DesktopPalette p) {
+  Widget _buildRail(DesktopPalette p, {bool compact = false}) {
     return Container(
-      width: 68,
+      width: compact ? 60 : 72,
       color: p.railBg,
       child: Column(
         children: [
@@ -182,9 +204,9 @@ class _DesktopShellState extends State<DesktopShell> {
     );
   }
 
-  Widget _buildListPanel(DesktopPalette p) {
+  Widget _buildListPanel(DesktopPalette p, {bool compact = false}) {
     return Container(
-      width: 300,
+      width: compact ? 272 : 320,
       decoration: BoxDecoration(
         color: p.listBg,
         border: Border(right: BorderSide(color: p.border)),
@@ -201,9 +223,8 @@ class _DesktopShellState extends State<DesktopShell> {
             ),
           ),
           Expanded(
-            child: _rail == 0
-                ? _buildConversationList(p)
-                : _buildContactList(p),
+            child:
+                _rail == 0 ? _buildConversationList(p) : _buildContactList(p),
           ),
         ],
       ),
@@ -211,38 +232,190 @@ class _DesktopShellState extends State<DesktopShell> {
   }
 
   Widget _buildConversationList(DesktopPalette p) {
-    return Consumer<ChatProvider>(
-      builder: (context, chat, _) {
-        var items = [...chat.conversations]
-          ..sort((a, b) {
+    return Consumer2<ChatProvider, GroupChatProvider>(
+      builder: (context, chat, groups, _) {
+        final entries = <_DesktopConversationEntry>[
+          ...chat.conversations.map(_DesktopConversationEntry.private),
+          ...groups.groups.map(_DesktopConversationEntry.group),
+        ]..sort((a, b) {
             if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
             return b.lastMessageTime.compareTo(a.lastMessageTime);
           });
+        var filtered = entries;
         if (_search.isNotEmpty) {
           final q = _search.toLowerCase();
-          items = items
-              .where((c) =>
-                  c.characterName.toLowerCase().contains(q) ||
-                  c.lastMessage.toLowerCase().contains(q))
-              .toList();
+          filtered = entries.where((entry) {
+            final name = entry.name.toLowerCase();
+            final preview = entry.lastMessage.toLowerCase();
+            return name.contains(q) || preview.contains(q);
+          }).toList();
         }
-        if (items.isEmpty) {
+        if (filtered.isEmpty) {
           return Center(
-            child: Text(
-              '暂无会话',
-              style: TextStyle(color: p.textSecondary, fontSize: 13),
-            ),
+            child: Text('暂无会话',
+                style: TextStyle(color: p.textSecondary, fontSize: 13)),
           );
         }
         return ListView.builder(
-          itemCount: items.length,
-          itemBuilder: (context, i) => _conversationTile(
-            p,
-            items[i],
-            items[i].id == _selectedConversationId,
-          ),
+          itemCount: filtered.length,
+          itemBuilder: (context, i) {
+            final entry = filtered[i];
+            if (entry.conversation != null) {
+              final conversation = entry.conversation!;
+              return _conversationTile(
+                p,
+                conversation,
+                conversation.id == _selectedConversationId,
+              );
+            }
+            final group = entry.group!;
+            return _groupTile(p, group, group.id == _selectedGroupId);
+          },
         );
       },
+    );
+  }
+
+  Widget _groupTile(DesktopPalette p, GroupChat group, bool selected) {
+    return GestureDetector(
+      onTap: () => _openGroup(group),
+      onSecondaryTapUp: (e) {
+        final groups = context.read<GroupChatProvider>();
+        showDesktopContextMenu(
+          context,
+          globalPos: e.globalPosition,
+          items: [
+            DesktopMenuItem(
+              label: group.pinned ? '取消置顶' : '置顶群聊',
+              icon: CupertinoIcons.pin,
+              onTap: () => groups.setPinned(group.id, !group.pinned),
+            ),
+            DesktopMenuItem(
+              label: '标记已读',
+              icon: CupertinoIcons.checkmark_circle,
+              enabled: group.unreadCount > 0,
+              onTap: () => groups.markGroupActive(group.id),
+            ),
+            DesktopMenuItem(
+              label: '删除群聊',
+              icon: CupertinoIcons.delete,
+              destructive: true,
+              dividerBefore: true,
+              onTap: () async {
+                final ok = await showCupertinoDialog<bool>(
+                  context: context,
+                  builder: (ctx) => CupertinoAlertDialog(
+                    title: const Text('删除群聊'),
+                    content: Text('确定删除「${group.name}」及其全部消息？'),
+                    actions: [
+                      CupertinoDialogAction(
+                        child: const Text('取消'),
+                        onPressed: () => Navigator.pop(ctx, false),
+                      ),
+                      CupertinoDialogAction(
+                        isDestructiveAction: true,
+                        child: const Text('删除'),
+                        onPressed: () => Navigator.pop(ctx, true),
+                      ),
+                    ],
+                  ),
+                );
+                if (ok == true && mounted) {
+                  groups.deleteGroup(group.id);
+                  if (_selectedGroupId == group.id) {
+                    setState(() => _selectedGroupId = null);
+                  }
+                }
+              },
+            ),
+          ],
+        );
+      },
+      child: Container(
+        height: 72,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        color: selected ? p.selected : null,
+        child: Row(
+          children: [
+            _groupAvatar(p, group, size: 48),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (group.pinned)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(CupertinoIcons.pin_fill,
+                              size: 11, color: p.textTertiary),
+                        ),
+                      Expanded(
+                        child: Text(
+                          group.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: p.textPrimary),
+                        ),
+                      ),
+                      Text(_formatTime(group.lastMessageTime),
+                          style:
+                              TextStyle(fontSize: 11, color: p.textTertiary)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    group.lastMessage.isEmpty
+                        ? '${group.memberCount} 位成员'
+                        : group.lastMessage,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: p.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            if (group.unreadCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: _unreadBadge(p, group.unreadCount),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _groupAvatar(DesktopPalette p, GroupChat group, {double size = 48}) {
+    if (group.avatar.isNotEmpty) {
+      return CharacterAvatar(base64: group.avatar, size: size);
+    }
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+          color: p.selected, borderRadius: BorderRadius.circular(14)),
+      alignment: Alignment.center,
+      child: Icon(CupertinoIcons.person_3_fill,
+          size: size * 0.5, color: p.textSecondary),
+    );
+  }
+
+  Widget _unreadBadge(DesktopPalette p, int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      constraints: const BoxConstraints(minWidth: 18),
+      decoration: BoxDecoration(
+          color: p.danger, borderRadius: BorderRadius.circular(10)),
+      child: Text(count > 99 ? '99+' : '$count',
+          textAlign: TextAlign.center,
+          style:
+              const TextStyle(color: Colors.white, fontSize: 11, height: 1.3)),
     );
   }
 
@@ -377,9 +550,19 @@ class _DesktopShellState extends State<DesktopShell> {
   void _openConversation(Conversation c) {
     setState(() {
       _selectedConversationId = c.id;
+      _selectedGroupId = null;
       _selectedCharacterId = null;
     });
     context.read<ChatProvider>().markConversationActive(c.id);
+  }
+
+  void _openGroup(GroupChat group) {
+    setState(() {
+      _selectedGroupId = group.id;
+      _selectedConversationId = null;
+      _selectedCharacterId = null;
+    });
+    context.read<GroupChatProvider>().markGroupActive(group.id);
   }
 
   Future<void> _confirmDeleteConversation(Conversation c) async {
@@ -409,9 +592,10 @@ class _DesktopShellState extends State<DesktopShell> {
   }
 
   Widget _buildContactList(DesktopPalette p) {
-    return Consumer<CharacterProvider>(
-      builder: (context, chars, _) {
+    return Consumer2<CharacterProvider, GroupChatProvider>(
+      builder: (context, chars, groups, _) {
         var list = [...chars.characters];
+        var groupList = [...groups.groups];
         if (_search.isNotEmpty) {
           final q = _search.toLowerCase();
           list = list
@@ -419,11 +603,24 @@ class _DesktopShellState extends State<DesktopShell> {
                   c.displayName.toLowerCase().contains(q) ||
                   c.name.toLowerCase().contains(q))
               .toList();
+          groupList = groupList
+              .where((g) =>
+                  g.name.toLowerCase().contains(q) ||
+                  g.description.toLowerCase().contains(q))
+              .toList();
         }
         return ListView.builder(
-          itemCount: list.length,
+          itemCount: groupList.length + list.length + 2,
           itemBuilder: (context, i) {
-            final c = list[i];
+            if (i == 0) return _sectionLabel(p, '群聊', groupList.length);
+            if (i <= groupList.length) {
+              final group = groupList[i - 1];
+              return _contactGroupTile(p, group, group.id == _selectedGroupId);
+            }
+            if (i == groupList.length + 1) {
+              return _sectionLabel(p, '角色', list.length);
+            }
+            final c = list[i - groupList.length - 2];
             final selected = c.id == _selectedCharacterId;
             return GestureDetector(
               onTap: () => setState(() {
@@ -475,6 +672,55 @@ class _DesktopShellState extends State<DesktopShell> {
     );
   }
 
+  Widget _sectionLabel(DesktopPalette p, String title, int count) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      child: Text(
+        '$title  $count',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: p.textTertiary,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+
+  Widget _contactGroupTile(DesktopPalette p, GroupChat group, bool selected) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _rail = 0;
+          _selectedGroupId = group.id;
+          _selectedConversationId = null;
+          _selectedCharacterId = null;
+        });
+      },
+      child: Container(
+        height: 60,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        color: selected ? p.selected : null,
+        child: Row(
+          children: [
+            _groupAvatar(p, group, size: 42),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                group.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 15, color: p.textPrimary),
+              ),
+            ),
+            Text('${group.memberCount}人',
+                style: TextStyle(fontSize: 12, color: p.textTertiary)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMainPanel(DesktopPalette p) {
     if (_rail == 2) {
       return const ColoredBox(
@@ -483,8 +729,7 @@ class _DesktopShellState extends State<DesktopShell> {
       );
     }
     if (_rail == 3) {
-      // 设置：与手机端同一套页面，不再另做桌面壳
-      return const SettingsScreen();
+      return const DesktopSettingsView();
     }
     if (_rail == 4) {
       return const LanSyncScreen();
@@ -501,6 +746,16 @@ class _DesktopShellState extends State<DesktopShell> {
           conversationId: conv.id,
           characterName: conv.characterName,
           characterAvatar: conv.characterAvatar,
+        );
+      }
+    }
+    if (_rail == 0 && _selectedGroupId != null) {
+      final group =
+          context.read<GroupChatProvider>().getGroupById(_selectedGroupId!);
+      if (group != null) {
+        return DesktopGroupChatView(
+          key: ValueKey(group.id),
+          groupId: group.id,
         );
       }
     }
@@ -532,7 +787,7 @@ class _DesktopShellState extends State<DesktopShell> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Ctrl+F 搜索 · 右键更多操作 · Enter 发送',
+              'Ctrl/Cmd+K 搜索 · 右键更多操作 · Enter 发送 · Esc 关闭',
               style: TextStyle(color: p.textTertiary, fontSize: 12),
             ),
           ],
@@ -554,4 +809,26 @@ class _DesktopShellState extends State<DesktopShell> {
     }
     return '${t.month}/${t.day}';
   }
+}
+
+/// 统一私聊与群聊列表的轻量条目模型。
+/// 仅在桌面列表层使用，不改变手机版 Provider 的数据结构。
+class _DesktopConversationEntry {
+  final Conversation? conversation;
+  final GroupChat? group;
+
+  const _DesktopConversationEntry._({this.conversation, this.group});
+
+  factory _DesktopConversationEntry.private(Conversation value) =>
+      _DesktopConversationEntry._(conversation: value);
+
+  factory _DesktopConversationEntry.group(GroupChat value) =>
+      _DesktopConversationEntry._(group: value);
+
+  bool get pinned => conversation?.pinned ?? group?.pinned ?? false;
+  DateTime get lastMessageTime =>
+      conversation?.lastMessageTime ?? group?.lastMessageTime ?? DateTime(1970);
+  String get name => conversation?.characterName ?? group?.name ?? '';
+  String get lastMessage =>
+      conversation?.lastMessage ?? group?.lastMessage ?? '';
 }

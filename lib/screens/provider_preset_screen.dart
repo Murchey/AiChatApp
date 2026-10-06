@@ -42,7 +42,7 @@ class ProviderPresetScreen extends StatelessWidget {
                 CupertinoListTile(
                   leading: Icon(
                     CupertinoIcons.cube,
-                    color: context.accentColor,
+                    color: context.textSecondaryColor,
                   ),
                   title: Text(
                     provider.name,

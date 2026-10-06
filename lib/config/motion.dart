@@ -20,9 +20,24 @@ class AppMotion {
   /// 输入栏键盘收起后再接管面板的等待
   static const Duration inputPanelSettle = Duration(milliseconds: 180);
 
+  /// 选中态、半透明胶囊等轻量状态变化
+  static const Duration tabSelection = Duration(milliseconds: 240);
+
+  /// 兼容已有轻量选中态调用方
+  static const Duration selection = tabSelection;
+
+  /// 选中图标与标签的淡入切换
+  static const Duration tabIconFade = Duration(milliseconds: 140);
+
+  /// 按压反馈的轻微缩放比例
+  static const double pressScale = 0.98;
+
+  static const Curve tabSelectionCurve = Curves.easeOutCubic;
+
   static const Curve enter = Curves.easeOutCubic;
   static const Curve exit = Curves.easeInCubic;
   static const Curve standard = Curves.easeInOutCubic;
+
   /// 列表 animateTo 等偏轻的双向过渡
   static const Curve soft = Curves.easeInOut;
   static const Curve out = Curves.easeOut;

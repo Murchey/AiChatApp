@@ -77,7 +77,7 @@ class PresetColorDot extends StatelessWidget {
           color: color,
           border: selected
               ? Border.all(
-                  color: context.textSecondaryColor,
+                  color: context.accentColor,
                   width: 3,
                 )
               : null,

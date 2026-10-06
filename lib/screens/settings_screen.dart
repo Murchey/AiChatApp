@@ -1,8 +1,8 @@
-
 import 'package:flutter/cupertino.dart';
 
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../config/ui_spec.dart';
 import '../widgets/settings/color_picker_widgets.dart';
 import '../widgets/settings/settings_pickers.dart';
 
@@ -41,6 +41,37 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _showCustomPicker = false;
+
+  BoxDecoration _sectionDecoration(BuildContext context) {
+    return BoxDecoration(
+      color: context.listBgColor.withValues(
+        alpha: context.isDark ? 0.78 : 0.9,
+      ),
+      borderRadius: BorderRadius.circular(UiSpec.settingsSectionRadius),
+      border: Border.all(
+        color: context.outlineColor.withValues(alpha: 0.34),
+        width: 0.6,
+      ),
+    );
+  }
+
+  Widget _sectionHeader(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(
+        left: 4,
+        bottom: UiSpec.settingsSectionGap / 2,
+      ),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: UiSpec.fontCaption,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.2,
+          color: context.textSecondaryColor,
+        ),
+      ),
+    );
+  }
 
   String _themeLabel(AppThemeMode mode) {
     switch (mode) {
@@ -300,6 +331,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// 弹出深浅色选择（下拉选项框）
+  @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
 
@@ -311,11 +343,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // 明暗模式
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('外观'),
+            decoration: _sectionDecoration(context),
+            header: _sectionHeader(context, '外观'),
             children: [
               CupertinoListTile(
                 title: const Text('深色模式'),
@@ -366,22 +395,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                 ),
-                onTap: () => SettingsPickers.showAvatarFramePicker(context, settings),
+                onTap: () =>
+                    SettingsPickers.showAvatarFramePicker(context, settings),
               ),
             ],
           ),
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('表情包'),
+            decoration: _sectionDecoration(context),
+            header: _sectionHeader(context, '表情包'),
             children: [
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.smiley,
-                  color: context.accentColor,
+                  color: context.settingIconColor(SettingIconRole.stickers),
                 ),
                 title: const Text('管理表情包'),
                 subtitle: Text(
@@ -424,11 +451,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // 主题色
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('主题色'),
+            decoration: _sectionDecoration(context),
+            header: _sectionHeader(context, '主题色'),
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(
@@ -473,16 +497,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // 显示设置：气泡颜色（收进底部弹层，避免设置页过长）
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('显示'),
+            decoration: _sectionDecoration(context),
+            header: _sectionHeader(context, '显示'),
             children: [
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.chat_bubble_2_fill,
-                  color: context.accentColor,
+                  color: context.settingIconColor(SettingIconRole.display),
                 ),
                 title: const Text('气泡样式'),
                 additionalInfo: Text(
@@ -505,7 +526,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.textformat,
-                  color: context.accentColor,
+                  color: context.settingIconColor(SettingIconRole.display),
                 ),
                 title: const Text('UI 样式'),
                 subtitle: Text(
@@ -535,7 +556,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.photo,
-                  color: context.accentColor,
+                  color: context.settingIconColor(SettingIconRole.display),
                 ),
                 title: const Text('开屏图标'),
                 subtitle: Text(
@@ -565,7 +586,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.textformat_alt,
-                  color: context.accentColor,
+                  color: context.settingIconColor(SettingIconRole.display),
                 ),
                 title: const Text('气泡字体'),
                 subtitle: Text(
@@ -587,7 +608,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               CupertinoListTile(
                 leading: Icon(CupertinoIcons.textformat_size,
-                    color: context.accentColor),
+                    color: context.settingIconColor(SettingIconRole.display)),
                 title: const Text('调整气泡内字体大小'),
                 subtitle: Text(
                   '${settings.bubbleFontSize.round()}（默认 16）',
@@ -603,7 +624,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 CupertinoListTile(
                   leading: Icon(
                     CupertinoIcons.paintbrush,
-                    color: context.accentColor,
+                    color: context.settingIconColor(SettingIconRole.display),
                   ),
                   title: const Text('自定义气泡颜色'),
                   subtitle: Text(
@@ -618,18 +639,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     size: 16,
                     color: context.textSecondaryColor,
                   ),
-                  onTap: () => SettingsPickers.showBubbleColorDrawer(context, settings),
+                  onTap: () =>
+                      SettingsPickers.showBubbleColorDrawer(context, settings),
                 ),
             ],
           ),
           // 消息通知：角色新消息（未读）发送系统通知
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('通知'),
+            decoration: _sectionDecoration(context),
+            header: _sectionHeader(context, '通知'),
             children: [
               CupertinoListTile(
                 title: const Text('未读消息发送系统通知'),
@@ -650,11 +669,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // 开发者模式：开启后在「我」页底部显示通知与日志文本框
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('开发者'),
+            decoration: _sectionDecoration(context),
+            header: _sectionHeader(context, '开发者'),
             children: [
               CupertinoListTile(
                 title: const Text('开发者模式'),
@@ -679,9 +695,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: context.separatorColor,
                 ),
                 CupertinoListTile(
-                  leading: const Icon(
+                  leading: Icon(
                     CupertinoIcons.bolt,
-                    color: CupertinoColors.systemOrange,
+                    color: context.settingIconColor(SettingIconRole.developer),
                   ),
                   title: const Text('快速测试自动发朋友圈'),
                   subtitle: Text(
@@ -702,9 +718,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: context.separatorColor,
                 ),
                 CupertinoListTile(
-                  leading: const Icon(
+                  leading: Icon(
                     CupertinoIcons.text_bubble,
-                    color: CupertinoColors.systemTeal,
+                    color: context.settingIconColor(SettingIconRole.developer),
                   ),
                   title: const Text('立即触发角色主动问候'),
                   subtitle: Text(
@@ -725,9 +741,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: context.separatorColor,
                 ),
                 CupertinoListTile(
-                  leading: const Icon(
+                  leading: Icon(
                     CupertinoIcons.news,
-                    color: CupertinoColors.activeBlue,
+                    color: context.settingIconColor(SettingIconRole.developer),
                   ),
                   title: const Text('快速触发角色仓库提醒'),
                   subtitle: Text(
@@ -748,9 +764,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: context.separatorColor,
                 ),
                 CupertinoListTile(
-                  leading: const Icon(
+                  leading: Icon(
                     CupertinoIcons.arrow_down_circle,
-                    color: CupertinoColors.systemGreen,
+                    color: context.settingIconColor(SettingIconRole.developer),
                   ),
                   title: const Text('触发 APP 更新弹窗'),
                   subtitle: Text(
@@ -771,11 +787,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // 更新检测：启动时自动检测 + 更新代理地址
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('更新'),
+            decoration: _sectionDecoration(context),
+            header: _sectionHeader(context, '更新'),
             children: [
               CupertinoListTile(
                 title: const Text('启动时自动检测更新'),
@@ -807,7 +820,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   size: 16,
                   color: context.textSecondaryColor,
                 ),
-                onTap: () => SettingsPickers.showGiteeRepoDialog(context, settings),
+                onTap: () =>
+                    SettingsPickers.showGiteeRepoDialog(context, settings),
               ),
               CupertinoListTile(
                 title: const Text('GitHub 更新仓库'),
@@ -825,7 +839,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   size: 16,
                   color: context.textSecondaryColor,
                 ),
-                onTap: () => SettingsPickers.showGitHubRepoDialog(context, settings),
+                onTap: () =>
+                    SettingsPickers.showGitHubRepoDialog(context, settings),
               ),
               CupertinoListTile(
                 title: const Text('GitHub 加速地址'),
@@ -850,16 +865,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // 记忆池：管理角色跨场景（私聊/群聊/朋友圈）的近期记忆拼接
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('AI 记忆'),
+            decoration: _sectionDecoration(context),
+            header: _sectionHeader(context, 'AI 记忆'),
             children: [
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.clock,
-                  color: context.accentColor,
+                  color: context.settingIconColor(SettingIconRole.memory),
                 ),
                 title: const Text('记忆池管理'),
                 subtitle: Text(
@@ -886,16 +898,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // 存储空间：管理应用自身占用（用户数据 + 软件缓存）
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('存储'),
+            decoration: _sectionDecoration(context),
+            header: _sectionHeader(context, '存储'),
             children: [
               CupertinoListTile(
                 leading: Icon(
                   CupertinoIcons.arrow_2_circlepath,
-                  color: context.accentColor,
+                  color: context.settingIconColor(SettingIconRole.storage),
                 ),
                 title: const Text('数据备份'),
                 subtitle: Text(
@@ -944,4 +953,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-  }}
+  }
+}

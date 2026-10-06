@@ -375,12 +375,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       onSelectText: () => _showTextSelection(message),
       onQuote: () => setState(() => _quoteMessage = message),
       onWithdraw: message.isFromUser ? () => _withdrawMessage(message) : null,
-      onEdit: (message.isFromUser && message.type != MessageType.narration) ? null : () => _editMessage(message),
-      onShowReasoning: message.hasReasoning ? () => _showReasoningContent(message) : null,
+      onEdit: (message.isFromUser && message.type != MessageType.narration)
+          ? null
+          : () => _editMessage(message),
+      onShowReasoning:
+          message.hasReasoning ? () => _showReasoningContent(message) : null,
       onReroll: () => _rerollReply(message),
       onDelete: message.isFromUser
           ? null
-          : () => context.read<ChatProvider>().deleteMessage(widget.conversationId, message.id),
+          : () => context
+              .read<ChatProvider>()
+              .deleteMessage(widget.conversationId, message.id),
       onSaveMemory: () => _enterSelectMode(message, forMemory: true),
       onMultiSelect: () => _enterSelectMode(message),
       onBranch: () => _branchConversation(message),
@@ -534,7 +539,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   /// 保存选中的消息为角色记忆点
-  Future<void> _saveSelectedAsMemory() => ChatSelectForward.saveSelectedAsMemory(
+  Future<void> _saveSelectedAsMemory() =>
+      ChatSelectForward.saveSelectedAsMemory(
         context,
         conversationId: widget.conversationId,
         fallbackCharacterName: widget.characterName,
@@ -578,7 +584,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       onForwardMerge: () => _forwardMessages(merge: true),
     );
   }
-
 
   /// 点击"聊天记录"卡片进入合并转发详情页
   void _openForwardDetail(
@@ -926,6 +931,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
+        backgroundColor: context.navBarColor.withValues(alpha: 0.78),
+        border: Border(
+          bottom: BorderSide(
+            color: context.separatorColor.withValues(alpha: 0.62),
+            width: 0.5,
+          ),
+        ),
         // 多选模式显示标题；否则角色回复生成/渲染期间标题变为"对方正在输入……"
         // 多选模式显示标题；否则角色回复生成/渲染期间标题变为"对方正在输入……"。
         // 用 Selector 只订阅本会话的回复状态，ChatProvider 其他变化不重建标题
@@ -934,24 +946,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             : Selector<ChatProvider, bool>(
                 selector: (_, p) => p.isReplying(widget.conversationId),
                 builder: (context, replying, _) {
-                  // 终末地 UI 样式：标题栏靠左排列，回复中黄点呼吸「输入中」
+                  final titleBar = ChatTitleBar(
+                    name: displayName,
+                    signature: replying ? '' : character?.signature ?? '',
+                    activeStart: character?.activeStart ?? '',
+                    activeEnd: character?.activeEnd ?? '',
+                    inputStatus: replying
+                        ? (context.uiStyle == UiStyle.zmd ? '输入中' : '对方正在输入……')
+                        : null,
+                  );
+                  // ZMD 保留原有靠左标题与状态布局，普通样式使用紧凑居中标题。
                   if (context.uiStyle == UiStyle.zmd) {
                     return Align(
                       alignment: Alignment.centerLeft,
-                      child: ChatTitleBar(
-                        name: displayName,
-                        signature: character?.signature ?? '',
-                        activeStart: character?.activeStart ?? '',
-                        activeEnd: character?.activeEnd ?? '',
-                        inputStatus: replying ? '输入中' : null,
-                      ),
+                      child: titleBar,
                     );
                   }
-                  return Text(
-                    replying ? '对方正在输入……' : displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  );
+                  return titleBar;
                 },
               ),
         trailing: _selectMode

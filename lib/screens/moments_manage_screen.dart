@@ -352,7 +352,7 @@ class _MomentsManageScreenState extends State<MomentsManageScreen> {
                 CupertinoListTile(
                   leading: Icon(
                     CupertinoIcons.archivebox,
-                    color: context.accentColor,
+                    color: context.textSecondaryColor,
                   ),
                   title: const Text('导入朋友圈数据包'),
                   subtitle: Text(

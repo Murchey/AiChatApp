@@ -376,7 +376,8 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
       header: Text('我的表情包（${stickers.length} 张）'),
       children: [
         CupertinoListTile(
-          leading: Icon(CupertinoIcons.search, color: context.accentColor),
+          leading:
+              Icon(CupertinoIcons.search, color: context.textSecondaryColor),
           title: const Text('测试表情包检索'),
           subtitle: const Text('输入关键词，确认角色可检索到的表情包'),
           trailing: Icon(CupertinoIcons.chevron_right,
@@ -384,7 +385,8 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
           onTap: _showSearchTest,
         ),
         CupertinoListTile(
-          leading: Icon(CupertinoIcons.sparkles, color: context.accentColor),
+          leading:
+              Icon(CupertinoIcons.sparkles, color: context.textSecondaryColor),
           title: const Text('AI 自动打标'),
           subtitle: Text(
             canAutoTag ? '使用视觉模型生成描述、关键词与情绪标签' : '需在「聊天设置」选择支持图片的模型',

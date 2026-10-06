@@ -573,7 +573,7 @@ class _LanSyncScreenState extends State<LanSyncScreen> {
     VoidCallback? onTap,
   }) {
     return CupertinoListTile(
-      leading: Icon(icon, color: context.accentColor),
+      leading: Icon(icon, color: context.textSecondaryColor),
       title: Text(title),
       subtitle: Text(
         subtitle,

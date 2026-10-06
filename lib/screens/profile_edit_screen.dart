@@ -414,7 +414,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         width: 56,
         height: 56,
         decoration: BoxDecoration(
-          color: context.accentColor.withValues(alpha: 0.15),
+          color: context.fieldBgColor,
           image: DecorationImage(
             image: MemoryImage(base64Decode(avatarBase64)),
             fit: BoxFit.cover,
@@ -426,7 +426,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       width: 56,
       height: 56,
       decoration: BoxDecoration(
-        color: context.accentColor.withValues(alpha: 0.15),
+        color: context.fieldBgColor,
       ),
       alignment: Alignment.center,
       child: Text(
@@ -434,7 +434,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         style: TextStyle(
           fontSize: 24,
           fontWeight: FontWeight.bold,
-          color: context.accentColor,
+          color: context.textSecondaryColor,
         ),
       ),
     );

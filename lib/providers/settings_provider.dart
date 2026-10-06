@@ -262,9 +262,8 @@ class SettingsProvider extends ChangeNotifier {
     _splashIconPath = prefs.getString('splash_icon_path') ?? '';
     _selfBubbleFontName = prefs.getString('bubble_font_self') ?? '';
     _otherBubbleFontName = prefs.getString('bubble_font_other') ?? '';
-    _bubbleFontSize = (prefs.getDouble('bubble_font_size') ?? 16)
-        .clamp(12, 24)
-        .toDouble();
+    _bubbleFontSize =
+        (prefs.getDouble('bubble_font_size') ?? 16).clamp(12, 24).toDouble();
     await _restoreBubbleFonts(prefs);
     notifyListeners();
   }
@@ -293,7 +292,8 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   /// 设置我方或对方气泡的字体；空名称恢复系统默认字体。
-  Future<void> setBubbleFont({required bool isUser, required String name}) async {
+  Future<void> setBubbleFont(
+      {required bool isUser, required String name}) async {
     if (name.isNotEmpty && !await _loadBubbleFont(name)) {
       throw StateError('字体文件不存在或无法加载');
     }
@@ -303,7 +303,8 @@ class SettingsProvider extends ChangeNotifier {
       _otherBubbleFontName = name;
     }
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(isUser ? 'bubble_font_self' : 'bubble_font_other', name);
+    await prefs.setString(
+        isUser ? 'bubble_font_self' : 'bubble_font_other', name);
     notifyListeners();
   }
 
@@ -382,7 +383,8 @@ class SettingsProvider extends ChangeNotifier {
   /// 设置更新检测用的 Gitee 仓库地址（空串恢复默认）
   Future<void> setUpdateGiteeRepoUrl(String url) async {
     final v = url.trim();
-    _updateGiteeRepoUrl = v.isEmpty ? kGiteeRepoUrl : v.replaceAll(RegExp(r'/+$'), '');
+    _updateGiteeRepoUrl =
+        v.isEmpty ? kGiteeRepoUrl : v.replaceAll(RegExp(r'/+$'), '');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('update_gitee_repo_url', _updateGiteeRepoUrl);
     notifyListeners();

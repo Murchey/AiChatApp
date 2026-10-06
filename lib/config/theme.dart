@@ -89,33 +89,34 @@ class ZmdBubbleColors {
 /// 亮/暗两套色板
 class AppColors {
   // 亮色模式
-  static const scaffoldLight = Color(0xFFEDEDED); // 页面背景
-  static const navBarLight = Color(0xFFF7F7F7); // 导航栏背景（微信浅色）
-  static const listBgLight = Color(0xFFFFFFFF); // 列表卡片背景
-  static const chatBgLight = Color(0xFFFAFAFA); // 聊天纯色背景（白）
-  static const bubbleSelfLight = Color(0xFF95EC6A); // 自己气泡
+  static const scaffoldLight = Color(0xFFF5F5F7); // Apple grouped background
+  static const navBarLight = Color(0xF2FFFFFF); // translucent system surface
+  static const listBgLight = Color(0xFFFFFFFF); // surface
+  static const chatBgLight = Color(0xFFF9F9FB); // calm conversation canvas
+  // iMessage / ChatGPT style default conversation colors.
+  static const bubbleSelfLight = Color(0xFF0A84FF); // 自己气泡
   static const bubbleOtherLight = Color(0xFFE7E7E7); // 对方气泡
   static const textPrimaryLight = Color(0xFF1F1F1F);
   static const textSecondaryLight = Color(0xFF8A8A8E);
-  static const fieldBgLight = Color(0xFFEDEDED); // 输入框背景
+  static const fieldBgLight = Color(0xFFEFEFF4); // system fill
   static const pinnedChatLight = Color(0xFFFFFFFF); // 置顶会话条目背景（浅色）
 
-  // 暗色模式（页面背景统一 #111111）
-  static const scaffoldDark = Color(0xFF111111);
-  static const navBarDark = Color(0xFF1E1E1E);
-  static const listBgDark = Color(0xFF222222);
-  static const chatBgDark = Color(0xFF111111);
-  static const bubbleSelfDark = Color(0xFF40B475); // 自己气泡
+  // 暗色模式（Apple system background / surface 层级）
+  static const scaffoldDark = Color(0xFF0B0B0F);
+  static const navBarDark = Color(0xF2111318);
+  static const listBgDark = Color(0xFF111318);
+  static const chatBgDark = Color(0xFF0B0B0F);
+  static const bubbleSelfDark = Color(0xFF0A84FF); // 自己气泡
   static const bubbleOtherDark = Color(0xFF2C2C2C); // 对方气泡
   static const textPrimaryDark = Color(0xFFF0F0F0);
   static const textSecondaryDark = Color(0xFF8E8E93);
-  static const fieldBgDark = Color(0xFF2A2A2C);
+  static const fieldBgDark = Color(0xFF1C1C1E);
   static const pinnedChatDark = Color(0xFF242424); // 置顶会话条目背景（深色）
 
   // 气泡内字体颜色（自己/对方 × 浅色/深色）
-  static const bubbleTextSelfLight = Color(0xFF000000);
+  static const bubbleTextSelfLight = Color(0xFFFFFFFF);
   static const bubbleTextOtherLight = Color(0xFF000000);
-  static const bubbleTextSelfDark = Color(0xFF000000);
+  static const bubbleTextSelfDark = Color(0xFFFFFFFF);
   static const bubbleTextOtherDark = Color(0xFFD6D6D6);
 
   // 预设主题色（5 个）
@@ -128,12 +129,42 @@ class AppColors {
   ];
 
   // 朋友圈（深色卡片风格，浅色模式改用浅灰底）
-  static const momentsBgLight = Color(0xFFEDEDED); // 朋友圈页面/面板背景
-  static const momentsBgDark = Color(0xFF18181A);
+  static const momentsBgLight = Color(0xFFF5F5F7); // 朋友圈页面/面板背景
+  static const momentsBgDark = Color(0xFF0B0B0F);
   static const momentCardLight = Color(0xFFFFFFFF); // 朋友圈卡片背景
   static const momentCardDark = Color(0xFF202024);
   static const momentBlockLight = Color(0xFFF2F2F2); // 点赞/评论浅底块
   static const momentBlockDark = Color(0xFF18181A);
+
+  // 设置页低饱和语义图标色：普通图标不跟随主题色，避免全部同色。
+  static const settingIconAppearanceLight = Color(0xFF7566A8);
+  static const settingIconAppearanceDark = Color(0xFFB9A8ED);
+  static const settingIconStickersLight = Color(0xFFB9783B);
+  static const settingIconStickersDark = Color(0xFFD6A16A);
+  static const settingIconDisplayLight = Color(0xFF3C8A88);
+  static const settingIconDisplayDark = Color(0xFF79C5C0);
+  static const settingIconNotificationsLight = Color(0xFFB65E68);
+  static const settingIconNotificationsDark = Color(0xFFE38B96);
+  static const settingIconDeveloperLight = Color(0xFFA77B2E);
+  static const settingIconDeveloperDark = Color(0xFFD7B15E);
+  static const settingIconUpdatesLight = Color(0xFF4A78A8);
+  static const settingIconUpdatesDark = Color(0xFF8FB5E2);
+  static const settingIconMemoryLight = Color(0xFF596AA6);
+  static const settingIconMemoryDark = Color(0xFF9EADDF);
+  static const settingIconStorageLight = Color(0xFF5E748A);
+  static const settingIconStorageDark = Color(0xFF9BB6C8);
+}
+
+/// 设置页前导图标的功能语义。
+enum SettingIconRole {
+  appearance,
+  stickers,
+  display,
+  notifications,
+  developer,
+  updates,
+  memory,
+  storage,
 }
 
 class AppTheme {
@@ -195,6 +226,36 @@ extension AppThemeX on BuildContext {
 
   Color get accentColor => CupertinoTheme.of(this).primaryColor;
 
+  Color settingIconColor(SettingIconRole role) {
+    final dark = isDark;
+    return switch (role) {
+      SettingIconRole.appearance => dark
+          ? AppColors.settingIconAppearanceDark
+          : AppColors.settingIconAppearanceLight,
+      SettingIconRole.stickers => dark
+          ? AppColors.settingIconStickersDark
+          : AppColors.settingIconStickersLight,
+      SettingIconRole.display => dark
+          ? AppColors.settingIconDisplayDark
+          : AppColors.settingIconDisplayLight,
+      SettingIconRole.notifications => dark
+          ? AppColors.settingIconNotificationsDark
+          : AppColors.settingIconNotificationsLight,
+      SettingIconRole.developer => dark
+          ? AppColors.settingIconDeveloperDark
+          : AppColors.settingIconDeveloperLight,
+      SettingIconRole.updates => dark
+          ? AppColors.settingIconUpdatesDark
+          : AppColors.settingIconUpdatesLight,
+      SettingIconRole.memory => dark
+          ? AppColors.settingIconMemoryDark
+          : AppColors.settingIconMemoryLight,
+      SettingIconRole.storage => dark
+          ? AppColors.settingIconStorageDark
+          : AppColors.settingIconStorageLight,
+    };
+  }
+
   Color get scaffoldColor =>
       isDark ? AppColors.scaffoldDark : AppColors.scaffoldLight;
 
@@ -203,6 +264,15 @@ extension AppThemeX on BuildContext {
 
   Color get listBgColor =>
       isDark ? AppColors.listBgDark : AppColors.listBgLight;
+
+  /// Apple-style semantic surfaces used by cards and grouped settings.
+  Color get surfaceColor => listBgColor;
+
+  Color get groupedSurfaceColor =>
+      isDark ? const Color(0xFF161A22) : const Color(0xFFEFEFF4);
+
+  Color get outlineColor =>
+      isDark ? const Color(0xFF2E2F32) : const Color(0xFFD1D1D6);
 
   Color get chatBgColor =>
       isDark ? AppColors.chatBgDark : AppColors.chatBgLight;
@@ -252,6 +322,12 @@ extension AppThemeX on BuildContext {
       ? CupertinoColors.white.withValues(alpha: 0.1)
       : CupertinoColors.systemGrey5;
 
+  /// 会话列表的弱分割线：接近微信列表的低对比度分隔，避免暗色模式
+  /// 因为重复覆盖透明度而出现刺眼的亮线。
+  Color get conversationDividerColor => isDark
+      ? CupertinoColors.white.withValues(alpha: 0.08)
+      : CupertinoColors.black.withValues(alpha: 0.07);
+
   /// 朋友圈页面/面板背景
   Color get momentsBgColor =>
       isDark ? AppColors.momentsBgDark : AppColors.momentsBgLight;
@@ -270,8 +346,8 @@ extension AppThemeX on BuildContext {
   /// 当前会话 UI 样式
   UiStyle get uiStyle => read<SettingsProvider>().uiStyle;
 
-  /// 气泡圆角半径（崩铁样式 12，经典样式 12）
-  double get bubbleBorderRadius => 12;
+  /// 气泡圆角半径（Apple 消息样式的柔和胶囊感）
+  double get bubbleBorderRadius => 18;
 
   /// 气泡圆角：sr 样式下靠近头像一侧的上边角为直角
   /// （我方气泡在右侧头像在右 → 右上角直角；对方气泡在左侧头像在左 → 左上角直角）

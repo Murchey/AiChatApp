@@ -91,9 +91,7 @@ class CharacterAvatar extends StatelessWidget {
       decoration: BoxDecoration(
         shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
         borderRadius: isCircle ? null : radius,
-        color: hasImage
-            ? null
-            : backgroundColor ?? context.accentColor.withValues(alpha: 0.15),
+        color: hasImage ? null : backgroundColor ?? context.fieldBgColor,
         border: border,
       ),
       alignment: Alignment.center,
@@ -112,7 +110,7 @@ class CharacterAvatar extends StatelessWidget {
           : Icon(
               fallbackIcon,
               size: iconSize ?? size * 0.55,
-              color: iconColor ?? context.accentColor,
+              color: iconColor ?? context.textSecondaryColor,
             ),
     );
   }

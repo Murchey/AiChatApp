@@ -134,7 +134,7 @@ class ForwardDetailScreen extends StatelessWidget {
             Icon(
               CupertinoIcons.doc_fill,
               size: 28,
-              color: context.accentColor,
+              color: context.textSecondaryColor,
             ),
             const SizedBox(width: 8),
             Flexible(

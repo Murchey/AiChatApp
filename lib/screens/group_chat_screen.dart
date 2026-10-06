@@ -39,7 +39,15 @@ import 'group_chat_settings_screen.dart';
 class GroupChatScreen extends StatefulWidget {
   final String groupId;
 
-  const GroupChatScreen({super.key, required this.groupId});
+  /// 桌面壳嵌入模式：复用完整群聊业务与消息输入，仅隐藏手机导航栏，
+  /// 由桌面侧提供自己的标题栏和详情入口。
+  final bool embedded;
+
+  const GroupChatScreen({
+    super.key,
+    required this.groupId,
+    this.embedded = false,
+  });
 
   @override
   State<GroupChatScreen> createState() => _GroupChatScreenState();
@@ -493,8 +501,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             true)
           charProvider.getCharacterById(id)!.displayName.trim(),
     ];
-    final userNickname =
-        context.read<AuthProvider>().user?.nickname ?? '用户';
+    final userNickname = context.read<AuthProvider>().user?.nickname ?? '用户';
     // 群聊不套用单一角色人设：建议是给用户出主意，不是角色发言
     final systemPrompt = '当前是群聊「${group?.name ?? ''}」。\n'
         '群成员（角色）：${memberNames.isEmpty ? '（无）' : memberNames.join('、')}。\n'
@@ -837,9 +844,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   static const double _menuCellHeight = 46;
   static const double _menuSpacing = 4;
   static const double _menuPadding = 8;
+
   /// Border.all 的线宽；Container 会把它计入内边距（decoration.padding），
   /// 尺寸公式必须预留，否则 Positioned 约束会比面板固有宽高各窄 1dp（debug 溢出黄条）。
   static const double _menuBorder = 0.5;
+
   /// 单行最多按钮数（再宽会超出手机屏宽）
   static const int _menuMaxColumns = 3;
 
@@ -867,11 +876,14 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         (_menuPadding + _menuBorder) * 2;
   }
 
-  Widget _buildMenuPanel(List<Widget> items) => ChatBubbleMenuPanel(items: items);
+  Widget _buildMenuPanel(List<Widget> items) =>
+      ChatBubbleMenuPanel(items: items);
 
-
-  Widget _menuItem({required IconData icon, required String label, required VoidCallback onTap}) => ChatBubbleMenuItem(icon: icon, label: label, onTap: onTap);
-
+  Widget _menuItem(
+          {required IconData icon,
+          required String label,
+          required VoidCallback onTap}) =>
+      ChatBubbleMenuItem(icon: icon, label: label, onTap: onTap);
 
   // ─── 功能检测（模型是否支持图片发送） ─────────────────────
 
@@ -1072,7 +1084,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
   Widget _buildTimeLabel(DateTime time) => ChatTimeLabel(time: time);
 
-
   void _openGroupDetail() {
     Navigator.push(
       context,
@@ -1087,6 +1098,283 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final group =
         context.watch<GroupChatProvider>().getGroupById(widget.groupId);
     final title = group == null ? '群聊' : '${group.name}（${group.memberCount}）';
+
+    final body = Consumer<ChatBackgroundProvider>(
+      builder: (context, bgProvider, _) {
+        final bgInfo = bgProvider.getInfoSync(widget.groupId);
+        // 是否渲染背景图：有图且文件存在时，消息列表用半透明遮罩保护文字可读性
+        final hasBg = bgInfo != null && bgInfo.hasImage && bgInfo.fileExists;
+        return Stack(
+          children: [
+            // 背景层（已持久化图片 + 高斯模糊）。
+            // RepaintBoundary：滚动消息列表时复用已光栅化结果，避免每帧重跑高斯模糊
+            if (hasBg)
+              RepaintBoundary(
+                child: Builder(
+                  builder: (ctx) {
+                    final bgSize = MediaQuery.of(ctx).size;
+                    final blur = bgInfo.blur > 0 ? bgInfo.blur : 0.1;
+                    // 按屏幕物理像素限制解码尺寸：模糊背景无需全分辨率，显著降低
+                    // 大图解码内存与每帧模糊计算量
+                    final decodeWidth =
+                        (bgSize.width * MediaQuery.devicePixelRatioOf(ctx))
+                            .ceil();
+                    return ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                      child: Image.file(
+                        File(bgInfo.imagePath),
+                        fit: BoxFit.cover,
+                        width: bgSize.width,
+                        height: bgSize.height,
+                        cacheWidth: decodeWidth,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            // 消息内容层
+            Column(
+              children: [
+                Expanded(
+                  // 用 Selector 只监听消息列表引用变化：回复轮/错误/成员变更等
+                  // 无关通知不再重建整棵消息列表，长聊天下明显减少无谓 build
+                  child: Selector<GroupChatProvider, List<Message>>(
+                    selector: (_, p) => p.getMessages(widget.groupId),
+                    shouldRebuild: (a, b) => !identical(a, b),
+                    builder: (context, messages, _) {
+                      if (messages.length != _lastRenderedCount) {
+                        final added = _lastRenderedCount >= 0 &&
+                            messages.length > _lastRenderedCount;
+                        _lastRenderedCount = messages.length;
+                        if (added && !_isAtBottom()) _scrollToBottom();
+                      }
+
+                      final userAvatar =
+                          context.read<AuthProvider>().user?.avatar ?? '';
+
+                      if (messages.isEmpty) {
+                        return ColoredBox(
+                          color: hasBg
+                              ? context.chatBgColor.withValues(alpha: 0.86)
+                              : context.chatBgColor,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  CupertinoIcons.person_3_fill,
+                                  size: 48,
+                                  color: context.textSecondaryColor,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  '在群聊里开始聊天吧',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: context.textSecondaryColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      // 预计算群成员头像 map：避免每条消息在 build 时都做一次
+                      // CharacterProvider 线性查找（长聊天时省去大量重复查找）
+                      final charProvider = context.read<CharacterProvider>();
+                      final group = context
+                          .read<GroupChatProvider>()
+                          .getGroupById(widget.groupId);
+                      final avatarById = <String, String>{};
+                      if (group != null) {
+                        for (final id in group.memberCharacterIds) {
+                          final c = charProvider.getCharacterById(id);
+                          if (c != null && c.avatar.isNotEmpty) {
+                            avatarById[id] = c.avatar;
+                          }
+                        }
+                      }
+
+                      return Container(
+                        color: hasBg
+                            ? context.chatBgColor.withValues(alpha: 0.86)
+                            : context.chatBgColor,
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          reverse: true,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          itemCount: messages.length,
+                          itemBuilder: (context, index) {
+                            final msg = messages[messages.length - 1 - index];
+                            final prev = index < messages.length - 1
+                                ? messages[messages.length - 2 - index]
+                                : null;
+                            final showTime = prev == null ||
+                                msg.createdAt
+                                        .difference(prev.createdAt)
+                                        .inMinutes >=
+                                    10;
+                            final isUser = msg.isFromUser;
+                            final characterAvatar = isUser
+                                ? userAvatar
+                                : (avatarById[msg.senderCharacterId] ?? '');
+                            return RepaintBoundary(
+                              key: ValueKey(msg.id),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (showTime) _buildTimeLabel(msg.createdAt),
+                                  ChatBubble(
+                                    message: msg,
+                                    userAvatar: userAvatar,
+                                    characterAvatar: characterAvatar,
+                                    senderName: isUser ? '' : msg.senderName,
+                                    onLongPress: (message, bubbleKey) =>
+                                        _showBubbleMenu(message, bubbleKey),
+                                    onFileTap: _openFileMessage,
+                                    onCharacterAvatarTap:
+                                        isUser || msg.senderCharacterId.isEmpty
+                                            ? null
+                                            : () => _navigateToCharacterChat(
+                                                msg.senderCharacterId),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Consumer<GroupChatProvider>(
+                  builder: (context, groupProvider, _) {
+                    final lastMessage =
+                        groupProvider.getMessages(widget.groupId).lastOrNull;
+                    final replyEnabled =
+                        lastMessage != null && lastMessage.isFromUser;
+                    final error = groupProvider.lastError;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (error != null && error.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            color: context.navBarColor,
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  CupertinoIcons.exclamationmark_triangle_fill,
+                                  size: 15,
+                                  color: CupertinoColors.systemRed,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    error,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: CupertinoColors.systemRed,
+                                    ),
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: groupProvider.clearError,
+                                  child: Icon(
+                                    CupertinoIcons.xmark_circle_fill,
+                                    size: 16,
+                                    color: context.textSecondaryColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (_quoteMessage != null)
+                          Container(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                            color: context.navBarColor,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: context.listBgColor,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _quoteMessage!.isFromUser
+                                              ? '引用 我'
+                                              : '引用 ${_quoteMessage!.senderName}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: context.accentColor,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _quoteMessage!.content,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: context.textSecondaryColor,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () =>
+                                        setState(() => _quoteMessage = null),
+                                    child: Icon(
+                                      CupertinoIcons.xmark_circle_fill,
+                                      size: 18,
+                                      color: context.textSecondaryColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        GroupMessageInput(
+                          key: _inputKey,
+                          onSend: _handleSend,
+                          onRequestReply: _triggerReply,
+                          replyEnabled: replyEnabled,
+                          onPickImage: _handlePickImage,
+                          onPickFile: _handlePickFile,
+                          onFeatureDetect: _runFeatureDetect,
+                          onMentionRequest: _onMentionRequest,
+                          onExport: _exportGroupChat,
+                          onImport: _importGroupChat,
+                          onContextSettings: _openContextSettings,
+                          onPlotSuggestion: _plotSuggestion,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+
+    if (widget.embedded) return body;
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
@@ -1123,294 +1411,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           child: const Icon(CupertinoIcons.line_horizontal_3),
         ),
       ),
-      child: Consumer<ChatBackgroundProvider>(
-        builder: (context, bgProvider, _) {
-          final bgInfo = bgProvider.getInfoSync(widget.groupId);
-          // 是否渲染背景图：有图且文件存在时，消息列表用半透明遮罩保护文字可读性
-          final hasBg = bgInfo != null && bgInfo.hasImage && bgInfo.fileExists;
-          return Stack(
-            children: [
-              // 背景层（已持久化图片 + 高斯模糊）。
-              // RepaintBoundary：滚动消息列表时复用已光栅化结果，避免每帧重跑高斯模糊
-              if (hasBg)
-                RepaintBoundary(
-                  child: Builder(
-                    builder: (ctx) {
-                      final bgSize = MediaQuery.of(ctx).size;
-                      final blur = bgInfo.blur > 0 ? bgInfo.blur : 0.1;
-                      // 按屏幕物理像素限制解码尺寸：模糊背景无需全分辨率，显著降低
-                      // 大图解码内存与每帧模糊计算量
-                      final decodeWidth =
-                          (bgSize.width * MediaQuery.devicePixelRatioOf(ctx))
-                              .ceil();
-                      return ImageFiltered(
-                        imageFilter:
-                            ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-                        child: Image.file(
-                          File(bgInfo.imagePath),
-                          fit: BoxFit.cover,
-                          width: bgSize.width,
-                          height: bgSize.height,
-                          // 只限制宽度：同时指定 cacheHeight 会把图片强制
-                          // 缩放到指定矩形导致宽高比失真（拉伸），这里让高度
-                          // 按原比例自动缩放，由 BoxFit.cover 负责裁剪铺满
-                          cacheWidth: decodeWidth,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              // 消息内容层
-              Column(
-                children: [
-                  Expanded(
-                    // 用 Selector 只监听消息列表引用变化：回复轮/错误/成员变更等
-                    // 无关通知不再重建整棵消息列表，长聊天下明显减少无谓 build
-                    child: Selector<GroupChatProvider, List<Message>>(
-                      selector: (_, p) => p.getMessages(widget.groupId),
-                      shouldRebuild: (a, b) => !identical(a, b),
-                      builder: (context, messages, _) {
-                        if (messages.length != _lastRenderedCount) {
-                          final added = _lastRenderedCount >= 0 &&
-                              messages.length > _lastRenderedCount;
-                          _lastRenderedCount = messages.length;
-                          if (added && !_isAtBottom()) _scrollToBottom();
-                        }
-
-                        final userAvatar =
-                            context.read<AuthProvider>().user?.avatar ?? '';
-
-                        if (messages.isEmpty) {
-                          return ColoredBox(
-                            color: hasBg
-                                ? context.chatBgColor.withValues(alpha: 0.86)
-                                : context.chatBgColor,
-                            child: Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    CupertinoIcons.person_3_fill,
-                                    size: 48,
-                                    color: context.textSecondaryColor,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    '在群聊里开始聊天吧',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: context.textSecondaryColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }
-
-                        // 预计算群成员头像 map：避免每条消息在 build 时都做一次
-                        // CharacterProvider 线性查找（长聊天时省去大量重复查找）
-                        final charProvider = context.read<CharacterProvider>();
-                        final group = context
-                            .read<GroupChatProvider>()
-                            .getGroupById(widget.groupId);
-                        final avatarById = <String, String>{};
-                        if (group != null) {
-                          for (final id in group.memberCharacterIds) {
-                            final c = charProvider.getCharacterById(id);
-                            if (c != null && c.avatar.isNotEmpty) {
-                              avatarById[id] = c.avatar;
-                            }
-                          }
-                        }
-
-                        return Container(
-                          color: hasBg
-                              ? context.chatBgColor.withValues(alpha: 0.86)
-                              : context.chatBgColor,
-                          child: ListView.builder(
-                            controller: _scrollController,
-                            reverse: true,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            itemCount: messages.length,
-                            itemBuilder: (context, index) {
-                              final msg = messages[messages.length - 1 - index];
-                              final prev = index < messages.length - 1
-                                  ? messages[messages.length - 2 - index]
-                                  : null;
-                              final showTime = prev == null ||
-                                  msg.createdAt
-                                          .difference(prev.createdAt)
-                                          .inMinutes >=
-                                      10;
-
-                              final isUser = msg.isFromUser;
-                              final characterAvatar = isUser
-                                  ? userAvatar
-                                  : (avatarById[msg.senderCharacterId] ?? '');
-
-                              return RepaintBoundary(
-                                key: ValueKey(msg.id),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (showTime)
-                                      _buildTimeLabel(msg.createdAt),
-                                    ChatBubble(
-                                      message: msg,
-                                      userAvatar: userAvatar,
-                                      characterAvatar: characterAvatar,
-                                      senderName: isUser ? '' : msg.senderName,
-                                      onLongPress: (message, bubbleKey) =>
-                                          _showBubbleMenu(message, bubbleKey),
-                                      onFileTap: _openFileMessage,
-                                      onCharacterAvatarTap: isUser ||
-                                              msg.senderCharacterId.isEmpty
-                                          ? null
-                                          : () => _navigateToCharacterChat(
-                                              msg.senderCharacterId),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  Consumer<GroupChatProvider>(
-                    builder: (context, groupProvider, _) {
-                      final lastMessage =
-                          groupProvider.getMessages(widget.groupId).lastOrNull;
-                      final replyEnabled =
-                          lastMessage != null && lastMessage.isFromUser;
-                      final error = groupProvider.lastError;
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (error != null && error.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              color: context.navBarColor,
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    CupertinoIcons
-                                        .exclamationmark_triangle_fill,
-                                    size: 15,
-                                    color: CupertinoColors.systemRed,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      error,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        color: CupertinoColors.systemRed,
-                                      ),
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: groupProvider.clearError,
-                                    child: Icon(
-                                      CupertinoIcons.xmark_circle_fill,
-                                      size: 16,
-                                      color: context.textSecondaryColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          // 引用条（长按消息选择「引用」后显示在输入框上方）
-                          if (_quoteMessage != null)
-                            Container(
-                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                              color: context.navBarColor,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: context.listBgColor,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            _quoteMessage!.isFromUser
-                                                ? '引用 我'
-                                                : '引用 ${_quoteMessage!.senderName}',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: context.accentColor,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            _quoteMessage!.content,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              color: context.textSecondaryColor,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    GestureDetector(
-                                      onTap: () =>
-                                          setState(() => _quoteMessage = null),
-                                      child: Icon(
-                                        CupertinoIcons.xmark_circle_fill,
-                                        size: 18,
-                                        color: context.textSecondaryColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          GroupMessageInput(
-                            key: _inputKey,
-                            onSend: _handleSend,
-                            onRequestReply: _triggerReply,
-                            replyEnabled: replyEnabled,
-                            onPickImage: _handlePickImage,
-                            onPickFile: _handlePickFile,
-                            onFeatureDetect: _runFeatureDetect,
-                            onMentionRequest: _onMentionRequest,
-                            onExport: _exportGroupChat,
-                            onImport: _importGroupChat,
-                            onContextSettings: _openContextSettings,
-                            onPlotSuggestion: _plotSuggestion,
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
+      child: body,
     );
   }
 }
-
-
-
-
-

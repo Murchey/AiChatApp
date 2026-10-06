@@ -372,7 +372,7 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
           Icon(
             CupertinoIcons.bell_fill,
             size: 20,
-            color: context.accentColor,
+            color: context.textSecondaryColor,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -439,9 +439,8 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
 
   Widget _buildRepoRow(BuildContext context, WorkshopRepository repo) {
     final isCos = repo.isCos;
-    final typeLabel = isCos
-        ? (repo.hasCosAuth ? 'COS 私有读' : 'COS 对象储存')
-        : 'Git Release';
+    final typeLabel =
+        isCos ? (repo.hasCosAuth ? 'COS 私有读' : 'COS 对象储存') : 'Git Release';
     final String metaLine;
     if (isCos) {
       metaLine = repo.hasCosAuth ? '$typeLabel · 访问密钥' : typeLabel;
@@ -529,8 +528,7 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
                         ),
                       if (repo.hasSticker)
                         TagChip(
-                          text:
-                              isCos ? '表情包分类 Stickers' : '表情包分类 V1.3.0',
+                          text: isCos ? '表情包分类 Stickers' : '表情包分类 V1.3.0',
                           color: const Color(0xFFEC4899),
                         ),
                     ],
@@ -581,9 +579,3 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
     );
   }
 }
-
-
-
-
-
-

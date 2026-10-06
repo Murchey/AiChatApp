@@ -1,9 +1,12 @@
+import 'dart:ui';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/motion.dart';
 import '../config/theme.dart';
+import '../config/ui_spec.dart';
 import '../models/home_chat_entry.dart';
 import '../models/character.dart';
 import '../providers/chat_provider.dart';
@@ -43,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen>
   // 主内容横向滑动手势控制：与底部 tab 双向联动
   final PageController _pageController = PageController();
   int _currentTab = 0;
+  int? _pressedTab;
 
   // 通讯录字母导航状态
   final Map<String, GlobalKey> _sectionKeys = {};
@@ -162,8 +166,8 @@ class _HomeScreenState extends State<HomeScreen>
     if ((index - previous).abs() == 1) {
       _pageController.animateToPage(
         index,
-        duration: AppMotion.base,
-        curve: AppMotion.soft,
+        duration: AppMotion.tabSelection,
+        curve: AppMotion.tabSelectionCurve,
       );
     } else {
       _pageController.jumpToPage(index);
@@ -244,10 +248,13 @@ class _HomeScreenState extends State<HomeScreen>
           chat.conversations.fold<int>(0, (sum, c) => sum + c.unreadCount) +
           group.totalUnreadCount,
       builder: (context, totalUnread, _) {
-        return Column(
+        final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+        return Stack(
           children: [
-            // 主内容：四个导航页，支持触摸横向滑动切换（与底部 tab 联动）
-            Expanded(
+            // 主内容：四个导航页，支持触摸横向滑动切换（与底部 tab 联动）。
+            // 页面铺满全高，悬浮导航直接覆盖在真实内容上方；各滚动列表
+            // 自己预留末尾安全空间，保证最后一项仍能滚到导航上方。
+            Positioned.fill(
               child: PageView(
                 controller: _pageController,
                 onPageChanged: _onPageChanged,
@@ -259,54 +266,245 @@ class _HomeScreenState extends State<HomeScreen>
                 ],
               ),
             ),
-            CupertinoTabBar(
-              currentIndex: _currentTab,
-              onTap: _onTabTap,
-              backgroundColor: context.navBarColor,
-              activeColor: context.accentColor,
-              inactiveColor: context.textSecondaryColor,
-              border: Border(
-                top: BorderSide(color: context.separatorColor, width: 0.5),
+            Positioned(
+              left: UiSpec.floatingHorizontal,
+              right: UiSpec.floatingHorizontal,
+              bottom: UiSpec.floatingBottomGap + bottomInset,
+              child: _buildFloatingTabBar(
+                totalUnread: totalUnread,
+                momentsUnread: momentsUnread,
               ),
-              items: [
-                BottomNavigationBarItem(
-                  icon: _buildTabIcon(
-                    Icons.chat_bubble_outline_rounded,
-                    totalUnread,
-                  ),
-                  activeIcon: _buildTabIcon(
-                    Icons.chat_bubble_rounded,
-                    totalUnread,
-                  ),
-                  label: 'AiChat',
-                ),
-                const BottomNavigationBarItem(
-                  icon: Icon(Icons.people_outline_rounded),
-                  activeIcon: Icon(Icons.people_rounded),
-                  label: '通讯录',
-                ),
-                BottomNavigationBarItem(
-                  icon: _buildMomentsTabIcon(
-                    momentsUnread,
-                    Icons.photo_camera_rounded,
-                  ),
-                  activeIcon: _buildMomentsTabIcon(
-                    momentsUnread,
-                    Icons.photo_camera_rounded,
-                  ),
-                  label: '朋友圈',
-                ),
-                const BottomNavigationBarItem(
-                  icon: Icon(Icons.person_outline_rounded),
-                  activeIcon: Icon(Icons.person_rounded),
-                  label: '我',
-                ),
-              ],
             ),
           ],
         );
       },
     );
+  }
+
+  Widget _buildFloatingTabBar({
+    required int totalUnread,
+    required bool momentsUnread,
+  }) {
+    final tabs = <({IconData icon, IconData activeIcon, String label})>[
+      (
+        icon: Icons.chat_bubble_outline_rounded,
+        activeIcon: Icons.chat_bubble_rounded,
+        label: 'AiChat',
+      ),
+      (
+        icon: Icons.people_outline_rounded,
+        activeIcon: Icons.people_rounded,
+        label: '通讯录',
+      ),
+      (
+        icon: Icons.photo_camera_outlined,
+        activeIcon: Icons.photo_camera_rounded,
+        label: '朋友圈',
+      ),
+      (
+        icon: Icons.person_outline_rounded,
+        activeIcon: Icons.person_rounded,
+        label: '我',
+      ),
+    ];
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(UiSpec.floatingNavHeight / 2),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: UiSpec.floatingNavBlurSigma,
+          sigmaY: UiSpec.floatingNavBlurSigma,
+        ),
+        child: Container(
+          key: const ValueKey('home-floating-nav'),
+          height: UiSpec.floatingNavHeight,
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            // Use the elevated surface as a translucent tint so page content
+            // remains visible through the glass layer in both color schemes.
+            color: context.surfaceColor.withValues(
+              alpha: context.isDark
+                  ? UiSpec.floatingNavDarkOpacity
+                  : UiSpec.floatingNavLightOpacity,
+            ),
+            borderRadius: BorderRadius.circular(UiSpec.floatingNavHeight / 2),
+            border: Border.all(
+              color: context.outlineColor.withValues(alpha: 0.42),
+              width: 0.6,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: CupertinoColors.black.withValues(
+                  alpha: context.isDark ? 0.28 : 0.12,
+                ),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final itemWidth = constraints.maxWidth / tabs.length;
+              return Stack(
+                children: [
+                  AnimatedPositioned(
+                    key: const ValueKey('home-floating-nav-indicator'),
+                    duration: AppMotion.tabSelection,
+                    curve: AppMotion.tabSelectionCurve,
+                    left: itemWidth * _currentTab + 4,
+                    top: 4,
+                    bottom: 4,
+                    width: itemWidth - 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: context.accentColor.withValues(
+                          alpha: context.isDark
+                              ? UiSpec.floatingSelectedDarkOpacity
+                              : UiSpec.floatingSelectedLightOpacity,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          UiSpec.floatingIndicatorRadius,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      for (var index = 0; index < tabs.length; index++)
+                        Expanded(
+                          child: _buildFloatingTab(
+                            index: index,
+                            icon: tabs[index].icon,
+                            activeIcon: tabs[index].activeIcon,
+                            label: tabs[index].label,
+                            totalUnread: totalUnread,
+                            momentsUnread: momentsUnread,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingTab({
+    required int index,
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+    required int totalUnread,
+    required bool momentsUnread,
+  }) {
+    final selected = _currentTab == index;
+    final badge = index == 0 && totalUnread > 0;
+    final momentBadge = index == 2 && momentsUnread;
+    return Listener(
+      onPointerDown: (_) => setState(() => _pressedTab = index),
+      onPointerUp: (_) => setState(() => _pressedTab = null),
+      onPointerCancel: (_) => setState(() => _pressedTab = null),
+      child: AnimatedScale(
+        scale: _pressedTab == index ? AppMotion.pressScale : 1,
+        duration: AppMotion.micro,
+        curve: AppMotion.out,
+        child: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () => _onTabTap(index),
+          child: SizedBox(
+            height: UiSpec.floatingNavHeight - 8,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      AnimatedSwitcher(
+                        duration: AppMotion.tabIconFade,
+                        switchInCurve: AppMotion.tabSelectionCurve,
+                        switchOutCurve: AppMotion.exit,
+                        transitionBuilder: (child, animation) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: ScaleTransition(
+                              scale: Tween<double>(begin: 0.88, end: 1).animate(
+                                animation,
+                              ),
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: Icon(
+                          selected ? activeIcon : icon,
+                          key: ValueKey(selected),
+                          size: 21,
+                          color: selected
+                              ? context.accentColor
+                              : context.textSecondaryColor,
+                        ),
+                      ),
+                      if (badge)
+                        Positioned(
+                          right: -10,
+                          top: -6,
+                          child: _buildUnreadBadge(
+                            totalUnread,
+                            context.surfaceColor,
+                          ),
+                        ),
+                      if (momentBadge)
+                        Positioned(
+                          right: -7,
+                          top: -6,
+                          child: Container(
+                            width: 9,
+                            height: 9,
+                            decoration: BoxDecoration(
+                              color: CupertinoColors.systemRed,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: context.surfaceColor,
+                                width: 1.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  AnimatedDefaultTextStyle(
+                    duration: AppMotion.tabIconFade,
+                    curve: AppMotion.tabSelectionCurve,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      color: selected
+                          ? context.accentColor
+                          : context.textSecondaryColor,
+                    ),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  double _floatingContentBottomInset(BuildContext context) {
+    return UiSpec.floatingContentBottomInset +
+        MediaQuery.viewPaddingOf(context).bottom;
   }
 
   Widget _buildChatList() {
@@ -354,11 +552,19 @@ class _HomeScreenState extends State<HomeScreen>
           return Container(
             color: context.scaffoldColor,
             child: ListView.separated(
+              padding: EdgeInsets.only(
+                // CupertinoPageScaffold exposes the translucent navigation
+                // bar overlap through MediaQuery.padding.top. Keep the first
+                // row below that area so it remains reachable and visible at
+                // the top of the list.
+                top: MediaQuery.paddingOf(context).top + UiSpec.spaceSm,
+                bottom: _floatingContentBottomInset(context),
+              ),
               itemCount: entries.length,
               separatorBuilder: (_, __) => Container(
                 height: 0.5,
-                margin: const EdgeInsets.only(left: 56),
-                color: context.separatorColor,
+                margin: const EdgeInsets.only(left: 76),
+                color: context.conversationDividerColor,
               ),
               itemBuilder: (context, index) {
                 final entry = entries[index];
@@ -369,70 +575,76 @@ class _HomeScreenState extends State<HomeScreen>
                     details.globalPosition,
                     entry,
                   ),
-                  child: CupertinoListTile(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: UiSpec.conversationRowHeight,
                     ),
-                    // 置顶会话背景变灰，区分普通会话
-                    backgroundColor:
-                        entry.pinned ? context.pinnedChatColor : null,
-                    // CupertinoListTile 默认把 leading 约束在 28×28，
-                    // 必须显式指定与头像一致的尺寸，否则头像被压缩
-                    leadingSize: 40,
-                    leading: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        _buildSquareAvatar(
-                          context,
-                          entry.title,
-                          entry.avatar,
-                          fallbackIcon: entry.isGroup
-                              ? CupertinoIcons.person_3_fill
-                              : CupertinoIcons.person_fill,
-                        ),
-                        // 未读消息数字角标（私聊与群聊统一展示）
-                        if (entry.unreadCount > 0)
-                          Positioned(
-                            right: -8,
-                            top: -6,
-                            child: _buildUnreadBadge(
-                              entry.unreadCount,
-                              context.scaffoldColor,
-                            ),
-                          ),
-                      ],
-                    ),
-                    title: Text(
-                      entry.title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: context.textPrimaryColor,
+                    child: CupertinoListTile(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
                       ),
-                    ),
-                    subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        entry.lastMessage.isEmpty
-                            ? '开始对话...'
-                            : entry.lastMessage,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      // 置顶会话背景变灰，区分普通会话
+                      backgroundColor:
+                          entry.pinned ? context.pinnedChatColor : null,
+                      // CupertinoListTile 默认把 leading 约束在 28×28，
+                      // 必须显式指定与头像一致的尺寸，否则头像被压缩
+                      leadingSize: UiSpec.conversationAvatar,
+                      leading: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          _buildSquareAvatar(
+                            context,
+                            entry.title,
+                            entry.avatar,
+                            fallbackIcon: entry.isGroup
+                                ? CupertinoIcons.person_3_fill
+                                : CupertinoIcons.person_fill,
+                          ),
+                          // 未读消息数字角标（私聊与群聊统一展示）
+                          if (entry.unreadCount > 0)
+                            Positioned(
+                              right: -8,
+                              top: -6,
+                              child: _buildUnreadBadge(
+                                entry.unreadCount,
+                                context.scaffoldColor,
+                              ),
+                            ),
+                        ],
+                      ),
+                      title: Text(
+                        entry.title,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: context.textPrimaryColor,
+                        ),
+                      ),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          entry.lastMessage.isEmpty
+                              ? '开始对话...'
+                              : entry.lastMessage,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.25,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                      ),
+                      trailing: Text(
+                        _formatTime(entry.lastMessageTime),
+                        style: TextStyle(
+                          fontSize: 11.5,
                           color: context.textSecondaryColor,
                         ),
                       ),
+                      onTap: () => _openChatEntry(entry),
                     ),
-                    trailing: Text(
-                      _formatTime(entry.lastMessageTime),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
-                    onTap: () => _openChatEntry(entry),
                   ),
                 );
               },
@@ -561,15 +773,18 @@ class _HomeScreenState extends State<HomeScreen>
               Container(
                 color: context.scaffoldColor,
                 child: ListView(
-                  padding: const EdgeInsets.only(right: 28),
+                  padding: EdgeInsets.only(
+                    right: 28,
+                    bottom: _floatingContentBottomInset(context),
+                  ),
                   children: [
                     // 顶部固定的"自己"账号：不能发起聊天，进入自己的空间页
                     if (self != null) ...[
                       _buildSelfTile(context, self),
                       Container(
                         height: 0.5,
-                        margin: const EdgeInsets.only(left: 56),
-                        color: context.separatorColor,
+                        margin: const EdgeInsets.only(left: 76),
+                        color: context.separatorColor.withValues(alpha: 0.62),
                       ),
                     ],
                     for (final group in groups) ...[
@@ -595,10 +810,10 @@ class _HomeScreenState extends State<HomeScreen>
                         CupertinoListTile(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
-                            vertical: 8,
+                            vertical: 14,
                           ),
                           // 同消息列表：显式放宽 leading 尺寸约束
-                          leadingSize: 40,
+                          leadingSize: UiSpec.conversationAvatar,
                           leading: _buildSquareAvatar(
                             context,
                             character.displayName,
@@ -640,8 +855,8 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       Container(
                         height: 0.5,
-                        margin: const EdgeInsets.only(left: 56),
-                        color: context.separatorColor,
+                        margin: const EdgeInsets.only(left: 76),
+                        color: context.separatorColor.withValues(alpha: 0.62),
                       ),
                     ],
                   ],
@@ -708,9 +923,9 @@ class _HomeScreenState extends State<HomeScreen>
   /// 通讯录顶部的"自己"账号条目：不能发起聊天，点击进入自己的空间页查看/发布朋友圈
   Widget _buildSelfTile(BuildContext context, Character self) {
     return CupertinoListTile(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       // 同消息列表：显式放宽 leading 尺寸约束
-      leadingSize: 40,
+      leadingSize: UiSpec.conversationAvatar,
       leading: _buildSquareAvatar(context, self.displayName, self.avatar),
       title: Text(
         _contactName(self),
@@ -747,49 +962,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  /// 底部导航栏图标：右上角带未读数字角标
-  Widget _buildTabIcon(IconData icon, int totalUnread) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Icon(icon),
-        if (totalUnread > 0)
-          Positioned(
-            right: -10,
-            top: -6,
-            child: _buildUnreadBadge(totalUnread, context.scaffoldColor),
-          ),
-      ],
-    );
-  }
-
-  /// 朋友圈 tab 图标：存在未读互动通知时右上角显示红点
-  Widget _buildMomentsTabIcon(bool hasUnread, IconData icon) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Icon(icon),
-        if (hasUnread)
-          Positioned(
-            right: -7,
-            top: -6,
-            child: Container(
-              width: 9,
-              height: 9,
-              decoration: BoxDecoration(
-                color: CupertinoColors.systemRed,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: context.navBarColor,
-                  width: 1.2,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
   /// 未读消息数字角标（>=100 显示 99+，宽度随数字自适应）
   Widget _buildUnreadBadge(int count, Color borderColor) {
     final text = count >= 100 ? '99+' : '$count';
@@ -818,7 +990,7 @@ class _HomeScreenState extends State<HomeScreen>
     String name,
     String avatar, {
     IconData fallbackIcon = CupertinoIcons.person_fill,
-    double size = 40,
+    double size = UiSpec.conversationAvatar,
   }) {
     // 头像框样式跟随全局设置（方形 / 仿 QQ 圆形）
     return CharacterAvatar(
@@ -925,7 +1097,7 @@ class _HomeScreenState extends State<HomeScreen>
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: context.accentColor),
+            Icon(icon, size: 18, color: context.textSecondaryColor),
             const SizedBox(width: 10),
             Text(
               label,

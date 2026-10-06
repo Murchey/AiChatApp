@@ -452,7 +452,7 @@ class _CharacterManageScreenState extends State<CharacterManageScreen> {
                 CupertinoListTile(
                   leading: Icon(
                     CupertinoIcons.archivebox,
-                    color: context.accentColor,
+                    color: context.textSecondaryColor,
                   ),
                   title: const Text('导入角色包'),
                   subtitle: Text(
