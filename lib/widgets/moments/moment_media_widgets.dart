@@ -67,7 +67,6 @@ class CommentInputBarState extends State<CommentInputBar> {
   Widget build(BuildContext context) {
     // 键盘弹出时 viewInsets.bottom 增大，输入栏随之悬浮到软键盘上方
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final canSend = _controller.text.trim().isNotEmpty;
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
       child: Container(
@@ -107,27 +106,34 @@ class CommentInputBarState extends State<CommentInputBar> {
                 placeholderStyle: TextStyle(color: context.textSecondaryColor),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                onChanged: (_) => setState(() {}),
               ),
             ),
             const SizedBox(width: 8),
             // 对号按钮：确认发送
-            GestureDetector(
-              onTap: canSend ? _send : null,
-              child: Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: canSend ? context.accentColor : context.separatorColor,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: const Icon(
-                  CupertinoIcons.checkmark_alt,
-                  size: 18,
-                  color: CupertinoColors.white,
-                ),
-              ),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _controller,
+              builder: (context, value, _) {
+                final canSend = value.text.trim().isNotEmpty;
+                return GestureDetector(
+                  onTap: canSend ? _send : null,
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: canSend
+                          ? context.accentColor
+                          : context.separatorColor,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      CupertinoIcons.checkmark_alt,
+                      size: 18,
+                      color: CupertinoColors.white,
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -150,41 +156,26 @@ class SingleImageThumb extends StatefulWidget {
 }
 
 class SingleImageThumbState extends State<SingleImageThumb> {
-  /// 原图尺寸静态缓存：同一路径只异步读取一次。滚动中卡片 build/dispose
-  /// 直接命中缓存，避免缩略图在「占位(3:4) ↔ 实际比例」间反复切换——
-  /// 该高度反复变化会驱动列表内容 extent 振荡（→ 位置跳变 → ballistic
-  /// 重启），即惯性滚动"抖动"的根因。
-  static final Map<String, Size> _sizeCache = {};
-
   /// 原图尺寸（优先命中缓存；未知时按默认 3:4 占位）
   Size? _imgSize;
 
   @override
   void initState() {
     super.initState();
-    _imgSize = _sizeCache[widget.path];
-    if (_imgSize == null) _loadSize();
+    _loadSize();
+  }
+
+  @override
+  void didUpdateWidget(covariant SingleImageThumb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path == widget.path) return;
+    _imgSize = null;
+    _loadSize();
   }
 
   Future<void> _loadSize() async {
-    try {
-      // 仅解析图片头部元数据获取宽高，不整图解码，避免列表中出现大量
-      // 单图缩略图时反复整图解码造成卡顿与内存峰值
-      final bytes = await File(widget.path).readAsBytes();
-      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      final descriptor = await ui.ImageDescriptor.encoded(buffer);
-      final size = Size(
-        descriptor.width.toDouble(),
-        descriptor.height.toDouble(),
-      );
-      descriptor.dispose();
-      buffer.dispose();
-      if (_sizeCache.length > 512) _sizeCache.clear();
-      _sizeCache[widget.path] = size;
-      if (mounted) setState(() => _imgSize = size);
-    } catch (_) {
-      // 尺寸读取失败时保持默认占位展示，不影响点开预览
-    }
+    final size = await ImageMetadataCache.sizeFor(widget.path);
+    if (mounted && size != null) setState(() => _imgSize = size);
   }
 
   @override
@@ -296,21 +287,8 @@ class ImagePreviewPageState extends State<ImagePreviewPage> {
 
   /// 读取原图尺寸并按视口 contain 计算初始展示尺寸
   Future<void> _loadImageSize() async {
-    Size img;
-    try {
-      // 仅解析头部元数据获取宽高（整图解码交给下方 Image.file 按需执行）
-      final bytes = await File(widget.path).readAsBytes();
-      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      final descriptor = await ui.ImageDescriptor.encoded(buffer);
-      img = Size(
-        descriptor.width.toDouble(),
-        descriptor.height.toDouble(),
-      );
-      descriptor.dispose();
-      buffer.dispose();
-    } catch (_) {
-      img = const Size(1, 1); // 解码失败时回退为全屏 contain
-    }
+    final img = await ImageMetadataCache.sizeFor(widget.path) ??
+        const Size(1, 1); // 解码失败时回退为全屏 contain
     if (!mounted) return;
     final vp = MediaQuery.of(context).size;
     final scale = math.min(vp.width / img.width, vp.height / img.height);
@@ -432,6 +410,56 @@ class ImagePreviewPageState extends State<ImagePreviewPage> {
         ),
       ),
     );
+  }
+}
+
+/// Shared, bounded image metadata cache for moment thumbnails and previews.
+/// Concurrent requests for the same path share one Future, preventing a fast
+/// list scroll followed by a preview tap from reading the file twice.
+class ImageMetadataCache {
+  ImageMetadataCache._();
+
+  static const _maxEntries = 512;
+  static final _sizes = <String, Size>{};
+  static final _failed = <String>{};
+  static final _pending = <String, Future<Size?>>{};
+
+  static Future<Size?> sizeFor(String path) {
+    final cached = _sizes[path];
+    if (cached != null) return Future<Size?>.value(cached);
+    if (_failed.contains(path)) return Future<Size?>.value(null);
+    return _pending[path] ??= _readSize(path).then((size) {
+      _pending.remove(path);
+      if (size == null) {
+        if (_failed.length >= _maxEntries) _failed.remove(_failed.first);
+        _failed.add(path);
+      } else {
+        if (_sizes.length >= _maxEntries) _sizes.remove(_sizes.keys.first);
+        _sizes[path] = size;
+      }
+      return size;
+    });
+  }
+
+  static Future<Size?> _readSize(String path) async {
+    ui.ImmutableBuffer? buffer;
+    ui.ImageDescriptor? descriptor;
+    try {
+      // Header metadata is read asynchronously; Image.file below still
+      // performs the bounded thumbnail decode.
+      final bytes = await File(path).readAsBytes();
+      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      return Size(
+        descriptor.width.toDouble(),
+        descriptor.height.toDouble(),
+      );
+    } catch (_) {
+      return null;
+    } finally {
+      descriptor?.dispose();
+      buffer?.dispose();
+    }
   }
 }
 

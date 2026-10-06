@@ -1,21 +1,14 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/motion.dart';
 import '../config/theme.dart';
 import 'moments/moment_media_widgets.dart';
+import 'moments/moment_interactions.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
-import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
-import '../providers/chat_provider.dart';
-import '../providers/chat_settings_provider.dart';
-import '../providers/group_chat_provider.dart';
-import '../providers/moment_notification_provider.dart';
-import '../providers/memory_point_provider.dart';
-import '../services/moment_ai_service.dart';
 import 'character_avatar.dart';
 import 'publish_moment_screen.dart';
 
@@ -33,11 +26,23 @@ class MomentCard extends StatefulWidget {
   /// 管理模式：对任意角色动态/评论开放编辑与删除
   final bool manageMode;
 
+  /// 详情页模式：正文始终展开，评论显示全部。
+  final bool detailMode;
+
+  /// 一级列表中的“全文/查看全部评论”入口回调。
+  final VoidCallback? onOpenDetail;
+
+  /// 详情页固定评论栏使用的回复回调；为空时沿用卡片内 Overlay 输入栏。
+  final ValueChanged<String?>? onReplyRequested;
+
   const MomentCard({
     super.key,
     required this.character,
     required this.moment,
     this.manageMode = false,
+    this.detailMode = false,
+    this.onOpenDetail,
+    this.onReplyRequested,
   });
 
   @override
@@ -54,6 +59,7 @@ class _MomentCardState extends State<MomentCard> {
 
   /// 长文是否已展开（折叠态默认最多 6 行，避免长文反复 layout 拖慢滚动）
   bool _expanded = false;
+  final Map<Object, bool> _textMeasureCache = <Object, bool>{};
 
   Character get character => widget.character;
   Moment get moment => widget.moment;
@@ -251,7 +257,11 @@ class _MomentCardState extends State<MomentCard> {
             label: '评论',
             onTap: () {
               _dismissMenu();
-              _openCommentInput();
+              if (widget.onReplyRequested != null) {
+                widget.onReplyRequested!(null);
+              } else {
+                _openCommentInput();
+              }
             },
           ),
           if (_isSelf || widget.manageMode) ...[
@@ -327,23 +337,14 @@ class _MomentCardState extends State<MomentCard> {
     List<MomentComment>? comments,
     Moment? replaced,
   }) async {
-    final target = replaced ??
-        Moment(
-          id: moment.id,
-          content: moment.content,
-          location: moment.location,
-          visibility: moment.visibility,
-          images: moment.images,
-          likes: likes ?? moment.likes,
-          comments: comments ?? moment.comments,
-          createdAt: moment.createdAt,
-        );
-    final newMoments =
-        character.moments.map((m) => m.id == moment.id ? target : m).toList();
-    await context.read<CharacterProvider>().updateMoments(
-          character.id,
-          newMoments,
-        );
+    await updateMomentData(
+      context,
+      character: character,
+      moment: moment,
+      likes: likes,
+      comments: comments,
+      replaced: replaced,
+    );
   }
 
   Future<void> _toggleLike() async {
@@ -404,87 +405,15 @@ class _MomentCardState extends State<MomentCard> {
   /// 有 [editIndex] 为编辑（发送者与回复对象保持不变）。
   void _submitComment(String text, {int? editIndex, String? replyTo}) {
     _closeCommentInput();
-    if (editIndex != null) {
-      if (editIndex < 0 || editIndex >= moment.comments.length) return;
-      final comments = [...moment.comments];
-      comments[editIndex] = MomentComment(
-        sender: comments[editIndex].sender,
-        content: text,
-        replyTo: comments[editIndex].replyTo,
-      );
-      _updateMoment(comments: comments);
-    } else {
-      final comments = [
-        ...moment.comments,
-        MomentComment(
-          sender: _myName.isEmpty ? '我' : _myName,
-          content: text,
-          replyTo: replyTo ?? '',
-        ),
-      ];
-      _updateMoment(comments: comments);
-      // 触发 AI 回复（管理模式除外）：
-      // - 普通评论：由动态发布者回复（自己的动态不触发）
-      // - 回复某评论：优先由被回复的角色（若在通讯录）回复，否则由发布者回复；
-      //   回复目标为自己时（如在自己动态下回复陌生人评论）不触发
-      if (!widget.manageMode) {
-        final replier = _resolveReplier(replyTo);
-        if (replier != null &&
-            replier.id != CharacterProvider.selfCharacterId) {
-          _triggerAiReply(text, replier, replyToName: replyTo);
-        }
-      }
-    }
-  }
-
-  /// 解析本次 AI 回复的"回复者"：
-  /// [replyTo] 指定的昵称若存在于通讯录（非自己）则用该角色，
-  /// 否则回退为该条动态的发布者。
-  Character? _resolveReplier(String? replyTo) {
-    if (replyTo != null && replyTo.isNotEmpty) {
-      final chars = context.read<CharacterProvider>().characters;
-      for (final c in chars) {
-        if (c.displayName == replyTo) return c;
-      }
-    }
-    // 发布者（自己的动态时为自己，调用方据此跳过）
-    return character;
-  }
-
-  /// 后台请求回复者（角色）回复用户的评论，不阻塞界面。
-  /// [replier] 为以谁的身份回复；回复评论始终追加到发布者 [character] 名下。
-  /// [replyToName] 为用户回复的评论者昵称（为空表示直接评论动态），
-  /// 连同被回复的评论原文一并交给模型，让回复紧扣上下文。
-  void _triggerAiReply(String userComment, Character replier,
-      {String? replyToName}) {
-    // 用户回复某条评论时，取出被回复评论的原文（最近一条匹配），
-    // 模型才知道用户是针对"谁说了什么"在回复
-    String repliedComment = '';
-    if (replyToName != null && replyToName.isNotEmpty) {
-      for (final c in moment.comments.reversed) {
-        if (c.sender == replyToName) {
-          repliedComment = c.content;
-          break;
-        }
-      }
-    }
-    unawaited(MomentAiService.replyToUserComment(
-      apiProvider: context.read<ApiProvider>(),
-      chatSettings: context.read<ChatSettingsProvider>(),
-      chatProvider: context.read<ChatProvider>(),
-      groupChatProvider: context.read<GroupChatProvider>(),
-      characterProvider: context.read<CharacterProvider>(),
-      notificationProvider: context.read<MomentNotificationProvider>(),
-      memoryPointProvider: context.read<MemoryPointProvider>(),
-      character: replier,
-      owner: character,
+    submitMomentComment(
+      context,
+      character: character,
       moment: moment,
-      user: context.read<AuthProvider>().user,
-      userNickname: _myName.isEmpty ? '我' : _myName,
-      userComment: userComment,
-      replyToName: replyToName ?? '',
-      repliedComment: repliedComment,
-    ));
+      text: text,
+      replyTo: replyTo,
+      editIndex: editIndex,
+      manageMode: widget.manageMode,
+    );
   }
 
   /// 长按可管理的评论：在长按位置弹出悬浮菜单。
@@ -636,6 +565,16 @@ class _MomentCardState extends State<MomentCard> {
   /// 动态正文：超过 6 行默认折叠为「全文」（微信风格）。
   /// 折叠态只渲染 6 行，长文的换行排版成本被限制，滚动时帧率更稳。
   Widget _content(BuildContext context) {
+    if (widget.detailMode) {
+      return Text(
+        moment.content,
+        style: TextStyle(
+          fontSize: 15,
+          height: 1.4,
+          color: context.textPrimaryColor,
+        ),
+      );
+    }
     const maxLines = 6;
     final style = TextStyle(
       fontSize: 15,
@@ -645,8 +584,9 @@ class _MomentCardState extends State<MomentCard> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final needFold = !_expanded &&
-            _textExceeds(
-                context, moment.content, style, maxLines, constraints.maxWidth);
+            (moment.content.runes.length > 150 ||
+                _textExceeds(context, moment.content, style, maxLines,
+                    constraints.maxWidth));
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -659,7 +599,7 @@ class _MomentCardState extends State<MomentCard> {
             if (needFold)
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => setState(() => _expanded = true),
+                onTap: _openDetailOrExpand,
                 child: Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
@@ -695,41 +635,45 @@ class _MomentCardState extends State<MomentCard> {
     int maxLines,
     double maxWidth,
   ) {
+    final textScaler = MediaQuery.textScalerOf(context);
+    final cacheKey = Object.hash(
+      moment.id,
+      text.hashCode,
+      maxLines,
+      maxWidth.round(),
+      textScaler.scale(1).toStringAsFixed(3),
+    );
+    final cached = _textMeasureCache[cacheKey];
+    if (cached != null) return cached;
     final tp = TextPainter(
       text: TextSpan(text: text, style: style),
       maxLines: maxLines,
       textDirection: TextDirection.ltr,
-      textScaler: MediaQuery.textScalerOf(context),
+      textScaler: textScaler,
     )..layout(maxWidth: maxWidth);
-    return tp.didExceedMaxLines;
+    final exceeds = tp.didExceedMaxLines;
+    if (_textMeasureCache.length >= 64) _textMeasureCache.clear();
+    _textMeasureCache[cacheKey] = exceeds;
+    return exceeds;
   }
 
-  /// 图片文件存在性缓存：build 中不直接调用 File.existsSync（同步 IO 会阻塞
-  /// 主线程，朋友圈图片多时滚动/重建卡顿）。图片文件只在删除动态时消失，
-  /// 缓存命中后复用结果，超容量时整体清空。
-  static final Map<String, bool> _imageExistsCache = {};
-
-  static bool _imageExists(String path) =>
-      _imageExistsCache.putIfAbsent(path, () {
-        if (_imageExistsCache.length > 512) _imageExistsCache.clear();
-        return File(path).existsSync();
-      });
+  void _openDetailOrExpand() {
+    final callback = widget.onOpenDetail;
+    if (callback != null) {
+      callback();
+    } else {
+      setState(() => _expanded = true);
+    }
+  }
 
   /// 图片：最多 9 张，1 张大图、多张 3 列网格；缺失时只显示文字占位。
   /// 点击图片全屏预览。
   /// 解码按 cover 所需像素等比缩放（禁止同时写死宽高硬拉伸），
   /// 避免原图全分辨率解码造成大内存占用与滚动卡顿。
   Widget _images(BuildContext context) {
-    final shown = moment.images.where(_imageExists).take(9).toList();
-    if (shown.isEmpty) {
-      return Text(
-        '图片加载失败',
-        style: TextStyle(
-          fontSize: 12,
-          color: context.textSecondaryColor,
-        ),
-      );
-    }
+    // 不在 build 中同步检查文件存在性；Image.file 的 errorBuilder 会为
+    // 缺失/损坏文件提供同样的占位，避免滚动时阻塞 UI isolate。
+    final shown = moment.images.take(9).toList();
     final screenWidth = MediaQuery.of(context).size.width;
     if (shown.length == 1) {
       // 单图：微信风格缩略图，按图片比例裁剪、不强制展示完整图片
@@ -783,6 +727,9 @@ class _MomentCardState extends State<MomentCard> {
     final hasLikes = likeNames.isNotEmpty;
     final hasComments = moment.comments.isNotEmpty;
     if (!hasLikes && !hasComments) return const SizedBox.shrink();
+    final showCommentLimit = !widget.detailMode && moment.comments.length > 10;
+    final visibleComments =
+        showCommentLimit ? moment.comments.take(3).toList() : moment.comments;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -817,7 +764,7 @@ class _MomentCardState extends State<MomentCard> {
             if (hasComments) const SizedBox(height: 6),
           ],
           if (hasComments)
-            ...moment.comments.asMap().entries.map(
+            ...visibleComments.asMap().entries.map(
               (entry) {
                 final i = entry.key;
                 final c = entry.value;
@@ -833,7 +780,9 @@ class _MomentCardState extends State<MomentCard> {
                     isMine || repliedToMe || _isSelf || widget.manageMode;
                 final canEdit = isMine || widget.manageMode;
                 return GestureDetector(
-                  onTap: () => _openCommentInput(replyToName: c.sender),
+                  onTap: widget.onReplyRequested != null
+                      ? () => widget.onReplyRequested!(c.sender)
+                      : () => _openCommentInput(replyToName: c.sender),
                   onLongPressStart: canDelete
                       ? (details) => _showCommentMenu(
                             details.globalPosition,
@@ -872,6 +821,21 @@ class _MomentCardState extends State<MomentCard> {
                 );
               },
             ),
+          if (showCommentLimit)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onOpenDetail,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '查看全部 ${moment.comments.length} 条评论',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: context.accentColor,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -880,8 +844,9 @@ class _MomentCardState extends State<MomentCard> {
   /// 全屏预览朋友圈图片：
   /// - 单击关闭；双击放大/缩小；双指缩放，放大后可自由拖动查看
   /// - 长按弹出【保存图片】到系统相册
-  void _previewImage(BuildContext context, String path) {
-    if (!File(path).existsSync()) return;
+  Future<void> _previewImage(BuildContext context, String path) async {
+    // 点击行为不是滚动热路径，异步检查文件避免同步 I/O 阻塞首帧。
+    if (!await File(path).exists() || !context.mounted) return;
     Navigator.of(context).push(
       PageRouteBuilder(
         opaque: true,

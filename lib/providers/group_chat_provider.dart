@@ -14,6 +14,28 @@ import '../services/sticker_search_service.dart';
 import 'api_provider.dart';
 import 'token_usage_provider.dart';
 
+class _GroupPersistSnapshot {
+  final List<GroupChat> groups;
+  final Map<String, List<Message>> messages;
+
+  const _GroupPersistSnapshot({
+    required this.groups,
+    required this.messages,
+  });
+}
+
+@pragma('vm:entry-point')
+Map<String, String> _encodeGroupPersistSnapshot(
+  _GroupPersistSnapshot snapshot,
+) {
+  return {
+    'groups': jsonEncode(snapshot.groups.map((g) => g.toJson()).toList()),
+    'messages': jsonEncode(snapshot.messages.map(
+      (key, value) => MapEntry(key, value.map((m) => m.toJson()).toList()),
+    )),
+  };
+}
+
 /// 群聊中参与回复的一个角色成员（触发回复时由界面预解析为纯数据，
 /// 供后台调度循环使用，不依赖 BuildContext）。
 class GroupMemberReply {
@@ -67,6 +89,8 @@ class GroupChatProvider extends ChangeNotifier {
 
   final List<GroupChat> _groups = [];
   final Map<String, List<Message>> _messages = {};
+  // In-memory row revisions; these are deliberately excluded from storage.
+  final Map<String, Map<String, int>> _messageRevisions = {};
 
   String? _replyingGroupId; // 正在生成回复的群聊
   int _replyGeneration = 0; // 回复轮次序号（自增即打断旧轮）
@@ -129,6 +153,23 @@ class GroupChatProvider extends ChangeNotifier {
 
   List<Message> getMessages(String groupId) => _messages[groupId] ?? const [];
 
+  Message? messageFor(String groupId, String messageId) {
+    final messages = _messages[groupId];
+    if (messages == null) return null;
+    for (final message in messages) {
+      if (message.id == messageId) return message;
+    }
+    return null;
+  }
+
+  int messageRevisionFor(String groupId, String messageId) =>
+      _messageRevisions[groupId]?[messageId] ?? 0;
+
+  void _markMessageChanged(String groupId, String messageId) {
+    final revisions = _messageRevisions.putIfAbsent(groupId, () => {});
+    revisions[messageId] = (revisions[messageId] ?? 0) + 1;
+  }
+
   void clearError() {
     _lastError = null;
     notifyListeners();
@@ -174,16 +215,22 @@ class GroupChatProvider extends ChangeNotifier {
       do {
         _persistDirty = false;
         final prefs = await SharedPreferences.getInstance();
+        final encoded = await compute(
+          _encodeGroupPersistSnapshot,
+          _GroupPersistSnapshot(
+            groups: List.of(_groups),
+            messages: _messages.map(
+              (key, value) => MapEntry(key, List.of(value)),
+            ),
+          ),
+        );
         await prefs.setString(
           _groupsKey,
-          jsonEncode(_groups.map((g) => g.toJson()).toList()),
+          encoded['groups']!,
         );
         await prefs.setString(
           _messagesKey,
-          jsonEncode(_messages.map(
-            (key, value) =>
-                MapEntry(key, value.map((m) => m.toJson()).toList()),
-          )),
+          encoded['messages']!,
         );
       } while (_persistDirty);
     } catch (e) {
@@ -311,6 +358,7 @@ class GroupChatProvider extends ChangeNotifier {
   void deleteGroup(String groupId) {
     _groups.removeWhere((g) => g.id == groupId);
     _messages.remove(groupId);
+    _messageRevisions.remove(groupId);
     if (_replyingGroupId == groupId) {
       _replyGeneration++;
       _replyingGroupId = null;
@@ -488,7 +536,11 @@ class GroupChatProvider extends ChangeNotifier {
   void deleteMessage(String groupId, String messageId) {
     final messages = _messages[groupId];
     if (messages == null) return;
+    final before = messages.length;
     messages.removeWhere((m) => m.id == messageId);
+    if (messages.length != before) {
+      _markMessageChanged(groupId, messageId);
+    }
     _refreshLastMessage(groupId);
     notifyListeners();
     _persist();
@@ -501,7 +553,11 @@ class GroupChatProvider extends ChangeNotifier {
     _replyingGroupId = null;
     final messages = _messages[groupId];
     if (messages == null) return;
+    final before = messages.length;
     messages.removeWhere((m) => m.id == messageId);
+    if (messages.length != before) {
+      _markMessageChanged(groupId, messageId);
+    }
     _refreshLastMessage(groupId);
     notifyListeners();
     _persist();

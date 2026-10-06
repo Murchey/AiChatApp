@@ -19,11 +19,11 @@ import '../utils/avatar_picker.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/moment_card.dart';
 import '../widgets/publish_moment_screen.dart';
+import 'moment_detail_screen.dart';
 
 /// 朋友圈列表滚动物理：顶部保留 iOS 橡皮筋回弹（供封面下拉展开），
 /// 底部改为硬截止（到达列表末尾立即停止，不再越界回弹），
 /// 彻底消除快速滑动到底部时内容越界往复导致的"抖动"。
-
 
 /// base64 图片解码缓存：同一 base64 只解码一次并复用同一个 [MemoryImage]。
 /// 若每次重建都新建 [MemoryImage]，ImageCache 永不命中（Dart 的 List ==
@@ -78,6 +78,7 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
   /// 当前渲染的封面高度（px）：滚动期间等于目标高度，吸附动画期间取动画插值，
   /// 作为吸附动画的起始高度。
   double _renderedCoverHeight = 0;
+  final ValueNotifier<int> _coverFrame = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -86,14 +87,19 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
       vsync: this,
       duration: AppMotion.slow,
     )..addListener(() {
-        if (_settleAnim != null) setState(() {});
+        if (_settleAnim != null) _notifyCoverFrame();
       });
   }
 
   @override
   void dispose() {
     _settleController.dispose();
+    _coverFrame.dispose();
     super.dispose();
+  }
+
+  void _notifyCoverFrame() {
+    if (mounted) _coverFrame.value++;
   }
 
   /// 点击头像选择图片（相册 / 拍照）→ 方形裁剪 → 应用
@@ -333,7 +339,11 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
               Column(
                 children: [
                   // 头部：背景图 + 骑跨交界处的头像 + 左侧昵称/签名
-                  if (!keyboardUp) _buildHeader(character),
+                  if (!keyboardUp)
+                    ValueListenableBuilder<int>(
+                      valueListenable: _coverFrame,
+                      builder: (_, __, ___) => _buildHeader(character),
+                    ),
                   // 朋友圈：黑色背景，覆盖屏幕下半部分，内容可滚动
                   Expanded(child: _buildMomentsPanel(character)),
                 ],
@@ -367,10 +377,9 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
             (expanded ? expandDelta : 0) -
             _coverShrink))
         .clamp(screenHeight * _coverMinRatio, screenHeight * _coverFullRatio);
-    setState(() {
-      _coverExpanded = expanded;
-      _coverDragOffset = expanded ? expandDelta : 0;
-    });
+    _coverExpanded = expanded;
+    _coverDragOffset = expanded ? expandDelta : 0;
+    _notifyCoverFrame();
     _playSettleAnimation(targetHeight);
   }
 
@@ -393,7 +402,8 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
         .animate(_settleController)
       ..addStatusListener((status) {
         if (status == AnimationStatus.completed && mounted) {
-          setState(() => _settleAnim = null);
+          _settleAnim = null;
+          _notifyCoverFrame();
         }
       });
     _settleController.forward(from: 0);
@@ -510,15 +520,14 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
           _cancelSettleAnimation();
         },
         onVerticalDragUpdate: (details) {
-          setState(() {
-            // 固定展开态也允许继续拖拽（向上拉可收回）
-            if (_coverExpanded) _coverExpanded = false;
-            _coverShrink = 0;
-            _coverDragOffset = (_coverDragOffset + details.delta.dy).clamp(
-              0.0,
-              expandDelta,
-            );
-          });
+          // 固定展开态也允许继续拖拽（向上拉可收回）
+          if (_coverExpanded) _coverExpanded = false;
+          _coverShrink = 0;
+          _coverDragOffset = (_coverDragOffset + details.delta.dy).clamp(
+            0.0,
+            expandDelta,
+          );
+          _notifyCoverFrame();
         },
         onVerticalDragEnd: (_) => _settleCover(),
         child: Stack(
@@ -609,8 +618,8 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: CupertinoColors.black
-                                  .withValues(alpha: 0.35),
+                              color:
+                                  CupertinoColors.black.withValues(alpha: 0.35),
                               borderRadius: BorderRadius.circular(16),
                             ),
                             child: const Row(
@@ -642,8 +651,7 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color:
-                              CupertinoColors.black.withValues(alpha: 0.35),
+                          color: CupertinoColors.black.withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: const Row(
@@ -743,9 +751,8 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
             // 跟手拖动（下拉展开封面）与正常范围内的惯性滚动仍实时跟随。
             final bool degraded = notification.dragDetails == null &&
                 notification.metrics.outOfRange;
-            // 先计算目标状态，仅当封面状态实际发生变化时才 setState：
-            // 越界回弹/饱和期封面已到极限或冻结，若仍每帧 setState 整页重建，
-            // 会造成掉帧与视觉抖动。
+            // 先计算目标状态，仅当封面状态实际发生变化时才刷新封面监听器：
+            // 朋友圈列表本身保持稳定，避免每个滚动帧重建整页。
             double newShrink = _coverShrink;
             double newDragOffset = _coverDragOffset;
             var newExpanded = _coverExpanded;
@@ -775,12 +782,11 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
                 newDragOffset != _coverDragOffset ||
                 newExpanded != _coverExpanded;
             if (coverChanged) {
-              setState(() {
-                _cancelSettleAnimation();
-                _coverExpanded = newExpanded;
-                _coverShrink = newShrink;
-                _coverDragOffset = newDragOffset;
-              });
+              _cancelSettleAnimation();
+              _coverExpanded = newExpanded;
+              _coverShrink = newShrink;
+              _coverDragOffset = newDragOffset;
+              _notifyCoverFrame();
             }
           } else if (notification is ScrollEndNotification) {
             _settleCover();
@@ -887,10 +893,35 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
             return RepaintBoundary(
               child: Padding(
                 padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
-                child: MomentCard(
-                  character: character,
-                  moment: m,
-                  manageMode: widget.manageMode,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (_) => MomentDetailScreen(
+                          characterId: character.id,
+                          momentId: m.id,
+                        ),
+                      ),
+                    );
+                  },
+                  child: MomentCard(
+                    character: character,
+                    moment: m,
+                    manageMode: widget.manageMode,
+                    onOpenDetail: () {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => MomentDetailScreen(
+                            characterId: character.id,
+                            momentId: m.id,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             );
@@ -943,6 +974,3 @@ class _CharacterDetailScreenState extends State<CharacterDetailScreen>
 /// 头像全屏预览页：黑底居中展示，单击关闭、双击缩放、双指缩放后
 /// 可自由拖动查看。子组件为整屏大小的盒子、图片在其内部居中，
 /// 避免 InteractiveViewer(constrained: false) 把图片锚定到左上角。
-
-
-

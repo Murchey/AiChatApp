@@ -19,4 +19,29 @@ class HomeChatEntry {
     required this.pinned,
     required this.unreadCount,
   });
+
+  @override
+  bool operator ==(Object other) {
+    return other is HomeChatEntry &&
+        other.isGroup == isGroup &&
+        other.id == id &&
+        other.title == title &&
+        other.avatar == avatar &&
+        other.lastMessage == lastMessage &&
+        other.lastMessageTime == lastMessageTime &&
+        other.pinned == pinned &&
+        other.unreadCount == unreadCount;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        isGroup,
+        id,
+        title,
+        avatar,
+        lastMessage,
+        lastMessageTime,
+        pinned,
+        unreadCount,
+      );
 }

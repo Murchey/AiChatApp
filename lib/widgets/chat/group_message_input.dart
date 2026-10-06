@@ -55,7 +55,6 @@ class GroupMessageInputState extends State<GroupMessageInput>
   final TextEditingController _controller = TextEditingController();
   final ImagePicker _picker = ImagePicker();
   final FocusNode _inputFocusNode = FocusNode();
-  bool _hasText = false;
   bool _showGrid = false;
   bool _pendingGrid = false;
   double? _lastKeyboardHeight;
@@ -67,7 +66,6 @@ class GroupMessageInputState extends State<GroupMessageInput>
     _controller.selection = TextSelection.fromPosition(
       TextPosition(offset: text.length),
     );
-    setState(() => _hasText = text.trim().isNotEmpty);
   }
 
   /// 输入 @ 选中成员后插入「@名字 」（替换文本末尾孤立的 @）。
@@ -85,7 +83,6 @@ class GroupMessageInputState extends State<GroupMessageInput>
       text: newText,
       selection: TextSelection.collapsed(offset: offset + insert.length),
     );
-    setState(() => _hasText = newText.trim().isNotEmpty);
   }
 
   void focus() {
@@ -96,9 +93,6 @@ class GroupMessageInputState extends State<GroupMessageInput>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _controller.addListener(() {
-      setState(() => _hasText = _controller.text.trim().isNotEmpty);
-    });
     // 点击（聚焦）输入框时自动折叠面板
     _inputFocusNode.addListener(() {
       if (_inputFocusNode.hasFocus) _pendingGrid = false;
@@ -228,27 +222,35 @@ class GroupMessageInputState extends State<GroupMessageInput>
                     ),
                   ),
                 ),
-                // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（触发群聊回复）
-                if (_hasText) ...[
-                  const SizedBox(width: 6),
-                  // 经典 36 圆形箭头 / zmd 深底金边文字按钮
-                  ChatSendButton(onPressed: _handleSend),
-                ] else ...[
-                  const SizedBox(width: 6),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(36, 36),
-                    onPressed:
-                        widget.replyEnabled ? widget.onRequestReply : null,
-                    child: Icon(
-                      CupertinoIcons.checkmark_circle_fill,
-                      size: 30,
-                      color: widget.replyEnabled
-                          ? context.accentColor
-                          : context.textSecondaryColor,
-                    ),
-                  ),
-                ],
+                // 右侧按钮只订阅文本值，避免输入时重建整个输入栏。
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _controller,
+                  builder: (context, value, _) {
+                    final hasText = value.text.trim().isNotEmpty;
+                    if (hasText) {
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: ChatSendButton(onPressed: _handleSend),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(36, 36),
+                        onPressed:
+                            widget.replyEnabled ? widget.onRequestReply : null,
+                        child: Icon(
+                          CupertinoIcons.checkmark_circle_fill,
+                          size: 30,
+                          color: widget.replyEnabled
+                              ? context.accentColor
+                              : context.textSecondaryColor,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -435,4 +437,3 @@ class GroupGridItem {
     required this.onTap,
   });
 }
-
