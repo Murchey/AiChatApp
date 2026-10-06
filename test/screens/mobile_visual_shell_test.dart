@@ -18,8 +18,11 @@ import 'package:ai_chat/providers/token_usage_provider.dart';
 import 'package:ai_chat/providers/workshop_provider.dart';
 import 'package:ai_chat/screens/home_screen.dart';
 import 'package:ai_chat/screens/settings_screen.dart';
+import 'package:ai_chat/models/character.dart';
+import 'package:ai_chat/models/moment.dart';
 import 'package:ai_chat/widgets/message_input.dart';
 import 'package:ai_chat/widgets/chat_title_bar.dart';
+import 'package:ai_chat/widgets/moment_card.dart';
 import 'package:ai_chat/widgets/settings/color_picker_widgets.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
@@ -179,6 +182,48 @@ void main() {
       tester.widget<Icon>(find.byIcon(CupertinoIcons.chat_bubble_2_fill)).color,
       AppColors.settingIconDisplayDark,
     );
+  });
+
+  testWidgets('moment cards fold long content and comment previews',
+      (tester) async {
+    var opened = false;
+    final owner = Character(id: 'c1', name: '角色');
+    final moment = Moment(
+      id: 'm1',
+      content: List.filled(160, '长').join(),
+      comments: [
+        for (var i = 0; i < 11; i++)
+          MomentComment(sender: '评论者$i', content: '评论内容$i'),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ],
+        child: themed(
+          SizedBox(
+            width: 360,
+            child: MomentCard(
+              character: owner,
+              moment: moment,
+              onOpenDetail: () => opened = true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('全文'), findsOneWidget);
+    expect(find.text('查看全部 11 条评论'), findsOneWidget);
+    expect(find.text('评论者0：评论内容0'), findsOneWidget);
+    expect(find.text('评论者3：评论内容3'), findsNothing);
+
+    await tester.tap(find.text('查看全部 11 条评论'));
+    expect(opened, isTrue);
   });
 
   testWidgets('home exposes four floating navigation entries', (tester) async {

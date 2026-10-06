@@ -73,7 +73,9 @@ class CharacterAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCircle = context.watch<SettingsProvider>().avatarFrameStyle ==
+    final isCircle = context.select<SettingsProvider, AvatarFrameStyle>(
+          (settings) => settings.avatarFrameStyle,
+        ) ==
         AvatarFrameStyle.circle;
     final hasImage = base64.isNotEmpty;
     final radius =

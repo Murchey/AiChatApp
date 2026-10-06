@@ -1136,12 +1136,15 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             Column(
               children: [
                 Expanded(
-                  // 用 Selector 只监听消息列表引用变化：回复轮/错误/成员变更等
-                  // 无关通知不再重建整棵消息列表，长聊天下明显减少无谓 build
-                  child: Selector<GroupChatProvider, List<Message>>(
-                    selector: (_, p) => p.getMessages(widget.groupId),
-                    shouldRebuild: (a, b) => !identical(a, b),
-                    builder: (context, messages, _) {
+                  // Only the message count controls list structure. Message
+                  // rows subscribe to their own provider revision, so an
+                  // unrelated reply-progress notification stays cheap.
+                  child: Selector<GroupChatProvider, int>(
+                    selector: (_, p) => p.getMessages(widget.groupId).length,
+                    builder: (context, _, __) {
+                      final groupProvider = context.read<GroupChatProvider>();
+                      final messages =
+                          groupProvider.getMessages(widget.groupId);
                       if (messages.length != _lastRenderedCount) {
                         final added = _lastRenderedCount >= 0 &&
                             messages.length > _lastRenderedCount;
@@ -1225,7 +1228,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   if (showTime) _buildTimeLabel(msg.createdAt),
-                                  ChatBubble(
+                                  _GroupChatMessageTile(
+                                    groupId: widget.groupId,
                                     message: msg,
                                     userAvatar: userAvatar,
                                     characterAvatar: characterAvatar,
@@ -1412,6 +1416,81 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         ),
       ),
       child: body,
+    );
+  }
+}
+
+/// Keeps a group message bubble local to its own content revision. Group
+/// reply progress still notifies the provider, but does not rebuild every row.
+class _GroupChatMessageTile extends StatefulWidget {
+  final String groupId;
+  final Message message;
+  final String userAvatar;
+  final String characterAvatar;
+  final String senderName;
+  final Future<void> Function(String filePath)? onFileTap;
+  final VoidCallback? onCharacterAvatarTap;
+  final void Function(Message message, GlobalKey bubbleKey)? onLongPress;
+
+  const _GroupChatMessageTile({
+    required this.groupId,
+    required this.message,
+    required this.userAvatar,
+    required this.characterAvatar,
+    required this.senderName,
+    this.onFileTap,
+    this.onCharacterAvatarTap,
+    this.onLongPress,
+  });
+
+  @override
+  State<_GroupChatMessageTile> createState() => _GroupChatMessageTileState();
+}
+
+class _GroupChatMessageTileState extends State<_GroupChatMessageTile> {
+  late final GroupChatProvider _provider;
+  late int _revision;
+
+  @override
+  void initState() {
+    super.initState();
+    _provider = context.read<GroupChatProvider>();
+    _revision = _provider.messageRevisionFor(
+      widget.groupId,
+      widget.message.id,
+    );
+    _provider.addListener(_handleProviderChanged);
+  }
+
+  void _handleProviderChanged() {
+    if (!mounted) return;
+    final next = _provider.messageRevisionFor(
+      widget.groupId,
+      widget.message.id,
+    );
+    if (next == _revision) return;
+    _revision = next;
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _provider.removeListener(_handleProviderChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final message = _provider.messageFor(widget.groupId, widget.message.id) ??
+        widget.message;
+    return ChatBubble(
+      message: message,
+      userAvatar: widget.userAvatar,
+      characterAvatar: widget.characterAvatar,
+      senderName: widget.senderName,
+      onLongPress: widget.onLongPress,
+      onFileTap: widget.onFileTap,
+      onCharacterAvatarTap: widget.onCharacterAvatarTap,
     );
   }
 }

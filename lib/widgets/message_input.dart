@@ -71,7 +71,6 @@ class MessageInputState extends State<MessageInput>
   final TextEditingController _controller = TextEditingController();
   final ImagePicker _picker = ImagePicker();
   final FocusNode _inputFocusNode = FocusNode();
-  bool _hasText = false;
   _InputPanel _panel = _InputPanel.none;
   _InputPanel? _pendingPanel;
   final PageController _roleplayPanelController = PageController();
@@ -83,9 +82,6 @@ class MessageInputState extends State<MessageInput>
     _controller.selection = TextSelection.fromPosition(
       TextPosition(offset: text.length),
     );
-    setState(() {
-      _hasText = text.trim().isNotEmpty;
-    });
   }
 
   /// 聚焦输入框
@@ -104,11 +100,6 @@ class MessageInputState extends State<MessageInput>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _controller.addListener(() {
-      setState(() {
-        _hasText = _controller.text.trim().isNotEmpty;
-      });
-    });
     // 点击（聚焦）输入框时自动折叠面板
     _inputFocusNode.addListener(() {
       if (_inputFocusNode.hasFocus) {
@@ -294,28 +285,40 @@ class MessageInputState extends State<MessageInput>
                               : null,
                         ),
                       ),
-                      // 右侧按钮：有输入内容时显示"发送"，无内容时显示"对号"（点击请求角色回复）
-                      if (_hasText) ...[
-                        const SizedBox(width: 6),
-                        // 经典 36 圆形箭头 / zmd 深底金边文字按钮
-                        ChatSendButton(onPressed: _handleSend),
-                      ] else if (widget.onRequestReply != null) ...[
-                        const SizedBox(width: 6),
-                        CupertinoButton(
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(36, 36),
-                          onPressed: widget.replyEnabled
-                              ? widget.onRequestReply
-                              : null,
-                          child: Icon(
-                            CupertinoIcons.checkmark_circle_fill,
-                            size: 28,
-                            color: widget.replyEnabled
-                                ? context.accentColor
-                                : context.textSecondaryColor,
-                          ),
-                        ),
-                      ],
+                      // 右侧按钮只订阅文本值，避免每次输入都重建整个胶囊和
+                      // 已展开的功能面板。
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _controller,
+                        builder: (context, value, _) {
+                          final hasText = value.text.trim().isNotEmpty;
+                          if (hasText) {
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: ChatSendButton(onPressed: _handleSend),
+                            );
+                          }
+                          if (widget.onRequestReply == null) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: CupertinoButton(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(36, 36),
+                              onPressed: widget.replyEnabled
+                                  ? widget.onRequestReply
+                                  : null,
+                              child: Icon(
+                                CupertinoIcons.checkmark_circle_fill,
+                                size: 28,
+                                color: widget.replyEnabled
+                                    ? context.accentColor
+                                    : context.textSecondaryColor,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
