@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/chat_bubble.dart';
+import '../widgets/settings/settings_ui.dart';
 
 /// 聊天气泡样式选择页：顶部实时预览，列表选择样式
 class BubbleStyleScreen extends StatelessWidget {
@@ -13,11 +14,8 @@ class BubbleStyleScreen extends StatelessWidget {
     final settingsProvider = context.watch<SettingsProvider>();
     final current = settingsProvider.bubbleStyle;
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('气泡样式'),
-        automaticallyImplyLeading: true,
-        previousPageTitle: '显示设置',
-      ),
+      navigationBar: settingsNavigationBar(context, '气泡样式'),
+      backgroundColor: context.scaffoldColor,
       child: SafeArea(
         bottom: false,
         child: ListView(
@@ -25,28 +23,13 @@ class BubbleStyleScreen extends StatelessWidget {
           children: [
             // 实时预览区：按当前样式渲染一对气泡
             _PreviewArea(style: current),
-            CupertinoListSection.insetGrouped(
-              backgroundColor: context.scaffoldColor,
-              decoration: BoxDecoration(
-                color: context.listBgColor,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              header: const Text('选择样式'),
+            SettingsSection(
+              title: '选择样式',
               children: BubbleStyle.values.map((style) {
                 final selected = style == current;
-                return CupertinoListTile(
+                return SettingsRow(
+                  icon: CupertinoIcons.chat_bubble,
                   title: Text(style.displayName),
-                  additionalInfo: Text(
-                    style == BubbleStyle.sr
-                        ? ''
-                        : style == BubbleStyle.ww
-                            ? ''
-                            : '',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
                   trailing: selected
                       ? Icon(
                           CupertinoIcons.check_mark,

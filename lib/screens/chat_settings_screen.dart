@@ -7,6 +7,7 @@ import '../providers/api_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../services/llm_service.dart';
+import '../widgets/settings/settings_ui.dart';
 
 /// 上下文条数上限（滑条最右端为【无限制】）
 const int kMaxContextCount = 999;
@@ -333,9 +334,8 @@ class ChatSettingsScreen extends StatelessWidget {
         : settings.contextCount.clamp(1, kMaxContextCount).toDouble();
 
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('聊天设置'),
-      ),
+      navigationBar: settingsNavigationBar(context, '聊天设置'),
+      backgroundColor: context.scaffoldColor,
       child: ListView(
         children: [
           const SizedBox(height: 12),
@@ -546,7 +546,6 @@ class ChatSettingsScreen extends StatelessWidget {
             children: [
               CupertinoListTile(
                 title: const Text('语C推进风格'),
-                
                 trailing:
                     CupertinoSlidingSegmentedControl<RoleplayProgressionStyle>(
                   groupValue: settings.roleplayProgressionStyle,
@@ -567,7 +566,6 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
               CupertinoListTile(
                 title: const Text('语C/短信模式'),
-                
                 trailing: CupertinoSlidingSegmentedControl<ChatMessageMode>(
                   // 不使用 Cupertino 默认蓝灰配色，跟随应用自定义浅色/暗色主题。
                   backgroundColor: context.fieldBgColor,
@@ -602,7 +600,6 @@ class ChatSettingsScreen extends StatelessWidget {
             children: [
               CupertinoListTile(
                 title: const Text('生成语C候选行动'),
-                
                 trailing: CupertinoSwitch(
                   value: settings.enableRoleplayChoices,
                   onChanged: settings.isRoleplayMode
@@ -612,7 +609,6 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
               CupertinoListTile(
                 title: const Text('语C流式回复'),
-                
                 trailing: CupertinoSwitch(
                   value: settings.enableRoleplayStream,
                   onChanged: settings.isRoleplayMode
@@ -622,7 +618,6 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
               CupertinoListTile(
                 title: const Text('显示表情按钮'),
-                
                 trailing: CupertinoSwitch(
                   value: settings.showStickerButton,
                   onChanged: settings.setShowStickerButton,
@@ -641,7 +636,6 @@ class ChatSettingsScreen extends StatelessWidget {
             children: [
               CupertinoListTile(
                 title: const Text('自动压缩历史消息'),
-                
                 trailing: CupertinoSwitch(
                   value: settings.enableCompression,
                   onChanged: (v) => settings.setEnableCompression(v),
@@ -808,7 +802,6 @@ class ChatSettingsScreen extends StatelessWidget {
             children: [
               CupertinoListTile(
                 title: const Text('思考强度'),
-                
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -846,7 +839,6 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
               CupertinoListTile(
                 title: const Text('显示 AI 思考时长'),
-                
                 trailing: CupertinoSwitch(
                   value: settings.showThinkingDuration,
                   onChanged: (v) => settings.setShowThinkingDuration(v),

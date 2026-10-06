@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../config/theme.dart';
 import '../services/backup_schedule_service.dart';
+import '../widgets/settings/settings_ui.dart';
 
 /// 定时备份设置页（本地 / 云端各自独立进入）。
 ///
@@ -67,14 +68,16 @@ class _BackupScheduleScreenState extends State<BackupScheduleScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(widget.title),
+      navigationBar: settingsNavigationBar(
+        context,
+        widget.title,
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _save,
           child: const Text('保存'),
         ),
       ),
+      backgroundColor: context.scaffoldColor,
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),

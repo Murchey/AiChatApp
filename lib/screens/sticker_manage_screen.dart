@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
+import '../config/ui_spec.dart';
+import '../widgets/settings/settings_ui.dart';
 import '../config/theme.dart';
 import '../models/sticker_pack.dart';
 import '../providers/api_provider.dart';
@@ -304,8 +306,9 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
     final stickers = provider.userStickers;
     final packs = provider.packs;
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('管理表情包'),
+      navigationBar: settingsNavigationBar(
+        context,
+        '管理表情包',
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: () => setState(() {
@@ -315,6 +318,7 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
           child: Text(_editing ? '完成' : '编辑'),
         ),
       ),
+      backgroundColor: context.scaffoldColor,
       child: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -322,7 +326,10 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
               onRefresh: () async => provider.init(),
             ),
             SliverToBoxAdapter(
-              child: _buildPackSection(context, packs),
+              child: Padding(
+                padding: const EdgeInsets.only(top: UiSpec.settingsPageTop),
+                child: _buildPackSection(context, packs),
+              ),
             ),
             SliverToBoxAdapter(
               child: _buildUserSection(context, stickers),
@@ -344,14 +351,16 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
   }
 
   Widget _buildPackSection(BuildContext context, List<StickerPack> packs) {
-    return CupertinoListSection.insetGrouped(
-      backgroundColor: context.scaffoldColor,
-      header: Text('创意工坊表情包（${packs.length} 个包）'),
+    return SettingsSection(
+      title: '创意工坊表情包（${packs.length} 个包）',
       children: packs.isEmpty
-          ? [const CupertinoListTile(title: Text('暂无创意工坊表情包'))]
+          ? [
+              const SettingsRow(
+                  icon: CupertinoIcons.info, title: Text('暂无创意工坊表情包'))
+            ]
           : [
               for (final pack in packs)
-                CupertinoListTile(
+                SettingsRow(
                   leading: _buildThumbnail(pack.coverImagePath),
                   title: Text(pack.name),
                   subtitle: Text('${pack.imagePaths.length} 张'),
@@ -371,22 +380,18 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
     final model =
         api.getModelById(context.read<ChatSettingsProvider>().selectedModelId);
     final canAutoTag = model != null && api.isVisionSupported(model.id) == true;
-    return CupertinoListSection.insetGrouped(
-      backgroundColor: context.scaffoldColor,
-      header: Text('我的表情包（${stickers.length} 张）'),
+    return SettingsSection(
+      title: '我的表情包（${stickers.length} 张）',
       children: [
-        CupertinoListTile(
-          leading:
-              Icon(CupertinoIcons.search, color: context.textSecondaryColor),
+        SettingsRow(
+          icon: CupertinoIcons.search,
           title: const Text('测试表情包检索'),
           subtitle: const Text('输入关键词，确认角色可检索到的表情包'),
-          trailing: Icon(CupertinoIcons.chevron_right,
-              size: 16, color: context.textSecondaryColor),
+          showChevron: true,
           onTap: _showSearchTest,
         ),
-        CupertinoListTile(
-          leading:
-              Icon(CupertinoIcons.sparkles, color: context.textSecondaryColor),
+        SettingsRow(
+          icon: CupertinoIcons.sparkles,
           title: const Text('AI 自动打标'),
           subtitle: Text(
             canAutoTag ? '使用视觉模型生成描述、关键词与情绪标签' : '需在「聊天设置」选择支持图片的模型',
@@ -395,12 +400,11 @@ class _StickerManageScreenState extends State<StickerManageScreen> {
               color: context.textSecondaryColor,
             ),
           ),
-          trailing: Icon(CupertinoIcons.chevron_right,
-              size: 16, color: context.textSecondaryColor),
+          showChevron: true,
           onTap: canAutoTag ? _runAutoTagging : null,
         ),
         if (stickers.isEmpty)
-          const CupertinoListTile(title: Text('暂无自定义表情包'))
+          const SettingsRow(icon: CupertinoIcons.info, title: Text('暂无自定义表情包'))
         else
           Padding(
             padding: const EdgeInsets.all(12),

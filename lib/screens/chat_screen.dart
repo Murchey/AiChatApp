@@ -943,23 +943,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             : Selector<ChatProvider, bool>(
                 selector: (_, p) => p.isReplying(widget.conversationId),
                 builder: (context, replying, _) {
-                  final titleBar = ChatTitleBar(
-                    name: displayName,
-                    signature: replying ? '' : character?.signature ?? '',
-                    activeStart: character?.activeStart ?? '',
-                    activeEnd: character?.activeEnd ?? '',
-                    inputStatus: replying
-                        ? (context.uiStyle == UiStyle.zmd ? '输入中' : '对方正在输入……')
-                        : null,
-                  );
-                  // ZMD 保留原有靠左标题与状态布局，普通样式使用紧凑居中标题。
+                  // 终末地样式保持修改前的左对齐标题、个性签名和在线状态。
                   if (context.uiStyle == UiStyle.zmd) {
                     return Align(
                       alignment: Alignment.centerLeft,
-                      child: titleBar,
+                      child: ChatTitleBar(
+                        name: displayName,
+                        signature: character?.signature ?? '',
+                        activeStart: character?.activeStart ?? '',
+                        activeEnd: character?.activeEnd ?? '',
+                        inputStatus: replying ? '输入中' : null,
+                      ),
                     );
                   }
-                  return titleBar;
+                  return Text(
+                    replying ? '对方正在输入……' : displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  );
                 },
               ),
         trailing: _selectMode

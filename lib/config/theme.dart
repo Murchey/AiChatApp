@@ -115,6 +115,13 @@ class AppColors {
   static const fieldBgDark = Color(0xFF1C1C1E);
   static const pinnedChatDark = Color(0xFF242424); // 置顶会话条目背景（深色）
 
+  // Obsidian-style settings surfaces. These are UI-only surfaces and do not
+  // participate in persisted preferences or bubble palettes.
+  static const settingsSurfaceLight = Color(0xFFFFFFFF);
+  static const settingsSurfaceDark = Color(0xFF1C1C1E);
+  static const settingsOutlineLight = Color(0xFFD9D9DE);
+  static const settingsOutlineDark = Color(0xFF2A2A2E);
+
   // 气泡内字体颜色（自己/对方 × 浅色/深色）
   static const bubbleTextSelfLight = Color(0xFFFFFFFF);
   static const bubbleTextOtherLight = Color(0xFF000000);
@@ -272,6 +279,16 @@ extension AppThemeX on BuildContext {
 
   Color get groupedSurfaceColor =>
       isDark ? const Color(0xFF161A22) : const Color(0xFFEFEFF4);
+
+  Color get settingsSurfaceColor =>
+      isDark ? AppColors.settingsSurfaceDark : AppColors.settingsSurfaceLight;
+
+  Color get settingsOutlineColor =>
+      isDark ? AppColors.settingsOutlineDark : AppColors.settingsOutlineLight;
+
+  Color get settingsDividerColor => isDark
+      ? CupertinoColors.white.withValues(alpha: 0.075)
+      : CupertinoColors.black.withValues(alpha: 0.075);
 
   Color get outlineColor =>
       isDark ? const Color(0xFF2E2F32) : const Color(0xFFD1D1D6);

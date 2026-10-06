@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../config/theme.dart';
+import '../widgets/settings/settings_ui.dart';
 
 /// 备份密码输入页：创建备份时可设密，恢复加密包时校验密码。
 ///
@@ -48,14 +49,16 @@ class _BackupPasswordScreenState extends State<BackupPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(widget.title),
+      navigationBar: settingsNavigationBar(
+        context,
+        widget.title,
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _submit,
           child: Text(widget.confirmLabel),
         ),
       ),
+      backgroundColor: context.scaffoldColor,
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),

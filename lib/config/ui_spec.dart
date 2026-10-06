@@ -48,11 +48,38 @@ class UiSpec {
   static const double floatingContentBottomInset =
       floatingNavHeight + floatingBottomGap + spaceLg;
 
+  /// 设置页顶部与分组之间的留白
+  static const double settingsPageTop = 18;
+
   /// 设置分组之间的垂直留白
-  static const double settingsSectionGap = 14;
+  static const double settingsSectionGap = 24;
 
   /// 设置分组的圆角
-  static const double settingsSectionRadius = 16;
+  static const double settingsSectionRadius = 22;
+
+  /// 设置页分组面板的水平内边距
+  static const double settingsSectionHorizontal = 2;
+
+  /// 设置行最小高度
+  static const double settingsRowMinHeight = 62;
+
+  /// 设置行内容水平内边距
+  static const double settingsRowHorizontal = 16;
+
+  /// 设置行内容垂直内边距
+  static const double settingsRowVertical = 11;
+
+  /// 设置图标的占位宽度，确保各行标题左边缘对齐
+  static const double settingsIconWidth = 38;
+
+  /// 设置分组标题字号
+  static const double settingsSectionTitle = 15;
+
+  /// 设置项标题字号
+  static const double settingsRowTitle = 16;
+
+  /// 设置项说明字号
+  static const double settingsRowSubtitle = 12;
 
   /// 首页会话行高度
   static const double conversationRowHeight = 76;

@@ -24,6 +24,8 @@ import '../services/backup_service.dart';
 import '../services/cloud_backup_service.dart';
 import '../utils/file_picker_helper.dart';
 import '../widgets/settings/backup_ui.dart';
+import '../widgets/settings/settings_ui.dart';
+import '../config/ui_spec.dart';
 import 'backup_cloud_settings_screen.dart';
 import 'backup_password_screen.dart';
 import 'backup_schedule_screen.dart';
@@ -665,14 +667,16 @@ class _BackupScreenState extends State<BackupScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('数据备份'),
+      navigationBar: settingsNavigationBar(
+        context,
+        '数据备份',
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _onOpenCloudSettings,
           child: const Icon(CupertinoIcons.gear, size: 22),
         ),
       ),
+      backgroundColor: context.scaffoldColor,
       child: SafeArea(
         child: Column(
           children: [
@@ -717,7 +721,12 @@ class _BackupScreenState extends State<BackupScreen> {
               child: _loading
                   ? const Center(child: CupertinoActivityIndicator())
                   : ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                      padding: const EdgeInsets.fromLTRB(
+                        16,
+                        UiSpec.settingsPageTop,
+                        16,
+                        UiSpec.floatingContentBottomInset,
+                      ),
                       children: [
                         if (_tab == 0) _buildLocalTab() else _buildCloudTab(),
                       ],
@@ -943,5 +952,4 @@ class _BackupScreenState extends State<BackupScreen> {
   Widget _miniButton({required String label, required VoidCallback? onTap, bool destructive = false}) => BackupMiniButton(label: label, onTap: onTap, destructive: destructive);
 
 }
-
 

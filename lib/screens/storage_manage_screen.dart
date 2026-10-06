@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
+import '../config/ui_spec.dart';
+import '../widgets/settings/settings_ui.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_provider.dart';
@@ -260,26 +262,23 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('管理占用空间'),
-      ),
+      navigationBar: settingsNavigationBar(context, '管理占用空间'),
       child: Container(
         color: context.scaffoldColor,
         child: _loading
             ? const Center(child: CupertinoActivityIndicator())
             : ListView(
+                padding: const EdgeInsets.only(
+                  top: UiSpec.settingsPageTop,
+                  bottom: UiSpec.floatingContentBottomInset,
+                ),
                 children: [
-                  const SizedBox(height: 12),
                   // 总览
-                  CupertinoListSection.insetGrouped(
-                    backgroundColor: context.scaffoldColor,
-                    decoration: BoxDecoration(
-                      color: context.listBgColor,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    header: const Text('总览'),
+                  SettingsSection(
+                    title: '总览',
                     children: [
-                      CupertinoListTile(
+                      SettingsRow(
+                        icon: CupertinoIcons.chart_bar,
                         title: const Text('应用占用空间'),
                         subtitle: Text(
                           '用户数据与软件缓存合计',
@@ -319,19 +318,14 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
   Widget _buildSection(
       {required String header, required List<StorageItem> items}) {
     if (items.isEmpty) return const SizedBox.shrink();
-    return CupertinoListSection.insetGrouped(
-      backgroundColor: context.scaffoldColor,
-      decoration: BoxDecoration(
-        color: context.listBgColor,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      header: Text(header),
+    return SettingsSection(
+      title: header,
       children: [
         for (final item in items)
-          CupertinoListTile(
+          SettingsRow(
+            icon: CupertinoIcons.doc,
             title: Text(item.title),
-            // CupertinoListTile 默认把 subtitle 限制为 2 行（折叠省略号），
-            // 显式放宽行数，让分类说明完整展示。
+            // 放宽说明文本行数，让分类说明完整展示。
             subtitle: Text(
               item.subtitle,
               maxLines: 6,

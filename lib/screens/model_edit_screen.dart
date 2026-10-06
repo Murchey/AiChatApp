@@ -5,6 +5,7 @@ import '../config/theme.dart';
 import '../providers/api_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../services/llm_service.dart';
+import '../widgets/settings/settings_ui.dart';
 
 /// 快捷预设：从提供商预设进入添加模型页面时自动预填的信息
 class ModelPreset {
@@ -205,8 +206,9 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(_isEdit ? '编辑模型' : '添加模型'),
+      navigationBar: settingsNavigationBar(
+        context,
+        _isEdit ? '编辑模型' : '添加模型',
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _save,
@@ -219,6 +221,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
           ),
         ),
       ),
+      backgroundColor: context.scaffoldColor,
       child: ListView(
         children: [
           const SizedBox(height: 12),

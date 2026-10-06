@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import '../config/theme.dart';
 import '../models/provider_preset.dart';
+import '../widgets/settings/settings_ui.dart';
+import '../config/ui_spec.dart';
 import 'provider_config_screen.dart';
 
 /// 快捷预设二级页面：常用 OpenAI 兼容厂商列表
@@ -13,10 +15,10 @@ class ProviderPresetScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('快捷预设'),
-      ),
+      navigationBar: settingsNavigationBar(context, '快捷预设'),
+      backgroundColor: context.scaffoldColor,
       child: ListView(
+        padding: EdgeInsets.only(bottom: UiSpec.floatingContentBottomInset),
         children: [
           const SizedBox(height: 12),
           Padding(
@@ -31,27 +33,13 @@ class ProviderPresetScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
+          SettingsSection(
+            title: '服务商',
             children: [
               for (final provider in providerPresets)
-                CupertinoListTile(
-                  leading: Icon(
-                    CupertinoIcons.cube,
-                    color: context.textSecondaryColor,
-                  ),
-                  title: Text(
-                    provider.name,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: context.textPrimaryColor,
-                    ),
-                  ),
+                SettingsRow(
+                  icon: CupertinoIcons.cube,
+                  title: Text(provider.name),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -73,11 +61,7 @@ class ProviderPresetScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                  trailing: Icon(
-                    CupertinoIcons.chevron_right,
-                    size: 14,
-                    color: context.textSecondaryColor,
-                  ),
+                  showChevron: true,
                   onTap: () => Navigator.push(
                     context,
                     CupertinoPageRoute(

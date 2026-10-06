@@ -1,9 +1,11 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../config/ui_spec.dart';
 import '../providers/api_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../services/tts_service.dart';
+import '../widgets/settings/settings_ui.dart';
 import 'chat_settings_screen.dart';
 import 'model_edit_screen.dart';
 import 'provider_preset_screen.dart';
@@ -371,258 +373,114 @@ class ApiSettingsScreen extends StatelessWidget {
     final api = context.watch<ApiProvider>();
 
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('API 设置'),
-      ),
+      navigationBar: settingsNavigationBar(context, 'API 设置'),
+      backgroundColor: context.scaffoldColor,
       child: ListView(
+        padding: EdgeInsets.only(
+          top: MediaQuery.paddingOf(context).top + UiSpec.settingsPageTop,
+          bottom: UiSpec.floatingContentBottomInset,
+        ),
         children: [
-          const SizedBox(height: 12),
-          // 快捷预设：常用 OpenAI 兼容提供商快速添加
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('快捷预设'),
+          SettingsSection(
+            title: '快捷预设',
             children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.speedometer,
-                  color: context.textSecondaryColor,
-                ),
-                title: Text(
-                  '从常用提供商快速添加',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: context.textPrimaryColor,
-                  ),
-                ),
-                subtitle: Text(
-                  'OpenAI、小米 MiMo、DeepSeek、Grok、Kimi、阿里云百炼、硅基流动、MiniMax 等',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
+              SettingsRow(
+                icon: CupertinoIcons.speedometer,
+                title: const Text('从常用提供商快速添加'),
+                subtitle: const Text(
+                    'OpenAI、小米 MiMo、DeepSeek、Grok、Kimi、阿里云百炼、硅基流动、MiniMax 等'),
+                showChevron: true,
                 onTap: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => const ProviderPresetScreen(),
-                  ),
-                ),
+                    context,
+                    CupertinoPageRoute(
+                        builder: (_) => const ProviderPresetScreen())),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: Text('可用模型 (${api.models.length})'),
+          SettingsSection(
+            title: '可用模型 (${api.models.length})',
             children: [
               for (final model in api.models)
-                CupertinoListTile(
-                  leading: Icon(
-                    CupertinoIcons.gear,
-                    color: context.textSecondaryColor,
-                  ),
-                  title: Text(
-                    model.displayName,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: context.textPrimaryColor,
-                    ),
-                  ),
+                SettingsRow(
+                  icon: CupertinoIcons.gear,
+                  title: Text(model.displayName),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '模型: ${model.modelName}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textSecondaryColor,
-                        ),
-                      ),
+                      Text('模型: ${model.modelName}'),
                       if (model.baseUrl.isNotEmpty)
-                        Text(
-                          model.baseUrl,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textSecondaryColor,
-                          ),
-                        ),
+                        Text(model.baseUrl,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
                     ],
                   ),
                   trailing: CupertinoButton(
                     padding: EdgeInsets.zero,
-                    child: const Icon(
-                      CupertinoIcons.delete,
-                      size: 18,
-                      color: CupertinoColors.systemRed,
-                    ),
+                    minimumSize: const Size(32, 32),
                     onPressed: () => _confirmDelete(context, model),
+                    child: const Icon(CupertinoIcons.delete,
+                        size: 18, color: CupertinoColors.systemRed),
                   ),
                   onTap: () => _openModelEdit(context, model: model),
                 ),
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.plus_circle_fill,
-                  color: context.accentColor,
-                ),
-                title: Text(
-                  '添加模型',
-                  style: TextStyle(
-                    color: context.accentColor,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+              SettingsRow(
+                icon: CupertinoIcons.plus,
+                iconColor: context.accentColor,
+                title: Text('添加模型',
+                    style: TextStyle(
+                        color: context.accentColor,
+                        fontWeight: FontWeight.w600)),
                 onTap: () => _openModelEdit(context),
               ),
             ],
           ),
-          // 会话压缩专用模型
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('会话压缩'),
+          SettingsSection(
+            title: '会话压缩',
             children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.archivebox,
-                  color: context.textSecondaryColor,
-                ),
-                title: const Text('压缩会话使用的模型'),
-                subtitle: Text(
-                  _compressionModelLabel(api),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
-                onTap: () => _showCompressionModelPicker(context),
-              ),
+              SettingsRow(
+                  icon: CupertinoIcons.archivebox,
+                  title: const Text('压缩会话使用的模型'),
+                  subtitle: Text(_compressionModelLabel(api)),
+                  showChevron: true,
+                  onTap: () => _showCompressionModelPicker(context)),
             ],
           ),
-          // 朋友圈互动专用模型
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('朋友圈互动'),
+          SettingsSection(
+            title: '朋友圈互动',
             children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.bell_fill,
-                  color: context.textSecondaryColor,
-                ),
-                title: const Text('读取朋友圈的模型'),
-                subtitle: Text(
-                  _momentModelLabel(api),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
-                onTap: () => _showMomentModelPicker(context),
-              ),
+              SettingsRow(
+                  icon: CupertinoIcons.bell,
+                  title: const Text('读取朋友圈的模型'),
+                  subtitle: Text(_momentModelLabel(api)),
+                  showChevron: true,
+                  onTap: () => _showMomentModelPicker(context)),
             ],
           ),
-          // 语音合成专用模型
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('语音合成'),
+          SettingsSection(
+            title: '语音合成',
             children: [
-              CupertinoListTile(
-                leading: Icon(CupertinoIcons.waveform,
-                    color: context.textSecondaryColor),
-                title: const Text('语音模型'),
-                subtitle: Text(
-                  _ttsModelLabel(api),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 12, color: context.textSecondaryColor),
-                ),
-                trailing: Icon(CupertinoIcons.chevron_right,
-                    size: 16, color: context.textSecondaryColor),
-                onTap: () => _showTtsModelPicker(context),
-              ),
+              SettingsRow(
+                  icon: CupertinoIcons.waveform,
+                  title: const Text('语音模型'),
+                  subtitle: Text(_ttsModelLabel(api)),
+                  showChevron: true,
+                  onTap: () => _showTtsModelPicker(context)),
             ],
           ),
-          // 聊天设置（与聊天输入框加号面板中的「聊天设置」同一页面）
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('聊天设置'),
+          SettingsSection(
+            title: '聊天设置',
             children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.settings,
-                  color: context.textSecondaryColor,
-                ),
+              SettingsRow(
+                icon: CupertinoIcons.settings,
                 title: const Text('上下文、压缩与使用的模型'),
-                subtitle: Text(
-                  '设置携带上下文条数、自动压缩策略及当前使用的模型',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
-                onTap: () {
-                  Navigator.push(
+                subtitle: const Text('设置携带上下文条数、自动压缩策略及当前使用的模型'),
+                showChevron: true,
+                onTap: () => Navigator.push(
                     context,
                     CupertinoPageRoute(
-                      builder: (_) => const ChatSettingsScreen(),
-                    ),
-                  );
-                },
+                        builder: (_) => const ChatSettingsScreen())),
               ),
             ],
           ),
-          const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(

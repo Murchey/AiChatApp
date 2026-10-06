@@ -6,6 +6,7 @@ import '../models/provider_preset.dart';
 import '../providers/api_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../services/llm_service.dart';
+import '../widgets/settings/settings_ui.dart';
 
 /// 厂商设置二级页面：填写请求地址与 API Key，
 /// 勾选本地推荐模型（或【检测可用模型】在线拉取）后点击底部「保存」批量添加。
@@ -274,9 +275,8 @@ class _ProviderConfigScreenState extends State<ProviderConfigScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(widget.preset.name),
-      ),
+      navigationBar: settingsNavigationBar(context, widget.preset.name),
+      backgroundColor: context.scaffoldColor,
       child: Column(
         children: [
           Expanded(

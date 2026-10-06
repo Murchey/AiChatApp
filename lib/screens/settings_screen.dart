@@ -5,6 +5,7 @@ import '../config/theme.dart';
 import '../config/ui_spec.dart';
 import '../widgets/settings/color_picker_widgets.dart';
 import '../widgets/settings/settings_pickers.dart';
+import '../widgets/settings/settings_ui.dart';
 
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
@@ -41,37 +42,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _showCustomPicker = false;
-
-  BoxDecoration _sectionDecoration(BuildContext context) {
-    return BoxDecoration(
-      color: context.listBgColor.withValues(
-        alpha: context.isDark ? 0.78 : 0.9,
-      ),
-      borderRadius: BorderRadius.circular(UiSpec.settingsSectionRadius),
-      border: Border.all(
-        color: context.outlineColor.withValues(alpha: 0.34),
-        width: 0.6,
-      ),
-    );
-  }
-
-  Widget _sectionHeader(BuildContext context, String title) {
-    return Padding(
-      padding: const EdgeInsets.only(
-        left: 4,
-        bottom: UiSpec.settingsSectionGap / 2,
-      ),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: UiSpec.fontCaption,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-          color: context.textSecondaryColor,
-        ),
-      ),
-    );
-  }
 
   String _themeLabel(AppThemeMode mode) {
     switch (mode) {
@@ -331,134 +301,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// 弹出深浅色选择（下拉选项框）
+  Widget _value(BuildContext context, String value) =>
+      settingsValueText(context, value);
+
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
 
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(middle: Text('设置')),
+      navigationBar: settingsNavigationBar(context, '设置'),
+      backgroundColor: context.scaffoldColor,
       child: ListView(
+        padding: EdgeInsets.only(
+          top: MediaQuery.paddingOf(context).top + UiSpec.settingsPageTop,
+          bottom: UiSpec.floatingContentBottomInset,
+        ),
         children: [
-          const SizedBox(height: 12),
-          // 明暗模式
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: _sectionDecoration(context),
-            header: _sectionHeader(context, '外观'),
+          SettingsSection(
+            title: '外观',
             children: [
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.moon,
                 title: const Text('深色模式'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _themeLabel(settings.themeMode),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      CupertinoIcons.chevron_down,
-                      size: 14,
-                      color: context.textSecondaryColor,
-                    ),
-                  ],
-                ),
+                trailing: _value(context, _themeLabel(settings.themeMode)),
+                showChevron: true,
                 onTap: () => SettingsPickers.showThemePicker(context, settings),
               ),
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.person_crop_circle,
                 title: const Text('角色头像框样式'),
-                subtitle: Text(
-                  '方形 / 圆形，作用于所有角色头像',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _avatarFrameLabel(settings.avatarFrameStyle),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      CupertinoIcons.chevron_down,
-                      size: 14,
-                      color: context.textSecondaryColor,
-                    ),
-                  ],
-                ),
+                subtitle: const Text('方形 / 圆形，作用于所有角色头像'),
+                trailing: _value(
+                    context, _avatarFrameLabel(settings.avatarFrameStyle)),
+                showChevron: true,
                 onTap: () =>
                     SettingsPickers.showAvatarFramePicker(context, settings),
               ),
             ],
           ),
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: _sectionDecoration(context),
-            header: _sectionHeader(context, '表情包'),
+          SettingsSection(
+            title: '表情包',
             children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.smiley,
-                  color: context.settingIconColor(SettingIconRole.stickers),
-                ),
+              SettingsRow(
+                icon: CupertinoIcons.smiley,
+                iconColor: context.settingIconColor(SettingIconRole.stickers),
                 title: const Text('管理表情包'),
-                subtitle: Text(
-                  '查看或编辑已导入的表情包',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
+                subtitle: const Text('查看或编辑已导入的表情包'),
+                showChevron: true,
                 onTap: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => const StickerManageScreen(),
-                  ),
-                ),
+                    context,
+                    CupertinoPageRoute(
+                        builder: (_) => const StickerManageScreen())),
               ),
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.hand_thumbsup,
                 title: const Text('允许角色发送表情包'),
-                subtitle: Text(
-                  settings.allowStickerSend
-                      ? '角色可按语义发送已保存的表情包'
-                      : '已关闭，角色回复时不发送表情包',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                subtitle: Text(settings.allowStickerSend
+                    ? '角色可按语义发送已保存的表情包'
+                    : '已关闭，角色回复时不发送表情包'),
                 trailing: CupertinoSwitch(
                   value: settings.allowStickerSend,
-                  onChanged: (v) => settings.setAllowStickerSend(v),
+                  onChanged: settings.setAllowStickerSend,
                 ),
               ),
             ],
           ),
-          // 主题色
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: _sectionDecoration(context),
-            header: _sectionHeader(context, '主题色'),
+          SettingsSection(
+            title: '主题色',
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -472,484 +385,221 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
               ),
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.paintbrush,
                 title: const Text('自定义颜色'),
                 trailing: Icon(
                   _showCustomPicker
                       ? CupertinoIcons.chevron_up
                       : CupertinoIcons.chevron_down,
-                  size: 16,
+                  size: 17,
                   color: context.textSecondaryColor,
                 ),
-                onTap: () {
-                  setState(() {
-                    _showCustomPicker = !_showCustomPicker;
-                  });
-                },
+                onTap: () =>
+                    setState(() => _showCustomPicker = !_showCustomPicker),
               ),
               if (_showCustomPicker)
                 CustomColorPicker(
                   initialColor: settings.accentColor,
-                  onChanged: (color) => settings.setAccentColor(color),
+                  onChanged: settings.setAccentColor,
                 ),
             ],
           ),
-          // 显示设置：气泡颜色（收进底部弹层，避免设置页过长）
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: _sectionDecoration(context),
-            header: _sectionHeader(context, '显示'),
+          SettingsSection(
+            title: '显示',
             children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.chat_bubble_2_fill,
-                  color: context.settingIconColor(SettingIconRole.display),
-                ),
+              SettingsRow(
+                icon: CupertinoIcons.chat_bubble_2_fill,
+                iconColor: context.settingIconColor(SettingIconRole.display),
                 title: const Text('气泡样式'),
-                additionalInfo: Text(
-                  settings.bubbleStyle.displayName,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
+                trailing: _value(context, settings.bubbleStyle.displayName),
+                showChevron: true,
                 onTap: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(builder: (_) => const BubbleStyleScreen()),
-                ),
+                    context,
+                    CupertinoPageRoute(
+                        builder: (_) => const BubbleStyleScreen())),
               ),
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.textformat,
-                  color: context.settingIconColor(SettingIconRole.display),
-                ),
+              SettingsRow(
+                icon: CupertinoIcons.textformat,
                 title: const Text('UI 样式'),
-                subtitle: Text(
-                  '会话标题栏与发送按钮',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                additionalInfo: Text(
-                  settings.uiStyle.displayName,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
-                onTap: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(builder: (_) => const UiStyleScreen()),
-                ),
+                subtitle: const Text('会话标题栏与发送按钮'),
+                trailing: _value(context, settings.uiStyle.displayName),
+                showChevron: true,
+                onTap: () => Navigator.push(context,
+                    CupertinoPageRoute(builder: (_) => const UiStyleScreen())),
               ),
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.photo,
-                  color: context.settingIconColor(SettingIconRole.display),
-                ),
+              SettingsRow(
+                icon: CupertinoIcons.photo,
                 title: const Text('开屏图标'),
-                subtitle: Text(
-                  '自定义启动页图片',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                additionalInfo: Text(
-                  settings.hasSplashIcon ? '自定义' : '默认',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
+                subtitle: const Text('自定义启动页图片'),
+                trailing:
+                    _value(context, settings.hasSplashIcon ? '自定义' : '默认'),
+                showChevron: true,
                 onTap: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(builder: (_) => const SplashIconScreen()),
-                ),
+                    context,
+                    CupertinoPageRoute(
+                        builder: (_) => const SplashIconScreen())),
               ),
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.textformat_alt,
-                  color: context.settingIconColor(SettingIconRole.display),
-                ),
+              SettingsRow(
+                icon: CupertinoIcons.textformat_alt,
                 title: const Text('气泡字体'),
-                subtitle: Text(
-                  '分别设置我方与对方聊天正文，可导入 TTF 文件',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
+                subtitle: const Text('分别设置我方与对方聊天正文，可导入 TTF 文件'),
+                showChevron: true,
                 onTap: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(builder: (_) => const BubbleFontScreen()),
-                ),
+                    context,
+                    CupertinoPageRoute(
+                        builder: (_) => const BubbleFontScreen())),
               ),
-              CupertinoListTile(
-                leading: Icon(CupertinoIcons.textformat_size,
-                    color: context.settingIconColor(SettingIconRole.display)),
+              SettingsRow(
+                icon: CupertinoIcons.textformat_size,
                 title: const Text('调整气泡内字体大小'),
-                subtitle: Text(
-                  '${settings.bubbleFontSize.round()}（默认 16）',
-                  style: TextStyle(
-                      fontSize: 12, color: context.textSecondaryColor),
-                ),
-                trailing: Icon(CupertinoIcons.chevron_right,
-                    size: 16, color: context.textSecondaryColor),
+                subtitle: Text('${settings.bubbleFontSize.round()}（默认 16）'),
+                showChevron: true,
                 onTap: () => _showBubbleFontSizePicker(context, settings),
               ),
-              // 自定义气泡颜色仅在经典样式下可用（崩铁样式使用自带配色）
               if (settings.bubbleStyle == BubbleStyle.classic)
-                CupertinoListTile(
-                  leading: Icon(
-                    CupertinoIcons.paintbrush,
-                    color: context.settingIconColor(SettingIconRole.display),
-                  ),
+                SettingsRow(
+                  icon: CupertinoIcons.paintbrush,
                   title: const Text('自定义气泡颜色'),
-                  subtitle: Text(
-                    '自己 / 对方，浅色 / 深色模式分别设置',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                  trailing: Icon(
-                    CupertinoIcons.chevron_right,
-                    size: 16,
-                    color: context.textSecondaryColor,
-                  ),
+                  subtitle: const Text('自己 / 对方，浅色 / 深色模式分别设置'),
+                  showChevron: true,
                   onTap: () =>
                       SettingsPickers.showBubbleColorDrawer(context, settings),
                 ),
             ],
           ),
-          // 消息通知：角色新消息（未读）发送系统通知
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: _sectionDecoration(context),
-            header: _sectionHeader(context, '通知'),
+          SettingsSection(
+            title: '通知',
             children: [
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.bell,
                 title: const Text('未读消息发送系统通知'),
-                subtitle: Text(
-                  settings.unreadNotify ? '离开聊天页时推送角色新消息' : '已关闭',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                subtitle: Text(settings.unreadNotify ? '离开聊天页时推送角色新消息' : '已关闭'),
                 trailing: CupertinoSwitch(
                   value: settings.unreadNotify,
-                  onChanged: (v) => settings.setUnreadNotify(v),
+                  onChanged: settings.setUnreadNotify,
                 ),
               ),
             ],
           ),
-          // 开发者模式：开启后在「我」页底部显示通知与日志文本框
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: _sectionDecoration(context),
-            header: _sectionHeader(context, '开发者'),
+          SettingsSection(
+            title: '开发者',
             children: [
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.wrench,
                 title: const Text('开发者模式'),
-                subtitle: Text(
-                  settings.developerMode
-                      ? '已开启，「我」页底部显示软件通知互动日志'
-                      : '已关闭，开启后可查看软件通知互动日志',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                subtitle: Text(settings.developerMode
+                    ? '已开启，「我」页底部显示软件通知互动日志'
+                    : '已关闭，开启后可查看软件通知互动日志'),
                 trailing: CupertinoSwitch(
                   value: settings.developerMode,
-                  onChanged: (v) => settings.setDeveloperMode(v),
+                  onChanged: settings.setDeveloperMode,
                 ),
               ),
               if (settings.developerMode) ...[
-                Container(
-                  height: 0.5,
-                  margin: const EdgeInsets.only(left: 16),
-                  color: context.separatorColor,
-                ),
-                CupertinoListTile(
-                  leading: Icon(
-                    CupertinoIcons.bolt,
-                    color: context.settingIconColor(SettingIconRole.developer),
-                  ),
+                SettingsRow(
+                  icon: CupertinoIcons.bolt,
                   title: const Text('快速测试自动发朋友圈'),
-                  subtitle: Text(
-                    '立即触发已启用角色的自动发帖，仅用于测试',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.4,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                  onTap: () => _quickTestAutoMoment(),
+                  subtitle: const Text('立即触发已启用角色的自动发帖，仅用于测试'),
+                  onTap: _quickTestAutoMoment,
                 ),
-                Container(
-                  height: 0.5,
-                  margin: const EdgeInsets.only(left: 16),
-                  color: context.separatorColor,
-                ),
-                CupertinoListTile(
-                  leading: Icon(
-                    CupertinoIcons.text_bubble,
-                    color: context.settingIconColor(SettingIconRole.developer),
-                  ),
+                SettingsRow(
+                  icon: CupertinoIcons.text_bubble,
                   title: const Text('立即触发角色主动问候'),
-                  subtitle: Text(
-                    '立即触发已启用角色的主动问候，仅用于测试',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.4,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                  onTap: () => _quickTestProactiveGreeting(),
+                  subtitle: const Text('立即触发已启用角色的主动问候，仅用于测试'),
+                  onTap: _quickTestProactiveGreeting,
                 ),
-                Container(
-                  height: 0.5,
-                  margin: const EdgeInsets.only(left: 16),
-                  color: context.separatorColor,
-                ),
-                CupertinoListTile(
-                  leading: Icon(
-                    CupertinoIcons.news,
-                    color: context.settingIconColor(SettingIconRole.developer),
-                  ),
+                SettingsRow(
+                  icon: CupertinoIcons.news,
                   title: const Text('快速触发角色仓库提醒'),
-                  subtitle: Text(
-                    '模拟一次仓库更新通知，用于测试弹窗效果',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.4,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                  onTap: () => _quickTestWorkshopNotify(),
+                  subtitle: const Text('模拟一次仓库更新通知，用于测试弹窗效果'),
+                  onTap: _quickTestWorkshopNotify,
                 ),
-                Container(
-                  height: 0.5,
-                  margin: const EdgeInsets.only(left: 16),
-                  color: context.separatorColor,
-                ),
-                CupertinoListTile(
-                  leading: Icon(
-                    CupertinoIcons.arrow_down_circle,
-                    color: context.settingIconColor(SettingIconRole.developer),
-                  ),
+                SettingsRow(
+                  icon: CupertinoIcons.arrow_down_circle,
                   title: const Text('触发 APP 更新弹窗'),
-                  subtitle: Text(
-                    '立即检测更新并显示更新弹窗',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.4,
-                      color: context.textSecondaryColor,
-                    ),
-                  ),
-                  onTap: () => _triggerAppUpdateDialog(),
+                  subtitle: const Text('立即检测更新并显示更新弹窗'),
+                  onTap: _triggerAppUpdateDialog,
                 ),
               ],
             ],
           ),
-          // 更新检测：启动时自动检测 + 更新代理地址
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: _sectionDecoration(context),
-            header: _sectionHeader(context, '更新'),
+          SettingsSection(
+            title: '更新',
             children: [
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.arrow_down_circle,
                 title: const Text('启动时自动检测更新'),
-                subtitle: Text(
-                  settings.autoCheckUpdate ? '已启用，启动时自动检测新版本' : '已关闭',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
+                subtitle:
+                    Text(settings.autoCheckUpdate ? '已启用，启动时自动检测新版本' : '已关闭'),
                 trailing: CupertinoSwitch(
                   value: settings.autoCheckUpdate,
-                  onChanged: (v) => settings.setAutoCheckUpdate(v),
+                  onChanged: settings.setAutoCheckUpdate,
                 ),
               ),
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.globe,
                 title: const Text('Gitee 更新仓库'),
-                subtitle: Text(
-                  settings.updateGiteeRepoUrl,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
+                subtitle: Text(settings.updateGiteeRepoUrl),
+                showChevron: true,
                 onTap: () =>
                     SettingsPickers.showGiteeRepoDialog(context, settings),
               ),
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.globe,
                 title: const Text('GitHub 更新仓库'),
-                subtitle: Text(
-                  settings.updateGitHubRepoUrl,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
+                subtitle: Text(settings.updateGitHubRepoUrl),
+                showChevron: true,
                 onTap: () =>
                     SettingsPickers.showGitHubRepoDialog(context, settings),
               ),
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.link,
                 title: const Text('GitHub 加速地址'),
-                subtitle: Text(
-                  _proxyDisplayText(settings.updateProxyUrl),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
+                subtitle: Text(_proxyDisplayText(settings.updateProxyUrl)),
+                showChevron: true,
                 onTap: () => SettingsPickers.showProxyPicker(context, settings),
               ),
             ],
           ),
-          // 记忆池：管理角色跨场景（私聊/群聊/朋友圈）的近期记忆拼接
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: _sectionDecoration(context),
-            header: _sectionHeader(context, 'AI 记忆'),
+          SettingsSection(
+            title: 'AI 记忆',
             children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.clock,
-                  color: context.settingIconColor(SettingIconRole.memory),
-                ),
+              SettingsRow(
+                icon: CupertinoIcons.clock,
                 title: const Text('记忆池管理'),
-                subtitle: Text(
-                  '管理角色跨场景记忆来源',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
+                subtitle: const Text('管理角色跨场景记忆来源'),
+                showChevron: true,
                 onTap: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => const MemoryPoolManagerScreen(),
-                  ),
-                ),
+                    context,
+                    CupertinoPageRoute(
+                        builder: (_) => const MemoryPoolManagerScreen())),
               ),
             ],
           ),
-          // 存储空间：管理应用自身占用（用户数据 + 软件缓存）
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: _sectionDecoration(context),
-            header: _sectionHeader(context, '存储'),
+          SettingsSection(
+            title: '存储',
             children: [
-              CupertinoListTile(
-                leading: Icon(
-                  CupertinoIcons.arrow_2_circlepath,
-                  color: context.settingIconColor(SettingIconRole.storage),
-                ),
+              SettingsRow(
+                icon: CupertinoIcons.arrow_2_circlepath,
                 title: const Text('数据备份'),
-                subtitle: Text(
-                  '导出或恢复全部聊天、角色与设置',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
-                onTap: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => const BackupScreen(),
-                  ),
-                ),
+                subtitle: const Text('导出或恢复全部聊天、角色与设置'),
+                showChevron: true,
+                onTap: () => Navigator.push(context,
+                    CupertinoPageRoute(builder: (_) => const BackupScreen())),
               ),
-              CupertinoListTile(
+              SettingsRow(
+                icon: CupertinoIcons.folder,
                 title: const Text('管理占用空间'),
-                subtitle: Text(
-                  '查看并清理用户数据与应用缓存',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                trailing: Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: context.textSecondaryColor,
-                ),
+                subtitle: const Text('查看并清理用户数据与应用缓存'),
+                showChevron: true,
                 onTap: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => const StorageManageScreen(),
-                  ),
-                ),
+                    context,
+                    CupertinoPageRoute(
+                        builder: (_) => const StorageManageScreen())),
               ),
             ],
           ),
-          const SizedBox(height: 24),
         ],
       ),
     );

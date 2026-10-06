@@ -9,6 +9,8 @@ import '../providers/chat_settings_provider.dart';
 import '../providers/group_chat_provider.dart';
 import '../services/memory_pool_builder.dart';
 import '../widgets/character_avatar.dart';
+import '../widgets/settings/settings_ui.dart';
+import '../config/ui_spec.dart';
 
 /// 记忆池管理页：查看与管理每个角色记忆池的拼接内容。
 ///
@@ -41,18 +43,16 @@ class _MemoryPoolManagerScreenState extends State<MemoryPoolManagerScreen> {
     final characters = characterProvider.manageableCharacters;
 
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(middle: Text('记忆池管理')),
+      navigationBar: settingsNavigationBar(context, '记忆池管理'),
+      backgroundColor: context.scaffoldColor,
       child: ListView(
-        padding: const EdgeInsets.only(top: 12, bottom: 24),
+        padding: const EdgeInsets.only(
+            top: UiSpec.settingsPageTop,
+            bottom: UiSpec.floatingContentBottomInset),
         children: [
           // 功能说明
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('说明'),
+          SettingsSection(
+            title: '说明',
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -70,13 +70,8 @@ class _MemoryPoolManagerScreenState extends State<MemoryPoolManagerScreen> {
             ],
           ),
           // 全局：朋友圈记忆条数
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('全局设置'),
+          SettingsSection(
+            title: '全局设置',
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -217,25 +212,13 @@ class _CharacterCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          CupertinoListTile(
+          SettingsRow(
             leading: CharacterAvatar(
               base64: character.avatar,
               size: 40,
             ),
-            title: Text(
-              character.displayName,
-              style: TextStyle(
-                fontSize: 16,
-                color: context.textPrimaryColor,
-              ),
-            ),
-            subtitle: Text(
-              expanded ? '点击收起详情' : '点击查看记忆池拼接内容',
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textSecondaryColor,
-              ),
-            ),
+            title: Text(character.displayName),
+            subtitle: Text(expanded ? '点击收起详情' : '点击查看记忆池拼接内容'),
             trailing: Icon(
               expanded
                   ? CupertinoIcons.chevron_up

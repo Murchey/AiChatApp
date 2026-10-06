@@ -6,6 +6,8 @@ import '../utils/app_toast.dart';
 import '../utils/file_picker_helper.dart';
 import '../utils/file_utils.dart';
 import '../widgets/splash_icon_view.dart';
+import '../widgets/settings/settings_ui.dart';
+import '../config/ui_spec.dart';
 import 'image_crop_screen.dart';
 
 /// 开屏图标设置页：预览当前开屏内容，
@@ -70,15 +72,13 @@ class SplashIconScreen extends StatelessWidget {
     final settings = context.watch<SettingsProvider>();
     final hasIcon = settings.hasSplashIcon;
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('开屏图标'),
-        automaticallyImplyLeading: true,
-        previousPageTitle: '设置',
-      ),
+      navigationBar: settingsNavigationBar(context, '开屏图标'),
+      backgroundColor: context.scaffoldColor,
       child: SafeArea(
         bottom: false,
         child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.only(
+              top: 16, bottom: UiSpec.floatingContentBottomInset),
           children: [
             // 预览区：手机屏幕比例的启动页预览
             Padding(
@@ -91,18 +91,11 @@ class SplashIconScreen extends StatelessWidget {
                 ),
               ),
             ),
-            CupertinoListSection.insetGrouped(
-              backgroundColor: context.scaffoldColor,
-              decoration: BoxDecoration(
-                color: context.listBgColor,
-                borderRadius: BorderRadius.circular(10),
-              ),
+            SettingsSection(
+              title: '图标',
               children: [
-                CupertinoListTile(
-                  leading: Icon(
-                    CupertinoIcons.photo,
-                    color: context.textSecondaryColor,
-                  ),
+                SettingsRow(
+                  icon: CupertinoIcons.photo,
                   title: const Text('选择图片'),
                   subtitle: Text(
                     '从相册 / 文件中选择一张图片作为开屏图标',
@@ -111,11 +104,7 @@ class SplashIconScreen extends StatelessWidget {
                       color: context.textSecondaryColor,
                     ),
                   ),
-                  trailing: Icon(
-                    CupertinoIcons.chevron_right,
-                    size: 16,
-                    color: context.textSecondaryColor,
-                  ),
+                  showChevron: true,
                   onTap: () => _pickImage(context, settings),
                 ),
                 if (hasIcon) ...[
@@ -124,11 +113,8 @@ class SplashIconScreen extends StatelessWidget {
                     margin: const EdgeInsets.only(left: 16),
                     color: context.separatorColor,
                   ),
-                  CupertinoListTile(
-                    leading: Icon(
-                      CupertinoIcons.arrow_counterclockwise,
-                      color: context.textSecondaryColor,
-                    ),
+                  SettingsRow(
+                    icon: CupertinoIcons.arrow_counterclockwise,
                     title: const Text('恢复默认'),
                     subtitle: Text(
                       '删除已导入的图片，恢复默认开屏内容',

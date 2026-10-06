@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../config/theme.dart';
 import '../services/cloud_backup_service.dart';
+import '../widgets/settings/settings_ui.dart';
 
 /// 对象储存设置页（腾讯云 COS / 阿里云 OSS）。
 ///
@@ -16,8 +17,7 @@ class BackupCloudSettingsScreen extends StatefulWidget {
       _BackupCloudSettingsScreenState();
 }
 
-class _BackupCloudSettingsScreenState
-    extends State<BackupCloudSettingsScreen> {
+class _BackupCloudSettingsScreenState extends State<BackupCloudSettingsScreen> {
   late final TextEditingController _secretId;
   late final TextEditingController _secretKey;
   late final TextEditingController _bucketUrl;
@@ -57,14 +57,16 @@ class _BackupCloudSettingsScreenState
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('对象储存设置'),
+      navigationBar: settingsNavigationBar(
+        context,
+        '对象储存设置',
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _save,
           child: const Text('保存'),
         ),
       ),
+      backgroundColor: context.scaffoldColor,
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),

@@ -4,6 +4,7 @@ import '../config/theme.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/chat_send_button.dart';
 import '../widgets/chat_title_bar.dart';
+import '../widgets/settings/settings_ui.dart';
 
 /// 会话 UI 样式选择页：顶部实时预览（会话上方的状态条 + 下方的输入框），
 /// 列表选择样式。
@@ -15,11 +16,8 @@ class UiStyleScreen extends StatelessWidget {
     final settingsProvider = context.watch<SettingsProvider>();
     final current = settingsProvider.uiStyle;
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('UI 样式'),
-        automaticallyImplyLeading: true,
-        previousPageTitle: '设置',
-      ),
+      navigationBar: settingsNavigationBar(context, 'UI 样式'),
+      backgroundColor: context.scaffoldColor,
       child: SafeArea(
         bottom: false,
         child: ListView(
@@ -27,16 +25,12 @@ class UiStyleScreen extends StatelessWidget {
           children: [
             // 实时预览区：会话上方状态条 + 下方输入栏，随所选样式渲染
             _PreviewArea(style: current),
-            CupertinoListSection.insetGrouped(
-              backgroundColor: context.scaffoldColor,
-              decoration: BoxDecoration(
-                color: context.listBgColor,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              header: const Text('选择样式'),
+            SettingsSection(
+              title: '选择样式',
               children: UiStyle.values.map((style) {
                 final selected = style == current;
-                return CupertinoListTile(
+                return SettingsRow(
+                  icon: CupertinoIcons.paintbrush,
                   title: Text(style.displayName),
                   trailing: selected
                       ? Icon(

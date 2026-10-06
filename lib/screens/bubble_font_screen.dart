@@ -8,6 +8,8 @@ import '../config/theme.dart';
 import '../providers/settings_provider.dart';
 import '../services/imported_font_storage.dart';
 import '../utils/app_toast.dart';
+import '../widgets/settings/settings_ui.dart';
+import '../config/ui_spec.dart';
 
 /// 管理本地 TTF 文件，并分别选择我方/对方聊天气泡字体。
 class BubbleFontScreen extends StatefulWidget {
@@ -68,7 +70,8 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
 
   Future<void> _selectFont(bool isUser) async {
     final settings = context.read<SettingsProvider>();
-    final current = isUser ? settings.selfBubbleFontName : settings.otherBubbleFontName;
+    final current =
+        isUser ? settings.selfBubbleFontName : settings.otherBubbleFontName;
     await showCupertinoModalPopup<void>(
       context: context,
       builder: (ctx) => CupertinoActionSheet(
@@ -112,7 +115,9 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
         title: const Text('删除字体'),
         content: Text('删除「${font.name}」？已使用该字体的气泡会恢复系统默认字体。'),
         actions: [
-          CupertinoDialogAction(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(ctx, true),
@@ -132,8 +137,9 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('气泡字体'),
+      navigationBar: settingsNavigationBar(
+        context,
+        '气泡字体',
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _importing ? null : _importFonts,
@@ -142,34 +148,45 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
               : const Icon(CupertinoIcons.add_circled),
         ),
       ),
+      backgroundColor: context.scaffoldColor,
       child: SafeArea(
         child: _loading
             ? const Center(child: CupertinoActivityIndicator())
             : ListView(
+                padding: const EdgeInsets.only(
+                    bottom: UiSpec.floatingContentBottomInset),
                 children: [
-                  CupertinoListSection.insetGrouped(
-                    backgroundColor: context.scaffoldColor,
-                    header: const Text('显示设置'),
+                  SettingsSection(
+                    title: '显示设置',
                     children: [
                       _fontTile('我方气泡字体', settings.selfBubbleFontName, true),
                       _fontTile('对方气泡字体', settings.otherBubbleFontName, false),
                     ],
                   ),
-                  CupertinoListSection.insetGrouped(
-                    backgroundColor: context.scaffoldColor,
-                    header: Text('已导入字体（${_fonts.length}）'),
+                  SettingsSection(
+                    title: '已导入字体（${_fonts.length}）',
                     footer: const Text('仅保存 TTF 字体文件。删除后会同步解除气泡字体引用。'),
                     children: _fonts.isEmpty
-                        ? const [CupertinoListTile(title: Text('暂无字体'), subtitle: Text('点击右上角 + 导入 TTF 文件'))]
+                        ? [
+                            const SettingsRow(
+                                icon: CupertinoIcons.info,
+                                title: Text('暂无字体'),
+                                subtitle: Text('点击右上角 + 导入 TTF 文件'))
+                          ]
                         : [
                             for (final font in _fonts)
-                              CupertinoListTile(
-                                title: Text(font.name, style: TextStyle(fontFamily: font.family)),
-                                subtitle: Text('${_formatBytes(font.sizeBytes)} · TTF'),
+                              SettingsRow(
+                                icon: CupertinoIcons.textformat,
+                                title: Text(font.name,
+                                    style: TextStyle(fontFamily: font.family)),
+                                subtitle: Text(
+                                    '${_formatBytes(font.sizeBytes)} · TTF'),
                                 trailing: CupertinoButton(
                                   padding: EdgeInsets.zero,
                                   onPressed: () => _deleteFont(font),
-                                  child: const Icon(CupertinoIcons.trash, color: CupertinoColors.systemRed, size: 20),
+                                  child: const Icon(CupertinoIcons.trash,
+                                      color: CupertinoColors.systemRed,
+                                      size: 20),
                                 ),
                               ),
                           ],
@@ -180,11 +197,12 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
     );
   }
 
-  Widget _fontTile(String title, String name, bool isUser) => CupertinoListTile(
+  Widget _fontTile(String title, String name, bool isUser) => SettingsRow(
+        icon: CupertinoIcons.textformat,
         title: Text(title),
         subtitle: const Text('聊天正文单独设置，不影响界面文字'),
-        additionalInfo: Text(name.isEmpty ? '系统默认' : name),
-        trailing: Icon(CupertinoIcons.chevron_right, size: 16, color: context.textSecondaryColor),
+        trailing: settingsValueText(context, name.isEmpty ? '系统默认' : name),
+        showChevron: true,
         onTap: _fonts.isEmpty ? null : () => _selectFont(isUser),
       );
 
