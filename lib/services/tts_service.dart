@@ -20,6 +20,19 @@ class TtsService {
   static TtsProtocol? protocolFor(ApiModel model) {
     final base = model.baseUrl.toLowerCase();
     final name = model.modelName.trim().toLowerCase();
+    final override = model.ttsProtocol.trim().toLowerCase();
+    switch (override) {
+      case 'none':
+        return null;
+      case 'openai':
+        return TtsProtocol.openAi;
+      case 'mimo':
+        return TtsProtocol.mimo;
+      case 'minimax':
+        return TtsProtocol.minimax;
+      case 'qwen':
+        return TtsProtocol.qwen;
+    }
     final isTtsModel = name.contains('tts') ||
         name.startsWith('speech-') ||
         name.contains('minimax-speech');
@@ -28,10 +41,13 @@ class TtsService {
     if (base.contains('xiaomimimo.com')) {
       return TtsProtocol.mimo;
     }
-    if (base.contains('minimax.cn') || base.contains('minimaxi.com')) {
+    if (base.contains('minimax.cn') ||
+        base.contains('minimaxi.com') ||
+        base.contains('minimax.io')) {
       return TtsProtocol.minimax;
     }
     if (base.contains('dashscope.aliyuncs.com') ||
+        base.contains('dashscope-intl.aliyuncs.com') ||
         base.contains('qianwenaiapi.com')) {
       return TtsProtocol.qwen;
     }
@@ -39,6 +55,39 @@ class TtsService {
   }
 
   static bool isSupportedModel(ApiModel model) => protocolFor(model) != null;
+
+  /// 返回模型可用于普通朗读、音色设计和声音克隆的能力集合。
+  /// 显式能力用于代理模型；未设置时沿用旧版模型名称推断。
+  static Set<String> capabilitiesFor(ApiModel model) {
+    final protocol = protocolFor(model);
+    if (protocol == null) return const <String>{};
+    final explicit = model.ttsCapabilities.toSet();
+    if (explicit.isNotEmpty) {
+      final result = <String>{
+        if (explicit.contains(TtsCapabilities.speech)) TtsCapabilities.speech,
+        if (explicit.contains(TtsCapabilities.design) &&
+            protocol == TtsProtocol.mimo)
+          TtsCapabilities.design,
+        if (explicit.contains(TtsCapabilities.clone) &&
+            protocol == TtsProtocol.mimo)
+          TtsCapabilities.clone,
+      };
+      return result;
+    }
+
+    final name = model.modelName.toLowerCase();
+    final result = <String>{TtsCapabilities.speech};
+    if (protocol == TtsProtocol.mimo && name.contains('voicedesign')) {
+      result.add(TtsCapabilities.design);
+    }
+    if (protocol == TtsProtocol.mimo && name.contains('voiceclone')) {
+      result.add(TtsCapabilities.clone);
+    }
+    return result;
+  }
+
+  static bool supportsCapability(ApiModel model, String capability) =>
+      capabilitiesFor(model).contains(capability);
 
   static String speechEndpoint(String baseUrl) {
     var value = baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
@@ -103,8 +152,11 @@ class TtsService {
           if (style.isNotEmpty && supportsInstructions) 'instructions': style,
         };
       case TtsProtocol.mimo:
-        final isVoiceDesign =
-            model.modelName.toLowerCase().contains('voicedesign');
+        // Data URI 明确表示声音克隆样本；即使模型同时声明了 design 能力，
+        // 也必须保留 voice 字段，避免把克隆请求误发成音色设计请求。
+        final isVoiceClone = voiceId.startsWith('data:');
+        final isVoiceDesign = !isVoiceClone &&
+            capabilitiesFor(model).contains(TtsCapabilities.design);
         return {
           'model': model.modelName.trim(),
           'messages': [
@@ -165,6 +217,10 @@ class TtsService {
     final protocol = protocolFor(model);
     if (protocol == null) {
       throw const TtsException('当前配置不是已支持的 TTS 模型，请检查模型名称与 API 地址。');
+    }
+    if (voice.trim().startsWith('data:') &&
+        !supportsCapability(model, TtsCapabilities.clone)) {
+      throw const TtsException('当前语音模型不支持声音克隆，请选择支持克隆的 MiMo 模型。');
     }
 
     final client = HttpClient();

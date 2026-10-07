@@ -176,6 +176,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       groupValue: voiceType,
                       children: const {
                         'preset': Text('语音提示词'),
+                        'design': Text('音色设计'),
                         'clone': Text('音频克隆'),
                       },
                       onValueChanged: (v) {

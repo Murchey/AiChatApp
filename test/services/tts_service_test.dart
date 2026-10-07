@@ -73,6 +73,47 @@ void main() {
     );
   });
 
+  test('manual protocol and capabilities expose proxy voice models', () {
+    const proxy = ApiModel(
+      id: 'proxy-voice',
+      displayName: '代理音频',
+      modelName: 'custom-voice-model',
+      baseUrl: 'https://proxy.example.com/v1',
+      ttsProtocol: 'mimo',
+      ttsCapabilities: [
+        TtsCapabilities.speech,
+        TtsCapabilities.design,
+        TtsCapabilities.clone,
+      ],
+    );
+    expect(TtsService.protocolFor(proxy), TtsProtocol.mimo);
+    expect(
+        TtsService.supportsCapability(proxy, TtsCapabilities.speech), isTrue);
+    expect(
+        TtsService.supportsCapability(proxy, TtsCapabilities.design), isTrue);
+    expect(TtsService.supportsCapability(proxy, TtsCapabilities.clone), isTrue);
+    final restored = ApiModel.fromJson(proxy.toJson());
+    expect(restored.ttsProtocol, 'mimo');
+    expect(
+        restored.ttsCapabilities,
+        containsAll([
+          TtsCapabilities.speech,
+          TtsCapabilities.design,
+          TtsCapabilities.clone
+        ]));
+  });
+
+  test('disabled protocol is not offered as a voice model', () {
+    const disabled = ApiModel(
+      id: 'disabled',
+      displayName: 'Disabled',
+      modelName: 'tts-custom',
+      ttsProtocol: 'none',
+    );
+    expect(TtsService.protocolFor(disabled), isNull);
+    expect(TtsService.capabilitiesFor(disabled), isEmpty);
+  });
+
   test('builds OpenAI audio speech request body', () {
     expect(
       TtsService.requestBody(
@@ -127,6 +168,24 @@ void main() {
         'audio': {'format': 'wav', 'voice': '冰糖'},
       },
     );
+  });
+
+  test('MiMo clone data keeps the sample voice field for models with both capabilities', () {
+    const model = ApiModel(
+      id: 'mimo-all',
+      displayName: 'MiMo all',
+      modelName: 'mimo-v2.5-voiceclone',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
+      ttsCapabilities: [TtsCapabilities.speech, TtsCapabilities.design, TtsCapabilities.clone],
+    );
+    final body = TtsService.requestBody(
+      protocol: TtsProtocol.mimo,
+      model: model,
+      text: '你好',
+      voice: 'data:audio/mpeg;base64,AAAA',
+    );
+    expect((body['audio'] as Map<String, dynamic>)['voice'], startsWith('data:'));
+    expect(body['audio'], isNot(contains('optimize_text_preview')));
   });
 
   test('builds MiniMax synchronous T2A request body', () {

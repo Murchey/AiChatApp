@@ -172,6 +172,38 @@ class CharacterPackService {
       }
     }
 
+    // 角色包中的声音样本保存为相对 voice/ 路径；导入后复制到应用文档目录，
+    // voiceSampleFile 保留可再次打包的相对路径，voiceTemplatePath 指向本地文件。
+    final voice = data['voice'] as Map<String, dynamic>?;
+    var voiceSampleFile =
+        voice?['sample_file'] as String? ?? str('voice_sample_file');
+    var voiceTemplatePath = '';
+    final sampleRelative =
+        voiceSampleFile.replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
+    if (sampleRelative.isNotEmpty) {
+      ArchiveFile? sample;
+      for (final f in files) {
+        final normalized = f.name.replaceAll('\\', '/');
+        if (normalized == '$dir/$sampleRelative' ||
+            normalized.endsWith('/$sampleRelative')) {
+          sample = f;
+          break;
+        }
+      }
+      if (sample != null) {
+        final docs = await getApplicationDocumentsDirectory();
+        final name = sampleRelative.split('/').last;
+        final destination = File(
+          '${docs.path}/voice/import_${DateTime.now().microsecondsSinceEpoch}_$name',
+        );
+        await destination.parent.create(recursive: true);
+        await destination.writeAsBytes(sample.content as List<int>,
+            flush: true);
+        voiceTemplatePath = destination.path;
+        voiceSampleFile = 'voice/$name';
+      }
+    }
+
     final character = Character(
       id: 'import_${DateTime.now().microsecondsSinceEpoch}',
       name: str('name', dir.split('/').last),
@@ -193,12 +225,9 @@ class CharacterPackService {
           str('voice_instructions'),
       voiceType: (data['voice'] as Map<String, dynamic>?)?['type'] as String? ??
           'preset',
-      voiceSampleFile:
-          (data['voice'] as Map<String, dynamic>?)?['sample_file'] as String? ??
-              '',
-      voiceMimeType:
-          (data['voice'] as Map<String, dynamic>?)?['mime_type'] as String? ??
-              '',
+      voiceSampleFile: voiceSampleFile,
+      voiceTemplatePath: voiceTemplatePath,
+      voiceMimeType: voice?['mime_type'] as String? ?? str('voice_mime_type'),
       activeStart: str('active_start'),
       activeEnd: str('active_end'),
       modelId: str('model_id'),
@@ -410,6 +439,28 @@ class CharacterPackService {
     final archive = Archive();
     for (final c in characters) {
       final folder = 'Sample1/${c.displayName}';
+      String? packagedVoicePath;
+      if (c.voiceSampleFile.isNotEmpty || c.voiceTemplatePath.isNotEmpty) {
+        final candidate = c.voiceTemplatePath.isNotEmpty
+            ? c.voiceTemplatePath
+            : c.voiceSampleFile;
+        var sample = File(candidate);
+        if (!await sample.exists() && !candidate.contains(':')) {
+          final docs = await getApplicationDocumentsDirectory();
+          sample = File(
+              '${docs.path}/${candidate.replaceFirst(RegExp(r'^[/\\]+'), '')}');
+        }
+        if (await sample.exists()) {
+          final name = candidate.split(RegExp(r'[/\\]')).last;
+          if (name.isNotEmpty) {
+            packagedVoicePath = 'voice/$name';
+            archive.addFile(ArchiveFile.bytes(
+              '$folder/$packagedVoicePath',
+              await sample.readAsBytes(),
+            ));
+          }
+        }
+      }
       final data = <String, dynamic>{
         'name': c.name,
         'location': c.region,
@@ -428,7 +479,7 @@ class CharacterPackService {
             if (c.voiceInstructions.isNotEmpty)
               'instructions': c.voiceInstructions,
             if (c.voiceType != 'preset') 'type': c.voiceType,
-            if (c.voiceSampleFile.isNotEmpty) 'sample_file': c.voiceSampleFile,
+            if (packagedVoicePath != null) 'sample_file': packagedVoicePath,
             if (c.voiceMimeType.isNotEmpty) 'mime_type': c.voiceMimeType,
           },
         'tags': c.tags,

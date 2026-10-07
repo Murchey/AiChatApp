@@ -109,8 +109,7 @@ class CharacterProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final stored = await LocalDataStore.loadCharactersJson();
     final deletedIds = await LocalDataStore.loadDeletedDefaultIds();
-    final visibilityGroupsStr =
-        await LocalDataStore.loadVisibilityGroupsJson();
+    final visibilityGroupsStr = await LocalDataStore.loadVisibilityGroupsJson();
     final raw = _CharacterRawStore(
       stored: stored,
       deletedIds: deletedIds,
@@ -211,6 +210,7 @@ class CharacterProvider extends ChangeNotifier {
     String? voiceSampleFile,
     String? voiceTemplatePath,
     String? voiceMimeType,
+    bool clearVoice = false,
     String? activeStart,
     String? activeEnd,
   }) async {
@@ -222,12 +222,12 @@ class CharacterProvider extends ChangeNotifier {
       signature: signature,
       region: region,
       userRelationship: userRelationship,
-      voiceId: voiceId,
-      voiceInstructions: voiceInstructions,
-      voiceType: voiceType,
-      voiceSampleFile: voiceSampleFile,
-      voiceTemplatePath: voiceTemplatePath,
-      voiceMimeType: voiceMimeType,
+      voiceId: clearVoice ? '' : voiceId,
+      voiceInstructions: clearVoice ? '' : voiceInstructions,
+      voiceType: clearVoice ? 'preset' : voiceType,
+      voiceSampleFile: clearVoice ? '' : voiceSampleFile,
+      voiceTemplatePath: clearVoice ? '' : voiceTemplatePath,
+      voiceMimeType: clearVoice ? '' : voiceMimeType,
       activeStart: activeStart,
       activeEnd: activeEnd,
     );

@@ -4,6 +4,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../services/llm_service.dart';
 
+/// 用户对模型语音协议的显式声明。auto 保持旧版本的名称/地址推断行为。
+enum TtsProtocolSetting { auto, none, openai, mimo, minimax, qwen }
+
+/// 模型可用于声音相关功能的能力标识。
+class TtsCapabilities {
+  static const speech = 'speech';
+  static const design = 'design';
+  static const clone = 'clone';
+  static const all = {speech, design, clone};
+}
+
 /// API 模型配置
 class ApiModel {
   final String id;
@@ -12,6 +23,11 @@ class ApiModel {
   final String baseUrl; // API 请求地址
   final String apiKey; // API Key
   final int contextLength; // 模型上下文长度（token），用于会话压缩 70% 阈值
+  /// 语音协议覆盖：auto / none / openai / mimo / minimax / qwen。
+  final String ttsProtocol;
+
+  /// 显式能力列表；为空时由 TtsService 根据模型自动推断。
+  final List<String> ttsCapabilities;
 
   const ApiModel({
     required this.id,
@@ -20,6 +36,8 @@ class ApiModel {
     this.baseUrl = '',
     this.apiKey = '',
     this.contextLength = 8000,
+    this.ttsProtocol = 'auto',
+    this.ttsCapabilities = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -29,6 +47,8 @@ class ApiModel {
         'base_url': baseUrl,
         'api_key': apiKey,
         'context_length': contextLength,
+        if (ttsProtocol != 'auto') 'tts_protocol': ttsProtocol,
+        if (ttsCapabilities.isNotEmpty) 'tts_capabilities': ttsCapabilities,
       };
 
   factory ApiModel.fromJson(Map<String, dynamic> json) => ApiModel(
@@ -38,7 +58,26 @@ class ApiModel {
         baseUrl: json['base_url'] as String? ?? '',
         apiKey: json['api_key'] as String? ?? '',
         contextLength: json['context_length'] as int? ?? 8000,
+        ttsProtocol: _validTtsProtocol(json['tts_protocol'] as String?),
+        ttsCapabilities: _readTtsCapabilities(json['tts_capabilities']),
       );
+
+  static String _validTtsProtocol(String? value) {
+    const allowed = {'auto', 'none', 'openai', 'mimo', 'minimax', 'qwen'};
+    final normalized = value?.trim().toLowerCase();
+    return normalized != null && allowed.contains(normalized)
+        ? normalized
+        : 'auto';
+  }
+
+  static List<String> _readTtsCapabilities(Object? value) {
+    if (value is! List) return const [];
+    return value
+        .map((item) => item.toString().trim().toLowerCase())
+        .where(TtsCapabilities.all.contains)
+        .toSet()
+        .toList(growable: false);
+  }
 
   ApiModel copyWith({
     String? displayName,
@@ -46,6 +85,8 @@ class ApiModel {
     String? baseUrl,
     String? apiKey,
     int? contextLength,
+    String? ttsProtocol,
+    List<String>? ttsCapabilities,
   }) {
     return ApiModel(
       id: id,
@@ -54,6 +95,8 @@ class ApiModel {
       baseUrl: baseUrl ?? this.baseUrl,
       apiKey: apiKey ?? this.apiKey,
       contextLength: contextLength ?? this.contextLength,
+      ttsProtocol: ttsProtocol ?? this.ttsProtocol,
+      ttsCapabilities: ttsCapabilities ?? this.ttsCapabilities,
     );
   }
 }
@@ -64,11 +107,15 @@ class ApiProvider extends ChangeNotifier {
   static const _compressModelKey = 'api_compress_model';
   static const _momentModelKey = 'api_moment_model';
   static const _ttsModelKey = 'api_tts_model';
+  static const _ttsDesignModelKey = 'api_tts_design_model';
+  static const _ttsCloneModelKey = 'api_tts_clone_model';
   static const _visionKey = 'model_vision_v1'; // 模型 id → 是否支持图片（视觉）
   List<ApiModel> _models = [];
   String? _compressionModelId; // 会话压缩专用模型（null 表示跟随聊天模型）
   String? _momentModelId; // 朋友圈互动（读取点赞/评论）专用模型（null 表示未设置）
   String? _ttsModelId; // 语音合成专用模型（null 表示未设置）
+  String? _ttsDesignModelId; // 音色设计专用模型
+  String? _ttsCloneModelId; // 声音克隆专用模型
   final Map<String, bool> _visionSupport = {}; // 模型图片能力检测结果缓存
 
   List<ApiModel> get models => List.unmodifiable(_models);
@@ -78,6 +125,10 @@ class ApiProvider extends ChangeNotifier {
   String? get momentModelId => _momentModelId;
 
   String? get ttsModelId => _ttsModelId;
+
+  String? get ttsDesignModelId => _ttsDesignModelId;
+
+  String? get ttsCloneModelId => _ttsCloneModelId;
 
   ApiModel? getModelById(String? id) {
     if (id == null) return null;
@@ -133,6 +184,8 @@ class ApiProvider extends ChangeNotifier {
     _compressionModelId = prefs.getString(_compressModelKey);
     _momentModelId = prefs.getString(_momentModelKey);
     _ttsModelId = prefs.getString(_ttsModelKey);
+    _ttsDesignModelId = prefs.getString(_ttsDesignModelKey);
+    _ttsCloneModelId = prefs.getString(_ttsCloneModelKey);
     // 加载图片能力检测结果缓存
     _visionSupport.clear();
     try {
@@ -181,6 +234,28 @@ class ApiProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> setTtsDesignModel(String? modelId) async {
+    _ttsDesignModelId = modelId;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (modelId == null) {
+      await prefs.remove(_ttsDesignModelKey);
+    } else {
+      await prefs.setString(_ttsDesignModelKey, modelId);
+    }
+  }
+
+  Future<void> setTtsCloneModel(String? modelId) async {
+    _ttsCloneModelId = modelId;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (modelId == null) {
+      await prefs.remove(_ttsCloneModelKey);
+    } else {
+      await prefs.setString(_ttsCloneModelKey, modelId);
+    }
+  }
+
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
@@ -195,6 +270,8 @@ class ApiProvider extends ChangeNotifier {
     String baseUrl = '',
     String apiKey = '',
     int contextLength = 8000,
+    String ttsProtocol = 'auto',
+    List<String> ttsCapabilities = const [],
   }) async {
     final model = ApiModel(
       id: const Uuid().v4(),
@@ -203,6 +280,8 @@ class ApiProvider extends ChangeNotifier {
       baseUrl: baseUrl.trim(),
       apiKey: apiKey.trim(),
       contextLength: contextLength,
+      ttsProtocol: ttsProtocol,
+      ttsCapabilities: ttsCapabilities,
     );
     _models.add(model);
     notifyListeners();
@@ -225,6 +304,8 @@ class ApiProvider extends ChangeNotifier {
     if (_compressionModelId == id) _compressionModelId = null;
     if (_momentModelId == id) _momentModelId = null;
     if (_ttsModelId == id) _ttsModelId = null;
+    if (_ttsDesignModelId == id) _ttsDesignModelId = null;
+    if (_ttsCloneModelId == id) _ttsCloneModelId = null;
     notifyListeners();
     await _persist();
     await _persistVision();
@@ -268,6 +349,16 @@ class ApiProvider extends ChangeNotifier {
       await prefs.remove(_ttsModelKey);
     } else {
       await prefs.setString(_ttsModelKey, _ttsModelId!);
+    }
+    if (_ttsDesignModelId == null) {
+      await prefs.remove(_ttsDesignModelKey);
+    } else {
+      await prefs.setString(_ttsDesignModelKey, _ttsDesignModelId!);
+    }
+    if (_ttsCloneModelId == null) {
+      await prefs.remove(_ttsCloneModelKey);
+    } else {
+      await prefs.setString(_ttsCloneModelKey, _ttsCloneModelId!);
     }
   }
 }

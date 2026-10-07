@@ -41,6 +41,8 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   late final TextEditingController _apiKeyController;
   late final TextEditingController _contextController;
   bool _detecting = false; // 上下文长度自动检测中
+  String _ttsProtocol = 'auto';
+  String _ttsCapabilityPreset = 'auto';
 
   bool get _isEdit => widget.model != null;
 
@@ -58,6 +60,46 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     _contextController = TextEditingController(
       text: (widget.model?.contextLength ?? 8000).toString(),
     );
+    _ttsProtocol = widget.model?.ttsProtocol ?? 'auto';
+    _ttsCapabilityPreset = _capabilityPreset(
+      widget.model?.ttsCapabilities ?? const [],
+    );
+  }
+
+  String _capabilityPreset(List<String> capabilities) {
+    final values = capabilities.toSet();
+    if (values.isEmpty) return 'auto';
+    if (values.contains('speech') &&
+        values.contains('design') &&
+        values.contains('clone')) {
+      return 'all';
+    }
+    if (values.contains('design')) return 'design';
+    if (values.contains('clone')) return 'clone';
+    if (values.contains('speech')) return 'speech';
+    return 'none';
+  }
+
+  List<String> _capabilitiesForSave() {
+    switch (_ttsCapabilityPreset) {
+      case 'speech':
+        return const [TtsCapabilities.speech];
+      case 'design':
+        return const [TtsCapabilities.speech, TtsCapabilities.design];
+      case 'clone':
+        return const [TtsCapabilities.speech, TtsCapabilities.clone];
+      case 'all':
+        return const [
+          TtsCapabilities.speech,
+          TtsCapabilities.design,
+          TtsCapabilities.clone,
+        ];
+      case 'none':
+        return const [];
+      case 'auto':
+      default:
+        return const [];
+    }
   }
 
   @override
@@ -105,6 +147,10 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     }
     final parsedContext = int.tryParse(contextText) ?? 8000;
     final contextLength = parsedContext.clamp(1000, 1000000);
+    // “不用于工作台”需要真正禁用语音协议；否则空能力列表会回退到旧版
+    // 的模型名称自动推断，代理模型可能又出现在选择器中。
+    final protocolForSave =
+        _ttsCapabilityPreset == 'none' ? 'none' : _ttsProtocol;
     if (_isEdit) {
       await api.updateModel(widget.model!.copyWith(
         displayName: displayName,
@@ -112,6 +158,8 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
         baseUrl: _baseUrlController.text.trim(),
         apiKey: _apiKeyController.text.trim(),
         contextLength: contextLength,
+        ttsProtocol: protocolForSave,
+        ttsCapabilities: _capabilitiesForSave(),
       ));
       if (mounted) Navigator.pop(context);
     } else {
@@ -121,6 +169,8 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
         baseUrl: _baseUrlController.text.trim(),
         apiKey: _apiKeyController.text.trim(),
         contextLength: contextLength,
+        ttsProtocol: protocolForSave,
+        ttsCapabilities: _capabilitiesForSave(),
       );
       // 首个（或唯一）模型添加后自动选为聊天模型，免去手动设置
       if (mounted) {
@@ -203,6 +253,24 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     );
   }
 
+  String _ttsProtocolLabel(String value) => switch (value) {
+        'none' => '不作为语音模型',
+        'openai' => 'OpenAI 兼容',
+        'mimo' => '小米 MiMo',
+        'minimax' => 'MiniMax',
+        'qwen' => '阿里云 Qwen',
+        _ => '自动识别',
+      };
+
+  String _ttsCapabilityLabel(String value) => switch (value) {
+        'none' => '不用于工作台',
+        'speech' => '普通朗读',
+        'design' => '朗读 + 音色设计',
+        'clone' => '朗读 + 声音克隆',
+        'all' => '朗读 + 设计 + 克隆',
+        _ => '自动识别',
+      };
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
@@ -271,6 +339,72 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                 placeholder:
                     '输入你的 API Key（DeepSeek 在 platform.deepseek.com 申请）',
                 obscureText: true,
+              ),
+            ],
+          ),
+          SettingsSection(
+            title: '语音能力',
+            children: [
+              SettingsInlinePicker<String>(
+                value: _ttsProtocol,
+                options: [
+                  for (final value in const [
+                    'auto',
+                    'none',
+                    'openai',
+                    'mimo',
+                    'minimax',
+                    'qwen',
+                  ])
+                    SettingsChoiceOption(
+                      value: value,
+                      label: _ttsProtocolLabel(value),
+                    ),
+                ],
+                onChanged: (value) => setState(() => _ttsProtocol = value),
+                panelKey: 'model-edit-tts-protocol',
+                rowBuilder: (context, toggle) => SettingsRow(
+                  icon: CupertinoIcons.waveform,
+                  title: const Text('语音协议'),
+                  subtitle: const Text('代理或自定义模型可手动指定协议'),
+                  trailing: settingsValueText(
+                    context,
+                    _ttsProtocolLabel(_ttsProtocol),
+                  ),
+                  showChevron: true,
+                  onTap: toggle,
+                ),
+              ),
+              SettingsInlinePicker<String>(
+                value: _ttsCapabilityPreset,
+                options: [
+                  for (final value in const [
+                    'auto',
+                    'none',
+                    'speech',
+                    'design',
+                    'clone',
+                    'all',
+                  ])
+                    SettingsChoiceOption(
+                      value: value,
+                      label: _ttsCapabilityLabel(value),
+                    ),
+                ],
+                onChanged: (value) =>
+                    setState(() => _ttsCapabilityPreset = value),
+                panelKey: 'model-edit-tts-capabilities',
+                rowBuilder: (context, toggle) => SettingsRow(
+                  icon: CupertinoIcons.slider_horizontal_3,
+                  title: const Text('工作台能力'),
+                  subtitle: const Text('控制模型是否出现在设计和克隆选项中'),
+                  trailing: settingsValueText(
+                    context,
+                    _ttsCapabilityLabel(_ttsCapabilityPreset),
+                  ),
+                  showChevron: true,
+                  onTap: toggle,
+                ),
               ),
             ],
           ),
