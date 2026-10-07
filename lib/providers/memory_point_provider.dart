@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/memory_point.dart';
+import '../models/story_package.dart';
 
 /// 角色的持久化记忆点管理：每个角色独立一组记忆点，按角色 id 分 key 持久化。
 ///
@@ -9,8 +10,10 @@ import '../models/memory_point.dart';
 /// 长按聊天气泡进入多选可批量添加，会话详情「提示词设置」下方可管理。
 class MemoryPointProvider extends ChangeNotifier {
   static const _prefix = 'memory_points_v1_';
+  static const _storyInstallationsKey = 'story_installations_v1';
 
   final Map<String, List<MemoryPoint>> _pointsByCharacter = {};
+  final Map<String, List<InstalledStory>> _installationsByCharacter = {};
   bool _loaded = false;
 
   /// 某个角色的全部记忆点（按创建时间倒序，最新的在前）
@@ -19,6 +22,9 @@ class MemoryPointProvider extends ChangeNotifier {
 
   /// 全部已启用记忆点的角色 id
   Iterable<String> get characterIds => _pointsByCharacter.keys;
+
+  List<InstalledStory> installedStoriesFor(String characterId) =>
+      List.unmodifiable(_installationsByCharacter[characterId] ?? const []);
 
   bool get loaded => _loaded;
 
@@ -31,6 +37,7 @@ class MemoryPointProvider extends ChangeNotifier {
   Future<void> reload() async {
     _loaded = true;
     _pointsByCharacter.clear();
+    _installationsByCharacter.clear();
     final prefs = await SharedPreferences.getInstance();
     final keys = prefs.getKeys().where((k) => k.startsWith(_prefix)).toList();
     for (final key in keys) {
@@ -44,6 +51,24 @@ class MemoryPointProvider extends ChangeNotifier {
         if (list.isNotEmpty) _pointsByCharacter[characterId] = list;
       } catch (e) {
         debugPrint('[MemoryPoint] 解析失败 $characterId: $e');
+      }
+    }
+    final installationRaw = prefs.getString(_storyInstallationsKey);
+    if (installationRaw != null && installationRaw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(installationRaw) as Map;
+        for (final entry in decoded.entries) {
+          final list = (entry.value as List<dynamic>)
+              .whereType<Map>()
+              .map((value) =>
+                  InstalledStory.fromJson(value.cast<String, dynamic>()))
+              .toList();
+          if (list.isNotEmpty) {
+            _installationsByCharacter[entry.key.toString()] = list;
+          }
+        }
+      } catch (e) {
+        debugPrint('[MemoryPoint] 故事安装记录解析失败: $e');
       }
     }
     notifyListeners();
@@ -77,7 +102,16 @@ class MemoryPointProvider extends ChangeNotifier {
     for (final p in points) {
       final content = p.content.trim();
       if (content.isEmpty || !seen.add(content)) continue;
-      clean.add(MemoryPoint(content: content, createdAt: p.createdAt));
+      clean.add(MemoryPoint(
+        id: p.id,
+        content: content,
+        createdAt: p.createdAt,
+        sourceType: p.sourceType,
+        sourceId: p.sourceId,
+        sourceVersion: p.sourceVersion,
+        sourceTitle: p.sourceTitle,
+        chapterId: p.chapterId,
+      ));
     }
     if (clean.isEmpty) {
       _pointsByCharacter.remove(characterId);
@@ -117,6 +151,65 @@ class MemoryPointProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 安装或更新一条故事线：仅替换同一 storyId 产生的记忆，不碰普通记忆。
+  Future<void> installStory(String characterId, StoryPackage story) async {
+    final existing = _pointsByCharacter[characterId] ?? <MemoryPoint>[];
+    final retained = existing
+        .where((point) =>
+            point.sourceType != 'story' || point.sourceId != story.storyId)
+        .toList();
+    final storyPoints = <MemoryPoint>[];
+    for (final chapter in story.chapters) {
+      for (final memory in chapter.memories) {
+        final content = memory.content.trim();
+        if (content.isEmpty) continue;
+        storyPoints.add(MemoryPoint(
+          content: content,
+          sourceType: 'story',
+          sourceId: story.storyId,
+          sourceVersion: story.version,
+          sourceTitle: story.title,
+          chapterId: chapter.id,
+        ));
+      }
+    }
+    _pointsByCharacter[characterId] = [...storyPoints, ...retained];
+    final installed = List<InstalledStory>.from(
+      _installationsByCharacter[characterId] ?? const [],
+    )..removeWhere((item) => item.storyId == story.storyId);
+    installed.add(InstalledStory(
+      storyId: story.storyId,
+      title: story.title,
+      version: story.version,
+      characterId: characterId,
+    ));
+    _installationsByCharacter[characterId] = installed;
+    await _persist(characterId);
+    await _persistInstallations();
+    notifyListeners();
+  }
+
+  Future<void> removeStory(String characterId, String storyId) async {
+    final points = _pointsByCharacter[characterId];
+    if (points != null) {
+      points.removeWhere(
+          (point) => point.sourceType == 'story' && point.sourceId == storyId);
+      if (points.isEmpty) _pointsByCharacter.remove(characterId);
+      await _persist(characterId);
+    }
+    final installations = _installationsByCharacter[characterId];
+    installations?.removeWhere((item) => item.storyId == storyId);
+    if (installations != null && installations.isEmpty) {
+      _installationsByCharacter.remove(characterId);
+    }
+    await _persistInstallations();
+    notifyListeners();
+  }
+
+  List<MemoryPoint> storyPointsFor(String characterId) => pointsFor(characterId)
+      .where((point) => point.sourceType == 'story')
+      .toList(growable: false);
+
   Future<void> _persist(String characterId) async {
     final prefs = await SharedPreferences.getInstance();
     final list = _pointsByCharacter[characterId];
@@ -128,5 +221,14 @@ class MemoryPointProvider extends ChangeNotifier {
       '$_prefix$characterId',
       jsonEncode(list.map((p) => p.toJson()).toList()),
     );
+  }
+
+  Future<void> _persistInstallations() async {
+    final prefs = await SharedPreferences.getInstance();
+    final map = <String, dynamic>{};
+    for (final entry in _installationsByCharacter.entries) {
+      map[entry.key] = entry.value.map((value) => value.toJson()).toList();
+    }
+    await prefs.setString(_storyInstallationsKey, jsonEncode(map));
   }
 }

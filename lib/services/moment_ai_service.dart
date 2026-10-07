@@ -184,6 +184,7 @@ class MomentAiService {
               groupChatProvider: groupChatProvider,
               chatSettings: chatSettings,
               user: user,
+              memoryPointProvider: memoryPointProvider,
               includePrivateHistory: true,
             );
             final decision = await _askCharacter(
@@ -740,6 +741,7 @@ class MomentAiService {
         groupChatProvider: groupChatProvider,
         chatSettings: chatSettings,
         user: user,
+        memoryPointProvider: memoryPointProvider,
         includePrivateHistory: true,
       );
       final system = _systemWithMemory(

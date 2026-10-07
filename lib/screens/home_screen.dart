@@ -27,7 +27,7 @@ import '../services/update_service.dart';
 import '../widgets/alphabet_index_bar.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/update_dialogs.dart';
-import 'moments_screen.dart';
+import 'discover_screen.dart';
 import 'profile_screen.dart';
 import 'chat_search_screen.dart';
 import 'contacts_search_screen.dart';
@@ -101,25 +101,22 @@ class _HomeScreenState extends State<HomeScreen>
     // 避免首帧构建期间触发 Provider rebuild assertion。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      characterProvider
-          .loadCharacters()
-          .then((_) {
-            if (!mounted) return;
-            MomentAiService.resumePending(
-              characterProvider: characterProvider,
-              apiProvider: apiProvider,
-              notificationProvider: notificationProvider,
-              chatProvider: chatProvider,
-              chatSettings: chatSettings,
-              groupChatProvider: groupChatProvider,
-              memoryPointProvider: memoryPointProvider,
-              user: user,
-            );
-            _checkAutoMoments();
-          })
-          .catchError((Object e) {
-            DevLogService.instance.log('朋友圈互动断点恢复失败: $e');
-          });
+      characterProvider.loadCharacters().then((_) {
+        if (!mounted) return;
+        MomentAiService.resumePending(
+          characterProvider: characterProvider,
+          apiProvider: apiProvider,
+          notificationProvider: notificationProvider,
+          chatProvider: chatProvider,
+          chatSettings: chatSettings,
+          groupChatProvider: groupChatProvider,
+          memoryPointProvider: memoryPointProvider,
+          user: user,
+        );
+        _checkAutoMoments();
+      }).catchError((Object e) {
+        DevLogService.instance.log('朋友圈互动断点恢复失败: $e');
+      });
     });
     _cleanupOldApks();
     _checkUpdateOnStartup();
@@ -259,9 +256,9 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
     final target = (_floatingDragIndex ?? _currentTab.toDouble()).round().clamp(
-      0,
-      AppNavigationIcons.tabs.length - 1,
-    );
+          0,
+          AppNavigationIcons.tabs.length - 1,
+        );
     _floatingDragActive = false;
     _floatingDragIndex = target.toDouble();
     _setIndexDragging(false);
@@ -376,10 +373,10 @@ class _HomeScreenState extends State<HomeScreen>
           group.totalUnreadCount,
       builder: (context, totalUnread, _) {
         final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-        final navigationStyle = context
-            .select<SettingsProvider, HomeNavigationStyle>(
-              (settings) => settings.homeNavigationStyle,
-            );
+        final navigationStyle =
+            context.select<SettingsProvider, HomeNavigationStyle>(
+          (settings) => settings.homeNavigationStyle,
+        );
         final pageView = _buildPageView(navigationStyle);
         if (navigationStyle == HomeNavigationStyle.bottomPanel) {
           return Column(
@@ -423,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen>
       children: [
         _buildChatList(),
         _buildCharacterList(),
-        MomentsScreen(navigationStyle: navigationStyle),
+        DiscoverScreen(navigationStyle: navigationStyle),
         const ProfileScreen(),
       ],
     );
@@ -842,9 +839,8 @@ class _HomeScreenState extends State<HomeScreen>
                         vertical: 14,
                       ),
                       // 置顶会话背景变灰，区分普通会话
-                      backgroundColor: entry.pinned
-                          ? context.pinnedChatColor
-                          : null,
+                      backgroundColor:
+                          entry.pinned ? context.pinnedChatColor : null,
                       // CupertinoListTile 默认把 leading 约束在 28×28，
                       // 必须显式指定与头像一致的尺寸，否则头像被压缩
                       leadingSize: UiSpec.conversationAvatar,
@@ -1383,9 +1379,9 @@ class _HomeScreenState extends State<HomeScreen>
                   _dismissChatMenu();
                   if (entry.isGroup) {
                     context.read<GroupChatProvider>().setPinned(
-                      entry.id,
-                      !pinned,
-                    );
+                          entry.id,
+                          !pinned,
+                        );
                   } else {
                     context.read<ChatProvider>().setPinned(entry.id, !pinned);
                   }

@@ -15,6 +15,7 @@ import 'providers/moment_notification_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/token_usage_provider.dart';
 import 'providers/workshop_provider.dart';
+import 'providers/story_provider.dart';
 import 'providers/sticker_provider.dart';
 import 'services/backup_schedule_service.dart';
 import 'services/notification_service.dart';
@@ -44,6 +45,7 @@ class _AiChatAppState extends State<AiChatApp> {
     context.read<AutoMomentProvider>().init();
     context.read<ProactiveGreetingProvider>().init();
     context.read<WorkshopProvider>().init();
+    context.read<StoryProvider>().init();
     context.read<StickerProvider>().init();
     // 预加载累计 tokens 统计：数据就绪后再进入统计页，避免显示"清零"假象
     context.read<TokenUsageProvider>().init();
@@ -66,7 +68,8 @@ class _AiChatAppState extends State<AiChatApp> {
     final settings = context.read<ChatSettingsProvider>();
     await Future.wait([api.init(), settings.init()]);
     if (!mounted) return;
-    await settings.ensureSoleModelSelected(api.models.map((m) => m.id).toList());
+    await settings
+        .ensureSoleModelSelected(api.models.map((m) => m.id).toList());
   }
 
   /// 打开 APP 时执行到期的自动备份（延迟，等 Provider 加载完再打包）
@@ -190,8 +193,7 @@ class _AiChatAppState extends State<AiChatApp> {
           theme: AppTheme.buildTheme(
             brightness: Brightness.light,
             accent: settings.accentColor,
-            fontFamily:
-                PlatformSupport.isDesktop ? 'Segoe UI' : null,
+            fontFamily: PlatformSupport.isDesktop ? 'Segoe UI' : null,
           ),
           // 在此动态解析明暗模式并注入主题（支持跟随系统）
           builder: (context, child) {
@@ -202,8 +204,7 @@ class _AiChatAppState extends State<AiChatApp> {
               data: AppTheme.buildTheme(
                 brightness: brightness,
                 accent: settings.accentColor,
-                fontFamily:
-                    PlatformSupport.isDesktop ? 'Segoe UI' : null,
+                fontFamily: PlatformSupport.isDesktop ? 'Segoe UI' : null,
               ),
               child: DefaultTextStyle.merge(
                 style: TextStyle(

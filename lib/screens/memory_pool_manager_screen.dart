@@ -7,6 +7,7 @@ import '../providers/character_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/group_chat_provider.dart';
+import '../providers/memory_point_provider.dart';
 import '../services/memory_pool_builder.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/settings/settings_ui.dart';
@@ -120,9 +121,8 @@ class _MemoryPoolManagerScreenState extends State<MemoryPoolManagerScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: CupertinoSlider(
-                    value: chatSettings.momentMemoryCount
-                        .clamp(0, 10)
-                        .toDouble(),
+                    value:
+                        chatSettings.momentMemoryCount.clamp(0, 10).toDouble(),
                     min: 0,
                     max: 10,
                     divisions: 10,
@@ -165,6 +165,7 @@ class _MemoryPoolManagerScreenState extends State<MemoryPoolManagerScreen> {
                   groupChatProvider: groupChatProvider,
                   chatSettings: chatSettings,
                   user: context.read<AuthProvider>().user,
+                  memoryPointProvider: context.read<MemoryPointProvider>(),
                   includePrivateHistory: true,
                 ),
                 onToggleExpand: () => setState(() {
@@ -259,6 +260,18 @@ class _CharacterCard extends StatelessWidget {
               onChanged: (v) =>
                   onSectionChanged(MemoryPoolBuilder.kGroupSectionTitle, v),
             ),
+            if (context
+                .read<MemoryPointProvider>()
+                .storyPointsFor(character.id)
+                .isNotEmpty)
+              _SectionRow(
+                title: MemoryPoolBuilder.kStorySectionTitle,
+                content: contentOf(MemoryPoolBuilder.kStorySectionTitle),
+                enabled:
+                    !disabled.contains(MemoryPoolBuilder.kStorySectionTitle),
+                onChanged: (v) =>
+                    onSectionChanged(MemoryPoolBuilder.kStorySectionTitle, v),
+              ),
             _SectionRow(
               title: MemoryPoolBuilder.kCardSectionTitle,
               content: contentOf(MemoryPoolBuilder.kCardSectionTitle),

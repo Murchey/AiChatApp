@@ -1029,6 +1029,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 groupChatProvider: groupProvider,
                 chatSettings: chatSettings,
                 user: context.read<AuthProvider>().user,
+                memoryPointProvider: context.read<MemoryPointProvider>(),
                 includePrivateHistory: true,
                 excludeGroupId: widget.groupId,
               ),

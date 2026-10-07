@@ -73,6 +73,7 @@ class ChatProactiveReply {
             groupChatProvider: context.read<GroupChatProvider>(),
             chatSettings: chatSettings,
             user: context.read<AuthProvider>().user,
+            memoryPointProvider: context.read<MemoryPointProvider>(),
             includePrivateHistory: false,
           )
         : '';

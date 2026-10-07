@@ -419,7 +419,7 @@ void main() {
     expect(indicatorDecoration.boxShadow, isNotEmpty);
     expect(find.text('AiChat'), findsAtLeastNWidgets(1));
     expect(find.text('通讯录'), findsOneWidget);
-    expect(find.text('朋友圈'), findsOneWidget);
+    expect(find.text('发现'), findsOneWidget);
     expect(find.text('我'), findsOneWidget);
     expect(find.byIcon(AppNavigationIcons.tabs[2].icon), findsOneWidget);
     expect(find.byIcon(AppNavigationIcons.tabs[2].activeIcon), findsNothing);
@@ -470,7 +470,7 @@ void main() {
     expect(find.byKey(const ValueKey('home-floating-nav')), findsNothing);
     expect(find.text('AiChat'), findsAtLeastNWidgets(1));
     expect(find.text('通讯录'), findsOneWidget);
-    expect(find.text('朋友圈'), findsOneWidget);
+    expect(find.text('发现'), findsOneWidget);
     expect(find.text('我'), findsOneWidget);
     expect(find.byIcon(AppNavigationIcons.tabs[2].icon), findsOneWidget);
   });

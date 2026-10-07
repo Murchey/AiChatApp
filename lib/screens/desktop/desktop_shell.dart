@@ -13,7 +13,8 @@ import '../../providers/chat_provider.dart';
 import '../../providers/group_chat_provider.dart';
 import '../../models/group_chat.dart';
 import '../../screens/character_detail_screen.dart';
-import '../../screens/moments_screen.dart';
+import '../../screens/discover_screen.dart';
+import '../../providers/settings_provider.dart';
 import '../../screens/lan_sync_screen.dart';
 import '../../widgets/character_avatar.dart';
 import 'desktop_chat_view.dart';
@@ -23,7 +24,7 @@ import 'desktop_context_menu.dart';
 import 'desktop_theme.dart';
 
 /// 电脑端微信风格主界面。
-/// 布局：左栏 │ 列表 │ 主区；设置/同步/朋友圈为独立 Tab（全宽）。
+/// 布局：左栏 │ 列表 │ 主区；设置/同步/发现为独立 Tab（全宽）。
 class DesktopShell extends StatefulWidget {
   const DesktopShell({super.key});
 
@@ -32,7 +33,7 @@ class DesktopShell extends StatefulWidget {
 }
 
 class _DesktopShellState extends State<DesktopShell> {
-  int _rail = 0; // 0消息 1联系人 2朋友圈 3设置 4同步
+  int _rail = 0; // 0消息 1联系人 2发现 3设置 4同步
   String? _selectedConversationId;
   String? _selectedGroupId;
   String? _selectedCharacterId;
@@ -132,7 +133,7 @@ class _DesktopShellState extends State<DesktopShell> {
           const SizedBox(height: 24),
           _railBtn(p, 0, AppNavigationIcons.tabs[0].activeIcon, '消息'),
           _railBtn(p, 1, AppNavigationIcons.tabs[1].activeIcon, '联系人'),
-          _railBtn(p, 2, AppNavigationIcons.tabs[2].activeIcon, '朋友圈'),
+          _railBtn(p, 2, AppNavigationIcons.tabs[2].activeIcon, '发现'),
           _railBtn(p, 3, CupertinoIcons.gear_solid, '设置'),
           const Spacer(),
           _railBtn(p, 4, CupertinoIcons.arrow_2_circlepath, '局域网同步'),
@@ -726,7 +727,7 @@ class _DesktopShellState extends State<DesktopShell> {
     if (_rail == 2) {
       return const ColoredBox(
         color: Color(0xFFEDEDED),
-        child: MomentsScreen(),
+        child: DiscoverScreen(navigationStyle: HomeNavigationStyle.bottomPanel),
       );
     }
     if (_rail == 3) {

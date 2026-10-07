@@ -21,7 +21,7 @@ class AppNavigationIcons {
     (
       icon: CupertinoIcons.compass,
       activeIcon: CupertinoIcons.compass_fill,
-      label: '朋友圈',
+      label: '发现',
     ),
     (
       icon: CupertinoIcons.person_crop_circle,

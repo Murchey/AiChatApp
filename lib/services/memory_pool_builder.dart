@@ -4,6 +4,7 @@ import '../models/user.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../providers/group_chat_provider.dart';
+import '../providers/memory_point_provider.dart';
 
 /// 角色记忆池构建器。
 ///
@@ -28,6 +29,7 @@ class MemoryPoolBuilder {
   static const String kMomentsSectionTitle = '近期朋友圈';
   static const String kGroupSectionTitle = '近期群聊';
   static const String kCardSectionTitle = '角色资料卡';
+  static const String kStorySectionTitle = '故事线记忆';
 
   /// 构建角色记忆池文本；没有任何可用内容时返回空串（调用方不拼接）。
   ///
@@ -41,6 +43,7 @@ class MemoryPoolBuilder {
     required GroupChatProvider groupChatProvider,
     required ChatSettingsProvider chatSettings,
     User? user,
+    MemoryPointProvider? memoryPointProvider,
     bool includePrivateHistory = true,
     String excludeGroupId = '',
   }) {
@@ -50,6 +53,7 @@ class MemoryPoolBuilder {
       groupChatProvider: groupChatProvider,
       chatSettings: chatSettings,
       user: user,
+      memoryPointProvider: memoryPointProvider,
       includePrivateHistory: includePrivateHistory,
       excludeGroupId: excludeGroupId,
     );
@@ -65,6 +69,7 @@ class MemoryPoolBuilder {
     required GroupChatProvider groupChatProvider,
     required ChatSettingsProvider chatSettings,
     User? user,
+    MemoryPointProvider? memoryPointProvider,
     bool includePrivateHistory = true,
     String excludeGroupId = '',
   }) {
@@ -88,6 +93,13 @@ class MemoryPoolBuilder {
     final group = _groupSection(character, groupChatProvider, excludeGroupId);
     if (group != null && !disabled.contains(kGroupSectionTitle)) {
       sections.add(MapEntry(kGroupSectionTitle, group));
+    }
+
+    final stories = memoryPointProvider == null
+        ? null
+        : _storySection(character, memoryPointProvider);
+    if (stories != null && !disabled.contains(kStorySectionTitle)) {
+      sections.add(MapEntry(kStorySectionTitle, stories));
     }
 
     final card = _cardSection(character, user);
@@ -218,6 +230,20 @@ class MemoryPoolBuilder {
       buf.write('\n\n【用户资料】\n${userFields.join('\n')}');
     }
     return buf.toString();
+  }
+
+  static String? _storySection(
+    Character character,
+    MemoryPointProvider memoryPointProvider,
+  ) {
+    final points = memoryPointProvider.storyPointsFor(character.id);
+    if (points.isEmpty) return null;
+    final lines = points
+        .map((point) => '- ${point.content.trim()}')
+        .where((line) => line.length > 2)
+        .toList();
+    if (lines.isEmpty) return null;
+    return '【故事线记忆】已安装的故事设定：\n${lines.join('\n')}';
   }
 
   static String _fmtDate(DateTime t) {
