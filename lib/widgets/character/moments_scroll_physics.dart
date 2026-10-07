@@ -5,11 +5,21 @@ import 'package:flutter/physics.dart';
 
 /// 朋友圈列表滚动物理（顶部橡皮筋、底部硬截止）。
 class MomentsScrollPhysics extends BouncingScrollPhysics {
-  const MomentsScrollPhysics({super.parent});
+  /// [allowTopOverscroll] 仅用于需要下拉展开内容的角色详情页。
+  /// 首页朋友圈没有可展开的封面，因此默认关闭顶部惯性回弹，避免快速
+  /// 连续手势在边界附近反复启动弹簧模拟而产生抖动。
+  final bool allowTopOverscroll;
+
+  const MomentsScrollPhysics({
+    super.parent,
+    this.allowTopOverscroll = true,
+  });
 
   @override
-  MomentsScrollPhysics applyTo(ScrollPhysics? ancestor) =>
-      MomentsScrollPhysics(parent: buildParent(ancestor));
+  MomentsScrollPhysics applyTo(ScrollPhysics? ancestor) => MomentsScrollPhysics(
+        parent: buildParent(ancestor),
+        allowTopOverscroll: allowTopOverscroll,
+      );
 
   @override
   double applyBoundaryConditions(ScrollMetrics position, double value) {
@@ -18,8 +28,18 @@ class MomentsScrollPhysics extends BouncingScrollPhysics {
   }
 
   double _applyBoundaryConditions(ScrollMetrics position, double value) {
-    // 顶部：允许越界（Bouncing 行为），供下拉展开封面
-    if (value < position.minScrollExtent) return 0.0;
+    if (value < position.minScrollExtent) {
+      // 首页没有封面下拉语义，直接把拖动限制在顶部；这样快速回到
+      // 顶部时不会进入负偏移弹簧，再被下一次手势反复打断。
+      if (!allowTopOverscroll) {
+        if (position.pixels <= position.minScrollExtent) {
+          return value - position.pixels;
+        }
+        return value - position.minScrollExtent;
+      }
+      // 角色详情页保留原有轻微下拉回弹。
+      return 0.0;
+    }
     // 底部：硬截止（Clamping 行为），到达 maxScrollExtent 后不再越界
     if (value > position.maxScrollExtent &&
         position.pixels <= position.maxScrollExtent) {
@@ -41,6 +61,15 @@ class MomentsScrollPhysics extends BouncingScrollPhysics {
     // 速度取原始 velocity（与官方 BouncingScrollSimulation._underscrollSimulation
     // 一致）：负速度先继续深入越界区再回弹，避免 -velocity 造成的收敛振荡。
     if (position.pixels < position.minScrollExtent) {
+      if (!allowTopOverscroll) {
+        return ScrollSpringSimulation(
+          spring,
+          position.pixels,
+          position.minScrollExtent,
+          0.0,
+          tolerance: tolerance,
+        );
+      }
       return ScrollSpringSimulation(
         spring,
         position.pixels,
@@ -70,10 +99,17 @@ class MomentsScrollPhysics extends BouncingScrollPhysics {
         tolerance: tolerance,
       );
     }
-    // 向上（朝顶部）：官方 BouncingScrollSimulation —— 摩擦减速，接近顶部时
-    // 转入受限弹簧回弹。不能再用 ClampingScrollSimulation：顶部为开边界而
-    // 惯性模拟不经过 applyBoundaryConditions，会直接穿透顶部滑进深度越界区
-    // （-100~-160px）再缓慢回弹，即用户感知的"抖动"。
+    if (!allowTopOverscroll) {
+      // 首页顶部是硬边界。Clamping simulation 到达边界后由
+      // applyBoundaryConditions 终止 ballistic activity，不会再启动弹簧。
+      return ClampingScrollSimulation(
+        position: position.pixels,
+        velocity: velocity,
+        tolerance: tolerance,
+      );
+    }
+    // 角色详情页向上（朝顶部）保留官方 BouncingScrollSimulation，供封面
+    // 下拉展开/回弹使用。
     return BouncingScrollSimulation(
       spring: spring,
       position: position.pixels,

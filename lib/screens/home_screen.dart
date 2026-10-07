@@ -1,10 +1,10 @@
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Icons;
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/motion.dart';
+import '../config/navigation_icons.dart';
 import '../config/theme.dart';
 import '../config/ui_spec.dart';
 import '../models/home_chat_entry.dart';
@@ -95,22 +95,25 @@ class _HomeScreenState extends State<HomeScreen>
     // 避免首帧构建期间触发 Provider rebuild assertion。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      characterProvider.loadCharacters().then((_) {
-        if (!mounted) return;
-        MomentAiService.resumePending(
-          characterProvider: characterProvider,
-          apiProvider: apiProvider,
-          notificationProvider: notificationProvider,
-          chatProvider: chatProvider,
-          chatSettings: chatSettings,
-          groupChatProvider: groupChatProvider,
-          memoryPointProvider: memoryPointProvider,
-          user: user,
-        );
-        _checkAutoMoments();
-      }).catchError((Object e) {
-        DevLogService.instance.log('朋友圈互动断点恢复失败: $e');
-      });
+      characterProvider
+          .loadCharacters()
+          .then((_) {
+            if (!mounted) return;
+            MomentAiService.resumePending(
+              characterProvider: characterProvider,
+              apiProvider: apiProvider,
+              notificationProvider: notificationProvider,
+              chatProvider: chatProvider,
+              chatSettings: chatSettings,
+              groupChatProvider: groupChatProvider,
+              memoryPointProvider: memoryPointProvider,
+              user: user,
+            );
+            _checkAutoMoments();
+          })
+          .catchError((Object e) {
+            DevLogService.instance.log('朋友圈互动断点恢复失败: $e');
+          });
     });
     _cleanupOldApks();
     _checkUpdateOnStartup();
@@ -276,11 +279,11 @@ class _HomeScreenState extends State<HomeScreen>
           group.totalUnreadCount,
       builder: (context, totalUnread, _) {
         final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-        final navigationStyle = context.select<
-            SettingsProvider, HomeNavigationStyle>(
-          (settings) => settings.homeNavigationStyle,
-        );
-        final pageView = _buildPageView();
+        final navigationStyle = context
+            .select<SettingsProvider, HomeNavigationStyle>(
+              (settings) => settings.homeNavigationStyle,
+            );
+        final pageView = _buildPageView(navigationStyle);
         if (navigationStyle == HomeNavigationStyle.bottomPanel) {
           return Column(
             children: [
@@ -297,9 +300,7 @@ class _HomeScreenState extends State<HomeScreen>
             // 主内容：四个导航页，支持触摸横向滑动切换（与底部 tab 联动）。
             // 页面铺满全高，悬浮导航直接覆盖在真实内容上方；各滚动列表
             // 自己预留末尾安全空间，保证最后一项仍能滚到导航上方。
-            Positioned.fill(
-              child: pageView,
-            ),
+            Positioned.fill(child: pageView),
             Positioned(
               left: UiSpec.floatingHorizontal,
               right: UiSpec.floatingHorizontal,
@@ -315,14 +316,14 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildPageView() {
+  Widget _buildPageView(HomeNavigationStyle navigationStyle) {
     return PageView(
       controller: _pageController,
       onPageChanged: _onPageChanged,
       children: [
         _buildChatList(),
         _buildCharacterList(),
-        const MomentsScreen(),
+        MomentsScreen(navigationStyle: navigationStyle),
         const ProfileScreen(),
       ],
     );
@@ -340,43 +341,40 @@ class _HomeScreenState extends State<HomeScreen>
       activeColor: context.accentColor,
       inactiveColor: context.textSecondaryColor,
       border: Border(
-        top: BorderSide(
-          color: context.contactDividerColor,
-          width: 0.5,
-        ),
+        top: BorderSide(color: context.contactDividerColor, width: 0.5),
       ),
       items: [
         BottomNavigationBarItem(
           icon: _buildBottomPanelIcon(
-            CupertinoIcons.chat_bubble,
+            AppNavigationIcons.tabs[0].icon,
             unreadCount: totalUnread,
           ),
           activeIcon: _buildBottomPanelIcon(
-            CupertinoIcons.chat_bubble_fill,
+            AppNavigationIcons.tabs[0].activeIcon,
             unreadCount: totalUnread,
           ),
-          label: 'AiChat',
+          label: AppNavigationIcons.tabs[0].label,
         ),
-        const BottomNavigationBarItem(
-          icon: Icon(CupertinoIcons.person_2),
-          activeIcon: Icon(CupertinoIcons.person_2_fill),
-          label: '通讯录',
+        BottomNavigationBarItem(
+          icon: Icon(AppNavigationIcons.tabs[1].icon),
+          activeIcon: Icon(AppNavigationIcons.tabs[1].activeIcon),
+          label: AppNavigationIcons.tabs[1].label,
         ),
         BottomNavigationBarItem(
           icon: _buildBottomPanelIcon(
-            CupertinoIcons.photo,
+            AppNavigationIcons.tabs[2].icon,
             hasDot: momentsUnread,
           ),
           activeIcon: _buildBottomPanelIcon(
-            CupertinoIcons.photo_fill,
+            AppNavigationIcons.tabs[2].activeIcon,
             hasDot: momentsUnread,
           ),
-          label: '朋友圈',
+          label: AppNavigationIcons.tabs[2].label,
         ),
-        const BottomNavigationBarItem(
-          icon: Icon(CupertinoIcons.person_crop_circle),
-          activeIcon: Icon(CupertinoIcons.person_crop_circle_fill),
-          label: '我',
+        BottomNavigationBarItem(
+          icon: Icon(AppNavigationIcons.tabs[3].icon),
+          activeIcon: Icon(AppNavigationIcons.tabs[3].activeIcon),
+          label: AppNavigationIcons.tabs[3].label,
         ),
       ],
     );
@@ -407,10 +405,7 @@ class _HomeScreenState extends State<HomeScreen>
               decoration: BoxDecoration(
                 color: CupertinoColors.systemRed,
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: context.navBarColor,
-                  width: 1.2,
-                ),
+                border: Border.all(color: context.navBarColor, width: 1.2),
               ),
             ),
           ),
@@ -422,28 +417,7 @@ class _HomeScreenState extends State<HomeScreen>
     required int totalUnread,
     required bool momentsUnread,
   }) {
-    final tabs = <({IconData icon, IconData activeIcon, String label})>[
-      (
-        icon: Icons.chat_bubble_outline_rounded,
-        activeIcon: Icons.chat_bubble_rounded,
-        label: 'AiChat',
-      ),
-      (
-        icon: Icons.people_outline_rounded,
-        activeIcon: Icons.people_rounded,
-        label: '通讯录',
-      ),
-      (
-        icon: Icons.photo_camera_outlined,
-        activeIcon: Icons.photo_camera_rounded,
-        label: '朋友圈',
-      ),
-      (
-        icon: Icons.person_outline_rounded,
-        activeIcon: Icons.person_rounded,
-        label: '我',
-      ),
-    ];
+    const tabs = AppNavigationIcons.tabs;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(UiSpec.floatingNavHeight / 2),
@@ -591,9 +565,10 @@ class _HomeScreenState extends State<HomeScreen>
                           return FadeTransition(
                             opacity: animation,
                             child: ScaleTransition(
-                              scale: Tween<double>(begin: 0.88, end: 1).animate(
-                                animation,
-                              ),
+                              scale: Tween<double>(
+                                begin: 0.88,
+                                end: 1,
+                              ).animate(animation),
                               child: child,
                             ),
                           );
@@ -730,11 +705,8 @@ class _HomeScreenState extends State<HomeScreen>
                 final entry = entries[index];
                 return GestureDetector(
                   // 长按会话：在长按位置旁弹出悬浮菜单（置顶/取消置顶）
-                  onLongPressStart: (details) => _showEntryMenu(
-                    context,
-                    details.globalPosition,
-                    entry,
-                  ),
+                  onLongPressStart: (details) =>
+                      _showEntryMenu(context, details.globalPosition, entry),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
                       minHeight: UiSpec.conversationRowHeight,
@@ -745,8 +717,9 @@ class _HomeScreenState extends State<HomeScreen>
                         vertical: 14,
                       ),
                       // 置顶会话背景变灰，区分普通会话
-                      backgroundColor:
-                          entry.pinned ? context.pinnedChatColor : null,
+                      backgroundColor: entry.pinned
+                          ? context.pinnedChatColor
+                          : null,
                       // CupertinoListTile 默认把 leading 约束在 28×28，
                       // 必须显式指定与头像一致的尺寸，否则头像被压缩
                       leadingSize: UiSpec.conversationAvatar,
@@ -862,9 +835,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (entry.isGroup) {
       Navigator.push(
         context,
-        CupertinoPageRoute(
-          builder: (_) => GroupChatScreen(groupId: entry.id),
-        ),
+        CupertinoPageRoute(builder: (_) => GroupChatScreen(groupId: entry.id)),
       );
       return;
     }
@@ -888,9 +859,7 @@ class _HomeScreenState extends State<HomeScreen>
           onPressed: () {
             Navigator.push(
               context,
-              CupertinoPageRoute(
-                builder: (_) => const ContactsSearchScreen(),
-              ),
+              CupertinoPageRoute(builder: (_) => const ContactsSearchScreen()),
             );
           },
           child: const Icon(CupertinoIcons.search),
@@ -914,12 +883,14 @@ class _HomeScreenState extends State<HomeScreen>
 
           // 按拼音首字母分组排序（类似手机通讯录，排除固定的"自己"）
           final groups = provider.sortedCharactersGrouped
-              .map((g) => MapEntry(
-                    g.key,
-                    g.value
-                        .where((c) => c.id != CharacterProvider.selfCharacterId)
-                        .toList(),
-                  ))
+              .map(
+                (g) => MapEntry(
+                  g.key,
+                  g.value
+                      .where((c) => c.id != CharacterProvider.selfCharacterId)
+                      .toList(),
+                ),
+              )
               .where((g) => g.value.isNotEmpty)
               .toList();
           final availableLetters = groups.map((g) => g.key).toSet();
@@ -927,42 +898,52 @@ class _HomeScreenState extends State<HomeScreen>
           final entries = <_ContactListItem>[];
           var offset = topPadding;
           if (self != null) {
-            entries.add(const _ContactListItem(
-              kind: _ContactListItemKind.self,
-              keyValue: 'self',
-              height: 76,
-            ));
+            entries.add(
+              const _ContactListItem(
+                kind: _ContactListItemKind.self,
+                keyValue: 'self',
+                height: 76,
+              ),
+            );
             offset += 76;
-            entries.add(const _ContactListItem(
-              kind: _ContactListItemKind.divider,
-              keyValue: 'self-divider',
-              height: 1,
-            ));
+            entries.add(
+              const _ContactListItem(
+                kind: _ContactListItemKind.divider,
+                keyValue: 'self-divider',
+                height: 1,
+              ),
+            );
             offset += 1;
           }
           final sectionOffsets = <String, double>{};
           for (final group in groups) {
             sectionOffsets[group.key] = offset;
-            entries.add(_ContactListItem(
-              kind: _ContactListItemKind.section,
-              keyValue: 'section-${group.key}',
-              height: 34,
-            ));
+            entries.add(
+              _ContactListItem(
+                kind: _ContactListItemKind.section,
+                keyValue: 'section-${group.key}',
+                height: 34,
+              ),
+            );
             offset += 34;
             for (final character in group.value) {
-              entries.add(_ContactListItem(
-                kind: _ContactListItemKind.contact,
-                keyValue: 'contact-${character.id}',
-                character: character,
-                height: 76,
-              ));
+              entries.add(
+                _ContactListItem(
+                  kind: _ContactListItemKind.contact,
+                  keyValue: 'contact-${character.id}',
+                  character: character,
+                  height: 76,
+                ),
+              );
               offset += 76;
             }
-            entries.add(_ContactListItem(
-              kind: _ContactListItemKind.divider,
-              keyValue: 'divider-${group.key}',
-              height: 1,
-            ));
+            entries.add(
+              _ContactListItem(
+                kind: _ContactListItemKind.divider,
+                keyValue: 'divider-${group.key}',
+                height: 1,
+              ),
+            );
             offset += 1;
           }
           // These values are consumed by the index callbacks. They are derived
@@ -1000,8 +981,9 @@ class _HomeScreenState extends State<HomeScreen>
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
                               child: Text(
                                 item.keyValue.substring('section-'.length),
                                 style: TextStyle(
@@ -1116,10 +1098,7 @@ class _HomeScreenState extends State<HomeScreen>
           self.signature.isEmpty ? '我的朋友圈' : self.signature,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13,
-            color: context.textSecondaryColor,
-          ),
+          style: TextStyle(fontSize: 13, color: context.textSecondaryColor),
         ),
       ),
       trailing: Icon(
@@ -1279,14 +1258,11 @@ class _HomeScreenState extends State<HomeScreen>
                   _dismissChatMenu();
                   if (entry.isGroup) {
                     context.read<GroupChatProvider>().setPinned(
-                          entry.id,
-                          !pinned,
-                        );
+                      entry.id,
+                      !pinned,
+                    );
                   } else {
-                    context.read<ChatProvider>().setPinned(
-                          entry.id,
-                          !pinned,
-                        );
+                    context.read<ChatProvider>().setPinned(entry.id, !pinned);
                   }
                 },
               ),
@@ -1321,10 +1297,7 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(width: 10),
             Text(
               label,
-              style: TextStyle(
-                fontSize: 15,
-                color: context.textPrimaryColor,
-              ),
+              style: TextStyle(fontSize: 15, color: context.textPrimaryColor),
             ),
           ],
         ),

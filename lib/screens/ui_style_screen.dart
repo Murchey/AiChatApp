@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../config/navigation_icons.dart';
 import '../config/ui_spec.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/chat_send_button.dart';
@@ -188,12 +189,6 @@ class _NavigationPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const tabs = [
-      (CupertinoIcons.chat_bubble_fill, 'AiChat'),
-      (CupertinoIcons.person_2_fill, '通讯录'),
-      (CupertinoIcons.photo_fill, '朋友圈'),
-      (CupertinoIcons.person_crop_circle_fill, '我'),
-    ];
     final panel = Container(
       height: 62,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -209,18 +204,18 @@ class _NavigationPreview extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          for (var i = 0; i < tabs.length; i++)
+          for (var i = 0; i < AppNavigationIcons.tabs.length; i++)
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  tabs[i].$1,
+                  AppNavigationIcons.tabs[i].activeIcon,
                   size: 18,
                   color:
                       i == 0 ? context.accentColor : context.textSecondaryColor,
                 ),
                 Text(
-                  tabs[i].$2,
+                  AppNavigationIcons.tabs[i].label,
                   style: TextStyle(
                     fontSize: 9,
                     color: i == 0

@@ -158,6 +158,8 @@ class SingleImageThumb extends StatefulWidget {
 class SingleImageThumbState extends State<SingleImageThumb> {
   /// 原图尺寸（优先命中缓存；未知时按默认 3:4 占位）
   Size? _imgSize;
+  Size? _pendingImgSize;
+  ScrollPosition? _scrollPosition;
 
   @override
   void initState() {
@@ -170,12 +172,48 @@ class SingleImageThumbState extends State<SingleImageThumb> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.path == widget.path) return;
     _imgSize = null;
+    _pendingImgSize = null;
     _loadSize();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextPosition = Scrollable.maybeOf(context)?.position;
+    if (identical(nextPosition, _scrollPosition)) return;
+    _scrollPosition?.isScrollingNotifier.removeListener(_onScrollingChanged);
+    _scrollPosition = nextPosition;
+    _scrollPosition?.isScrollingNotifier.addListener(_onScrollingChanged);
+  }
+
+  @override
+  void dispose() {
+    _scrollPosition?.isScrollingNotifier.removeListener(_onScrollingChanged);
+    super.dispose();
+  }
+
+  void _onScrollingChanged() {
+    final position = _scrollPosition;
+    if (!mounted || position == null || position.isScrollingNotifier.value) {
+      return;
+    }
+    final pending = _pendingImgSize;
+    if (pending == null) return;
+    _pendingImgSize = null;
+    setState(() => _imgSize = pending);
   }
 
   Future<void> _loadSize() async {
     final size = await ImageMetadataCache.sizeFor(widget.path);
-    if (mounted && size != null) setState(() => _imgSize = size);
+    if (!mounted || size == null) return;
+    // 图片尺寸读取通常在卡片进入视口后的几帧完成。滚动期间直接改变
+    // 缩略图高度会让后续卡片整体位移，快速连续滑动时表现为抖动；
+    // 等当前滚动活动结束后再应用一次尺寸，保持滚动布局稳定。
+    if (_scrollPosition?.isScrollingNotifier.value == true) {
+      _pendingImgSize = size;
+      return;
+    }
+    setState(() => _imgSize = size);
   }
 
   @override

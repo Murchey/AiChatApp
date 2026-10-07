@@ -1,5 +1,6 @@
 import 'package:ai_chat/config/theme.dart';
 import 'package:ai_chat/config/motion.dart';
+import 'package:ai_chat/config/navigation_icons.dart';
 import 'package:ai_chat/config/ui_spec.dart';
 import 'package:ai_chat/providers/settings_provider.dart';
 import 'package:ai_chat/providers/api_provider.dart';
@@ -17,6 +18,7 @@ import 'package:ai_chat/providers/sticker_provider.dart';
 import 'package:ai_chat/providers/token_usage_provider.dart';
 import 'package:ai_chat/providers/workshop_provider.dart';
 import 'package:ai_chat/screens/home_screen.dart';
+import 'package:ai_chat/screens/moments_screen.dart';
 import 'package:ai_chat/screens/settings_screen.dart';
 import 'package:ai_chat/screens/ui_style_screen.dart';
 import 'package:ai_chat/models/character.dart';
@@ -27,7 +29,6 @@ import 'package:ai_chat/widgets/moment_card.dart';
 import 'package:ai_chat/widgets/settings/color_picker_widgets.dart';
 import 'package:ai_chat/widgets/settings/settings_ui.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Icons;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -82,10 +83,14 @@ void main() {
       AppColors.settingIconStorageDark,
     ];
 
-    expect(lightColors.map((color) => color.toARGB32()).toSet(),
-        hasLength(lightColors.length));
-    expect(darkColors.map((color) => color.toARGB32()).toSet(),
-        hasLength(darkColors.length));
+    expect(
+      lightColors.map((color) => color.toARGB32()).toSet(),
+      hasLength(lightColors.length),
+    );
+    expect(
+      darkColors.map((color) => color.toARGB32()).toSet(),
+      hasLength(darkColors.length),
+    );
   });
 
   test('mobile shell changes do not replace bubble palettes', () {
@@ -98,12 +103,7 @@ void main() {
 
   testWidgets('message input renders as a floating capsule', (tester) async {
     await tester.pumpWidget(
-      themed(
-        MessageInput(
-          onSend: (_) {},
-          showStickerButton: false,
-        ),
-      ),
+      themed(MessageInput(onSend: (_) {}, showStickerButton: false)),
     );
 
     expect(find.byKey(const ValueKey('message-input-capsule')), findsOneWidget);
@@ -112,43 +112,45 @@ void main() {
   });
 
   testWidgets(
-      'settings inline picker opens below its row and selects an option',
-      (tester) async {
-    var selected = 'one';
-    await tester.pumpWidget(
-      themed(
-        SettingsInlinePicker<String>(
-          value: selected,
-          options: const [
-            SettingsChoiceOption(value: 'one', label: '一'),
-            SettingsChoiceOption(value: 'two', label: '二'),
-          ],
-          onChanged: (value) => selected = value,
-          panelKey: 'inline-picker-test',
-          rowBuilder: (context, toggle) => SettingsRow(
-            icon: CupertinoIcons.moon,
-            title: const Text('外观模式'),
-            trailing: settingsValueText(context, selected),
-            showChevron: true,
-            onTap: toggle,
+    'settings inline picker opens below its row and selects an option',
+    (tester) async {
+      var selected = 'one';
+      await tester.pumpWidget(
+        themed(
+          SettingsInlinePicker<String>(
+            value: selected,
+            options: const [
+              SettingsChoiceOption(value: 'one', label: '一'),
+              SettingsChoiceOption(value: 'two', label: '二'),
+            ],
+            onChanged: (value) => selected = value,
+            panelKey: 'inline-picker-test',
+            rowBuilder: (context, toggle) => SettingsRow(
+              icon: CupertinoIcons.moon,
+              title: const Text('外观模式'),
+              trailing: settingsValueText(context, selected),
+              showChevron: true,
+              onTap: toggle,
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('外观模式'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('inline-picker-test')), findsOneWidget);
-    expect(find.text('二'), findsOneWidget);
+      await tester.tap(find.text('外观模式'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('inline-picker-test')), findsOneWidget);
+      expect(find.text('二'), findsOneWidget);
 
-    await tester.tap(find.text('二'));
-    await tester.pumpAndSettle();
-    expect(selected, 'two');
-    expect(find.byKey(const ValueKey('inline-picker-test')), findsNothing);
-  });
+      await tester.tap(find.text('二'));
+      await tester.pumpAndSettle();
+      expect(selected, 'two');
+      expect(find.byKey(const ValueKey('inline-picker-test')), findsNothing);
+    },
+  );
 
-  testWidgets('UI style page changes the bottom navigation style inline',
-      (tester) async {
+  testWidgets('UI style page changes the bottom navigation style inline', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final settings = SettingsProvider();
     await settings.init();
@@ -161,28 +163,28 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.byIcon(AppNavigationIcons.tabs[2].activeIcon), findsOneWidget);
+
     await tester.tap(find.text('悬浮胶囊').last);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('ui-style-navigation-picker')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ui-style-navigation-picker')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('底部面板'));
     await tester.pumpAndSettle();
     expect(settings.homeNavigationStyle, HomeNavigationStyle.bottomPanel);
   });
 
-  testWidgets('chat title keeps a compact name and subtitle hierarchy',
-      (tester) async {
+  testWidgets('chat title keeps a compact name and subtitle hierarchy', (
+    tester,
+  ) async {
     final settings = SettingsProvider();
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: settings,
-        child: themed(
-          const ChatTitleBar(
-            name: '艾维莉亚',
-            signature: '今天也要保持好心情',
-          ),
-        ),
+        child: themed(const ChatTitleBar(name: '艾维莉亚', signature: '今天也要保持好心情')),
       ),
     );
 
@@ -190,8 +192,9 @@ void main() {
     expect(find.text('今天也要保持好心情'), findsOneWidget);
   });
 
-  testWidgets('settings keeps five preset colors and updates selection',
-      (tester) async {
+  testWidgets('settings keeps five preset colors and updates selection', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final settings = SettingsProvider();
     await settings.init();
@@ -219,8 +222,9 @@ void main() {
     expect(settings.accentColor, AppColors.presetColors[2]);
   });
 
-  testWidgets('settings semantic icons use the dark color tier',
-      (tester) async {
+  testWidgets('settings semantic icons use the dark color tier', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final settings = SettingsProvider();
     await settings.init();
@@ -228,10 +232,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: settings,
-        child: themed(
-          const SettingsScreen(),
-          brightness: Brightness.dark,
-        ),
+        child: themed(const SettingsScreen(), brightness: Brightness.dark),
       ),
     );
     await tester.pumpAndSettle();
@@ -246,8 +247,9 @@ void main() {
     );
   });
 
-  testWidgets('moment cards fold long content and comment previews',
-      (tester) async {
+  testWidgets('moment cards fold long content and comment previews', (
+    tester,
+  ) async {
     var opened = false;
     final owner = Character(id: 'c1', name: '角色');
     final moment = Moment(
@@ -288,6 +290,91 @@ void main() {
     expect(opened, isTrue);
   });
 
+  testWidgets('moments feed keeps scrolling after navigation style changes', (
+    tester,
+  ) async {
+    final moments = [
+      for (var i = 0; i < 30; i++)
+        Moment(
+          id: 'moment-$i',
+          content: '动态 $i ${List.filled(120, '内容').join()}',
+        ),
+    ];
+    final characterProvider = _StaticCharacterProvider([
+      Character(id: 'c1', name: '角色', moments: moments),
+    ]);
+    final style = ValueNotifier(HomeNavigationStyle.floating);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<CharacterProvider>.value(
+            value: characterProvider,
+          ),
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => SettingsProvider()),
+          ChangeNotifierProvider(create: (_) => MomentNotificationProvider()),
+        ],
+        child: CupertinoApp(
+          theme: AppTheme.buildTheme(
+            brightness: Brightness.light,
+            accent: AppColors.presetColors.first,
+          ),
+          home: ValueListenableBuilder<HomeNavigationStyle>(
+            valueListenable: style,
+            builder: (context, currentStyle, _) =>
+                MomentsScreen(navigationStyle: currentStyle),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ListView), findsOneWidget);
+    final feed = find.byKey(const PageStorageKey<String>('home-moments-feed'));
+    final scrollable = find.descendant(
+      of: feed,
+      matching: find.byType(Scrollable),
+    );
+    ScrollPosition position() =>
+        tester.state<ScrollableState>(scrollable).position;
+
+    await tester.drag(feed, const Offset(0, -900));
+    await tester.pumpAndSettle();
+    final beforeSwitch = position().pixels;
+    expect(beforeSwitch, greaterThan(0));
+
+    style.value = HomeNavigationStyle.bottomPanel;
+    await tester.pumpAndSettle();
+    final afterSwitch = position().pixels;
+    expect(afterSwitch, closeTo(beforeSwitch, 1));
+
+    var previous = afterSwitch;
+    for (var i = 0; i < 4; i++) {
+      await tester.drag(feed, const Offset(0, 500));
+      await tester.pumpAndSettle();
+      final current = position().pixels;
+      expect(current, greaterThanOrEqualTo(-0.01));
+      expect(current, lessThanOrEqualTo(previous + 1));
+      previous = current;
+    }
+    expect(position().pixels, closeTo(0, 1));
+
+    position().jumpTo(900);
+    await tester.fling(feed, const Offset(0, 1800), 5000);
+    await tester.pumpAndSettle();
+    expect(position().pixels, closeTo(0, 1));
+
+    position().jumpTo(position().maxScrollExtent);
+    await tester.pump();
+    final bottomBeforeSwitch = position().pixels;
+    expect(bottomBeforeSwitch, closeTo(position().maxScrollExtent, 1));
+
+    style.value = HomeNavigationStyle.floating;
+    await tester.pumpAndSettle();
+    expect(position().pixels, closeTo(position().maxScrollExtent, 1));
+  });
+
   testWidgets('home exposes four floating navigation entries', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final settings = SettingsProvider();
@@ -319,12 +406,12 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('home-floating-nav')), findsOneWidget);
-    expect(find.byKey(const ValueKey('home-floating-nav-indicator')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home-floating-nav-indicator')),
+      findsOneWidget,
+    );
     final indicator = tester.widget<DecoratedBox>(
-      find.byKey(
-        const ValueKey('home-floating-nav-selected-indicator'),
-      ),
+      find.byKey(const ValueKey('home-floating-nav-selected-indicator')),
     );
     final indicatorDecoration = indicator.decoration as BoxDecoration;
     expect(indicatorDecoration.color, isNot(settings.accentColor));
@@ -334,16 +421,21 @@ void main() {
     expect(find.text('通讯录'), findsOneWidget);
     expect(find.text('朋友圈'), findsOneWidget);
     expect(find.text('我'), findsOneWidget);
+    expect(find.byIcon(AppNavigationIcons.tabs[2].icon), findsOneWidget);
+    expect(find.byIcon(AppNavigationIcons.tabs[2].activeIcon), findsNothing);
 
     await tester.tap(find.text('通讯录'));
     await tester.pump();
-    expect(find.byKey(const ValueKey('home-floating-nav-indicator')),
-        findsOneWidget);
-    expect(find.byIcon(Icons.people_rounded), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home-floating-nav-indicator')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(AppNavigationIcons.tabs[1].activeIcon), findsOneWidget);
   });
 
-  testWidgets('home can restore the embedded bottom navigation panel',
-      (tester) async {
+  testWidgets('home can restore the embedded bottom navigation panel', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final settings = SettingsProvider();
     await settings.init();
@@ -380,5 +472,18 @@ void main() {
     expect(find.text('通讯录'), findsOneWidget);
     expect(find.text('朋友圈'), findsOneWidget);
     expect(find.text('我'), findsOneWidget);
+    expect(find.byIcon(AppNavigationIcons.tabs[2].icon), findsOneWidget);
   });
+}
+
+class _StaticCharacterProvider extends CharacterProvider {
+  _StaticCharacterProvider(this._items);
+
+  final List<Character> _items;
+
+  @override
+  List<Character> get characters => _items;
+
+  @override
+  int get dataRevision => 1;
 }

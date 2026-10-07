@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/conversation.dart';
+import '../../config/navigation_icons.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -129,9 +130,9 @@ class _DesktopShellState extends State<DesktopShell> {
             },
           ),
           const SizedBox(height: 24),
-          _railBtn(p, 0, CupertinoIcons.chat_bubble_2_fill, '消息'),
-          _railBtn(p, 1, CupertinoIcons.person_2_fill, '联系人'),
-          _railBtn(p, 2, CupertinoIcons.photo_fill, '朋友圈'),
+          _railBtn(p, 0, AppNavigationIcons.tabs[0].activeIcon, '消息'),
+          _railBtn(p, 1, AppNavigationIcons.tabs[1].activeIcon, '联系人'),
+          _railBtn(p, 2, AppNavigationIcons.tabs[2].activeIcon, '朋友圈'),
           _railBtn(p, 3, CupertinoIcons.gear_solid, '设置'),
           const Spacer(),
           _railBtn(p, 4, CupertinoIcons.arrow_2_circlepath, '局域网同步'),
