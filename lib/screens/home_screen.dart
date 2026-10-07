@@ -63,6 +63,12 @@ class _HomeScreenState extends State<HomeScreen>
   final PageController _pageController = PageController();
   int _currentTab = 0;
   int? _pressedTab;
+  final GlobalKey _floatingNavKey = GlobalKey();
+  double? _floatingDragIndex;
+  double _floatingDragStartX = 0;
+  double _floatingDragGrabOffset = 0;
+  bool _floatingDragActive = false;
+  bool _suppressFloatingTap = false;
 
   // 通讯录字母导航状态
   final ScrollController _contactsScrollController = ScrollController();
@@ -182,7 +188,11 @@ class _HomeScreenState extends State<HomeScreen>
 
   /// 底部 tab 点击切换时，同步主内容 PageView：
   /// 相邻页用平滑滑动，跨页（如 0→2）直接跳转无动画，避免长距离滑页。
-  void _onTabTap(int index) {
+  void _onTabTap(int index, {bool fromFloatingDrag = false}) {
+    if (_suppressFloatingTap && !fromFloatingDrag) {
+      _suppressFloatingTap = false;
+      return;
+    }
     if (_currentTab == index) return;
     final previous = _currentTab;
     setState(() => _currentTab = index);
@@ -195,6 +205,93 @@ class _HomeScreenState extends State<HomeScreen>
     } else {
       _pageController.jumpToPage(index);
     }
+  }
+
+  void _setIndexDragging(bool value) {
+    if (_indexDragging == value) return;
+    setState(() => _indexDragging = value);
+  }
+
+  void _startFloatingDrag(int index, double globalX) {
+    if (index != _currentTab) return;
+    _floatingDragStartX = globalX;
+    _floatingDragIndex = index.toDouble();
+    _floatingDragActive = false;
+    final box =
+        _floatingNavKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      final localX = globalX - box.localToGlobal(Offset.zero).dx;
+      final itemWidth = box.size.width / AppNavigationIcons.tabs.length;
+      _floatingDragGrabOffset = localX - (index * itemWidth + itemWidth / 2);
+    } else {
+      _floatingDragGrabOffset = 0;
+    }
+  }
+
+  void _updateFloatingDrag(int index, double globalX) {
+    if (index != _currentTab && !_floatingDragActive) return;
+    final delta = globalX - _floatingDragStartX;
+    if (!_floatingDragActive && delta.abs() < 8) return;
+    final box =
+        _floatingNavKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    if (!_floatingDragActive) {
+      _floatingDragActive = true;
+      _suppressFloatingTap = true;
+      _setIndexDragging(true);
+    }
+    final topLeft = box.localToGlobal(Offset.zero);
+    final localX = globalX - topLeft.dx;
+    final itemWidth = box.size.width / AppNavigationIcons.tabs.length;
+    // Keep the point where the user grabbed the selected capsule stable. This
+    // prevents the indicator from jumping when the drag starts on an icon or
+    // label instead of the exact center of its cell.
+    final value =
+        ((localX - _floatingDragGrabOffset - itemWidth / 2) / itemWidth)
+            .clamp(0.0, 3.0)
+            .toDouble();
+    setState(() => _floatingDragIndex = value);
+  }
+
+  void _finishFloatingDrag() {
+    if (!_floatingDragActive) {
+      _floatingDragIndex = null;
+      return;
+    }
+    final target = (_floatingDragIndex ?? _currentTab.toDouble()).round().clamp(
+      0,
+      AppNavigationIcons.tabs.length - 1,
+    );
+    _floatingDragActive = false;
+    _floatingDragIndex = target.toDouble();
+    _setIndexDragging(false);
+    if (target != _currentTab) {
+      // The pointer-up will be followed by CupertinoButton.onPressed. Keep
+      // suppression enabled for that callback while switching explicitly.
+      _onTabTap(target, fromFloatingDrag: true);
+    } else if (mounted) {
+      setState(() {});
+    }
+    Future<void>.delayed(AppMotion.tabSelection, () {
+      if (mounted && !_floatingDragActive) {
+        setState(() {
+          _floatingDragIndex = null;
+          _suppressFloatingTap = false;
+        });
+      }
+    });
+  }
+
+  void _cancelFloatingDrag() {
+    if (!_floatingDragActive) {
+      _floatingDragIndex = null;
+      return;
+    }
+    _floatingDragActive = false;
+    _floatingDragIndex = null;
+    _suppressFloatingTap = true;
+    _setIndexDragging(false);
+    if (mounted) setState(() {});
   }
 
   /// 从聊天等二级页面返回主页时，强制刷新底部导航栏未读角标。
@@ -319,6 +416,9 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildPageView(HomeNavigationStyle navigationStyle) {
     return PageView(
       controller: _pageController,
+      physics: (_indexDragging || _floatingDragActive)
+          ? const NeverScrollableScrollPhysics()
+          : const PageScrollPhysics(),
       onPageChanged: _onPageChanged,
       children: [
         _buildChatList(),
@@ -426,99 +526,113 @@ class _HomeScreenState extends State<HomeScreen>
           sigmaX: UiSpec.floatingNavBlurSigma,
           sigmaY: UiSpec.floatingNavBlurSigma,
         ),
-        child: Container(
+        child: KeyedSubtree(
           key: const ValueKey('home-floating-nav'),
-          height: UiSpec.floatingNavHeight,
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            // Use the elevated surface as a translucent tint so page content
-            // remains visible through the glass layer in both color schemes.
-            color: context.surfaceColor.withValues(
-              alpha: context.isDark
-                  ? UiSpec.floatingNavDarkOpacity
-                  : UiSpec.floatingNavLightOpacity,
-            ),
-            borderRadius: BorderRadius.circular(UiSpec.floatingNavHeight / 2),
-            border: Border.all(
-              color: context.outlineColor.withValues(alpha: 0.42),
-              width: 0.6,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: CupertinoColors.black.withValues(
-                  alpha: context.isDark ? 0.28 : 0.12,
-                ),
-                blurRadius: 18,
-                offset: const Offset(0, 6),
+          child: Container(
+            key: _floatingNavKey,
+            height: UiSpec.floatingNavHeight,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              // Use the elevated surface as a translucent tint so page content
+              // remains visible through the glass layer in both color schemes.
+              color: context.surfaceColor.withValues(
+                alpha: context.isDark
+                    ? UiSpec.floatingNavDarkOpacity
+                    : UiSpec.floatingNavLightOpacity,
               ),
-            ],
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final itemWidth = constraints.maxWidth / tabs.length;
-              return Stack(
-                children: [
-                  AnimatedPositioned(
-                    key: const ValueKey('home-floating-nav-indicator'),
-                    duration: AppMotion.tabSelection,
-                    curve: AppMotion.tabSelectionCurve,
-                    left: itemWidth * _currentTab + 4,
-                    top: 4,
-                    bottom: 4,
-                    width: itemWidth - 8,
-                    child: DecoratedBox(
-                      key: const ValueKey(
-                        'home-floating-nav-selected-indicator',
-                      ),
-                      decoration: BoxDecoration(
-                        color: context.fieldBgColor.withValues(
-                          alpha: context.isDark
-                              ? UiSpec.floatingSelectedSurfaceDarkOpacity
-                              : UiSpec.floatingSelectedSurfaceLightOpacity,
-                        ),
-                        borderRadius: BorderRadius.circular(
-                          UiSpec.floatingIndicatorRadius,
-                        ),
-                        border: Border.all(
-                          color: context.accentColor.withValues(
-                            alpha: context.isDark
-                                ? UiSpec.floatingSelectedBorderDarkOpacity
-                                : UiSpec.floatingSelectedBorderLightOpacity,
-                          ),
-                          width: 0.7,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: CupertinoColors.black.withValues(
-                              alpha: context.isDark
-                                  ? UiSpec.floatingSelectedShadowDarkOpacity
-                                  : UiSpec.floatingSelectedShadowLightOpacity,
-                            ),
-                            blurRadius: UiSpec.floatingSelectedShadowBlur,
-                            offset: UiSpec.floatingSelectedShadowOffset,
-                          ),
-                        ],
-                      ),
-                    ),
+              borderRadius: BorderRadius.circular(UiSpec.floatingNavHeight / 2),
+              border: Border.all(
+                color: context.outlineColor.withValues(alpha: 0.42),
+                width: 0.6,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: CupertinoColors.black.withValues(
+                    alpha: context.isDark ? 0.28 : 0.12,
                   ),
-                  Row(
-                    children: [
-                      for (var index = 0; index < tabs.length; index++)
-                        Expanded(
-                          child: _buildFloatingTab(
-                            index: index,
-                            icon: tabs[index].icon,
-                            activeIcon: tabs[index].activeIcon,
-                            label: tabs[index].label,
-                            totalUnread: totalUnread,
-                            momentsUnread: momentsUnread,
-                          ),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final itemWidth = constraints.maxWidth / tabs.length;
+                final indicator = DecoratedBox(
+                  key: const ValueKey('home-floating-nav-selected-indicator'),
+                  decoration: BoxDecoration(
+                    color: context.fieldBgColor.withValues(
+                      alpha: context.isDark
+                          ? UiSpec.floatingSelectedSurfaceDarkOpacity
+                          : UiSpec.floatingSelectedSurfaceLightOpacity,
+                    ),
+                    borderRadius: BorderRadius.circular(
+                      UiSpec.floatingIndicatorRadius,
+                    ),
+                    border: Border.all(
+                      color: context.accentColor.withValues(
+                        alpha: context.isDark
+                            ? UiSpec.floatingSelectedBorderDarkOpacity
+                            : UiSpec.floatingSelectedBorderLightOpacity,
+                      ),
+                      width: 0.7,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: CupertinoColors.black.withValues(
+                          alpha: context.isDark
+                              ? UiSpec.floatingSelectedShadowDarkOpacity
+                              : UiSpec.floatingSelectedShadowLightOpacity,
                         ),
+                        blurRadius: UiSpec.floatingSelectedShadowBlur,
+                        offset: UiSpec.floatingSelectedShadowOffset,
+                      ),
                     ],
                   ),
-                ],
-              );
-            },
+                );
+                return Stack(
+                  children: [
+                    if (_floatingDragActive)
+                      Positioned(
+                        key: const ValueKey('home-floating-nav-indicator'),
+                        left:
+                            itemWidth * (_floatingDragIndex ?? _currentTab) + 4,
+                        top: 4,
+                        bottom: 4,
+                        width: itemWidth - 8,
+                        child: indicator,
+                      )
+                    else
+                      AnimatedPositioned(
+                        key: const ValueKey('home-floating-nav-indicator'),
+                        duration: AppMotion.tabSelection,
+                        curve: AppMotion.tabSelectionCurve,
+                        left:
+                            itemWidth * (_floatingDragIndex ?? _currentTab) + 4,
+                        top: 4,
+                        bottom: 4,
+                        width: itemWidth - 8,
+                        child: indicator,
+                      ),
+                    Row(
+                      children: [
+                        for (var index = 0; index < tabs.length; index++)
+                          Expanded(
+                            child: _buildFloatingTab(
+                              index: index,
+                              icon: tabs[index].icon,
+                              activeIcon: tabs[index].activeIcon,
+                              label: tabs[index].label,
+                              totalUnread: totalUnread,
+                              momentsUnread: momentsUnread,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -537,14 +651,25 @@ class _HomeScreenState extends State<HomeScreen>
     final badge = index == 0 && totalUnread > 0;
     final momentBadge = index == 2 && momentsUnread;
     return Listener(
-      onPointerDown: (_) => setState(() => _pressedTab = index),
-      onPointerUp: (_) => setState(() => _pressedTab = null),
-      onPointerCancel: (_) => setState(() => _pressedTab = null),
+      onPointerDown: (event) {
+        _startFloatingDrag(index, event.position.dx);
+        setState(() => _pressedTab = index);
+      },
+      onPointerMove: (event) => _updateFloatingDrag(index, event.position.dx),
+      onPointerUp: (_) {
+        _finishFloatingDrag();
+        if (mounted) setState(() => _pressedTab = null);
+      },
+      onPointerCancel: (_) {
+        _cancelFloatingDrag();
+        if (mounted) setState(() => _pressedTab = null);
+      },
       child: AnimatedScale(
         scale: _pressedTab == index ? AppMotion.pressScale : 1,
         duration: AppMotion.micro,
         curve: AppMotion.out,
         child: CupertinoButton(
+          key: ValueKey<String>('home-floating-tab-$index'),
           padding: EdgeInsets.zero,
           onPressed: () => _onTabTap(index),
           child: SizedBox(
@@ -1020,7 +1145,7 @@ class _HomeScreenState extends State<HomeScreen>
                 child: AlphabetIndexBar(
                   availableLetters: availableLetters,
                   onDragStart: () {
-                    _indexDragging = true;
+                    _setIndexDragging(true);
                   },
                   onLetterChanged: (letter) {
                     if (!_showCharIndexTooltip ||
@@ -1033,7 +1158,7 @@ class _HomeScreenState extends State<HomeScreen>
                     _scrollToNearest(letter, _contactAvailableLetters);
                   },
                   onDragEnd: () {
-                    _indexDragging = false;
+                    _setIndexDragging(false);
                     setState(() {
                       _showCharIndexTooltip = false;
                     });

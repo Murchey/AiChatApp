@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
-import '../config/ui_spec.dart';
 import '../widgets/settings/settings_ui.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
@@ -26,6 +25,7 @@ class StorageManageScreen extends StatefulWidget {
 }
 
 class _StorageManageScreenState extends State<StorageManageScreen> {
+  final ScrollController _scrollController = ScrollController();
   List<StorageItem> _items = [];
   bool _loading = true;
 
@@ -37,7 +37,29 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
     _scan();
   }
 
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _restoreScrollOffset(double offset) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      final target = offset.clamp(0.0, position.maxScrollExtent).toDouble();
+      if ((position.pixels - target).abs() > 0.5) {
+        _scrollController.jumpTo(target);
+      }
+    });
+  }
+
   Future<void> _scan() async {
+    // The first scan happens while the list is not mounted. Only restore an
+    // existing list's position after a delete/rescan; an initial zero offset
+    // must never compete with a user's first drag.
+    final shouldRestore = _scrollController.hasClients && !_loading;
+    final previousOffset = shouldRestore ? _scrollController.offset : 0.0;
     setState(() => _loading = true);
     List<StorageItem> items = [];
     try {
@@ -50,6 +72,7 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
       _items = items;
       _loading = false;
     });
+    if (shouldRestore) _restoreScrollOffset(previousOffset);
   }
 
   /// 文件体积展示：B / KB / MB / GB
@@ -120,10 +143,7 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: Text('删除「${item.title}」'),
-        content: Text(
-          _confirmMessage(item),
-          textAlign: TextAlign.left,
-        ),
+        content: Text(_confirmMessage(item), textAlign: TextAlign.left),
         actions: [
           CupertinoDialogAction(
             child: const Text('取消'),
@@ -268,10 +288,9 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
         child: _loading
             ? const Center(child: CupertinoActivityIndicator())
             : ListView(
-                padding: const EdgeInsets.only(
-                  top: UiSpec.settingsPageTop,
-                  bottom: UiSpec.floatingContentBottomInset,
-                ),
+                key: const PageStorageKey<String>('storage-manage-list'),
+                controller: _scrollController,
+                padding: settingsPageContentPadding(context),
                 children: [
                   // 总览
                   SettingsSection(
@@ -315,8 +334,10 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
     );
   }
 
-  Widget _buildSection(
-      {required String header, required List<StorageItem> items}) {
+  Widget _buildSection({
+    required String header,
+    required List<StorageItem> items,
+  }) {
     if (items.isEmpty) return const SizedBox.shrink();
     return SettingsSection(
       title: header,
@@ -330,10 +351,7 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
               item.subtitle,
               maxLines: 6,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textSecondaryColor,
-              ),
+              style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -357,6 +375,7 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
                 ),
               ],
             ),
+            trailingWidth: 96,
             onTap: () => _delete(item),
           ),
       ],

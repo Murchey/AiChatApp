@@ -10,7 +10,6 @@ import '../providers/group_chat_provider.dart';
 import '../services/memory_pool_builder.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/settings/settings_ui.dart';
-import '../config/ui_spec.dart';
 
 /// 记忆池管理页：查看与管理每个角色记忆池的拼接内容。
 ///
@@ -32,6 +31,13 @@ class MemoryPoolManagerScreen extends StatefulWidget {
 class _MemoryPoolManagerScreenState extends State<MemoryPoolManagerScreen> {
   /// 已展开查看详情的角色 id 集合
   final Set<String> _expanded = {};
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,9 +52,9 @@ class _MemoryPoolManagerScreenState extends State<MemoryPoolManagerScreen> {
       navigationBar: settingsNavigationBar(context, '记忆池管理'),
       backgroundColor: context.scaffoldColor,
       child: ListView(
-        padding: const EdgeInsets.only(
-            top: UiSpec.settingsPageTop,
-            bottom: UiSpec.floatingContentBottomInset),
+        key: const PageStorageKey<String>('memory-pool-manager-list'),
+        controller: _scrollController,
+        padding: settingsPageContentPadding(context),
         children: [
           // 功能说明
           SettingsSection(
@@ -114,8 +120,9 @@ class _MemoryPoolManagerScreenState extends State<MemoryPoolManagerScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: CupertinoSlider(
-                    value:
-                        chatSettings.momentMemoryCount.clamp(0, 10).toDouble(),
+                    value: chatSettings.momentMemoryCount
+                        .clamp(0, 10)
+                        .toDouble(),
                     min: 0,
                     max: 10,
                     divisions: 10,
@@ -213,10 +220,7 @@ class _CharacterCard extends StatelessWidget {
       child: Column(
         children: [
           SettingsRow(
-            leading: CharacterAvatar(
-              base64: character.avatar,
-              size: 40,
-            ),
+            leading: CharacterAvatar(base64: character.avatar, size: 40),
             title: Text(character.displayName),
             subtitle: Text(expanded ? '点击收起详情' : '点击查看记忆池拼接内容'),
             trailing: Icon(
@@ -233,40 +237,34 @@ class _CharacterCard extends StatelessWidget {
             _SectionRow(
               title: MemoryPoolBuilder.kPrivateSectionTitle,
               content: contentOf(MemoryPoolBuilder.kPrivateSectionTitle),
-              enabled:
-                  !disabled.contains(MemoryPoolBuilder.kPrivateSectionTitle),
-              onChanged: (v) => onSectionChanged(
+              enabled: !disabled.contains(
                 MemoryPoolBuilder.kPrivateSectionTitle,
-                v,
               ),
+              onChanged: (v) =>
+                  onSectionChanged(MemoryPoolBuilder.kPrivateSectionTitle, v),
             ),
             _SectionRow(
               title: MemoryPoolBuilder.kMomentsSectionTitle,
               content: contentOf(MemoryPoolBuilder.kMomentsSectionTitle),
-              enabled:
-                  !disabled.contains(MemoryPoolBuilder.kMomentsSectionTitle),
-              onChanged: (v) => onSectionChanged(
+              enabled: !disabled.contains(
                 MemoryPoolBuilder.kMomentsSectionTitle,
-                v,
               ),
+              onChanged: (v) =>
+                  onSectionChanged(MemoryPoolBuilder.kMomentsSectionTitle, v),
             ),
             _SectionRow(
               title: MemoryPoolBuilder.kGroupSectionTitle,
               content: contentOf(MemoryPoolBuilder.kGroupSectionTitle),
               enabled: !disabled.contains(MemoryPoolBuilder.kGroupSectionTitle),
-              onChanged: (v) => onSectionChanged(
-                MemoryPoolBuilder.kGroupSectionTitle,
-                v,
-              ),
+              onChanged: (v) =>
+                  onSectionChanged(MemoryPoolBuilder.kGroupSectionTitle, v),
             ),
             _SectionRow(
               title: MemoryPoolBuilder.kCardSectionTitle,
               content: contentOf(MemoryPoolBuilder.kCardSectionTitle),
               enabled: !disabled.contains(MemoryPoolBuilder.kCardSectionTitle),
-              onChanged: (v) => onSectionChanged(
-                MemoryPoolBuilder.kCardSectionTitle,
-                v,
-              ),
+              onChanged: (v) =>
+                  onSectionChanged(MemoryPoolBuilder.kCardSectionTitle, v),
             ),
           ],
         ],

@@ -1355,6 +1355,9 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                           ),
                         GroupMessageInput(
                           key: _inputKey,
+                          backdropColor: hasBg
+                              ? context.chatBgColor.withValues(alpha: 0.86)
+                              : context.chatBgColor,
                           onSend: _handleSend,
                           onRequestReply: _triggerReply,
                           replyEnabled: replyEnabled,

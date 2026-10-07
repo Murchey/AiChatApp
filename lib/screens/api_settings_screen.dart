@@ -1,7 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
-import '../config/ui_spec.dart';
 import '../providers/api_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../services/tts_service.dart';
@@ -11,8 +10,21 @@ import 'model_edit_screen.dart';
 import 'provider_preset_screen.dart';
 
 /// API 设置页面 - 管理模型（API 地址、模型名称、展示名称、API Key）
-class ApiSettingsScreen extends StatelessWidget {
+class ApiSettingsScreen extends StatefulWidget {
   const ApiSettingsScreen({super.key});
+
+  @override
+  State<ApiSettingsScreen> createState() => _ApiSettingsScreenState();
+}
+
+class _ApiSettingsScreenState extends State<ApiSettingsScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   /// 跳转到添加 / 编辑模型的二级页面
   void _openModelEdit(BuildContext context, {ApiModel? model}) {
@@ -376,10 +388,9 @@ class ApiSettingsScreen extends StatelessWidget {
       navigationBar: settingsNavigationBar(context, 'API 设置'),
       backgroundColor: context.scaffoldColor,
       child: ListView(
-        padding: EdgeInsets.only(
-          top: MediaQuery.paddingOf(context).top + UiSpec.settingsPageTop,
-          bottom: UiSpec.floatingContentBottomInset,
-        ),
+        key: const PageStorageKey<String>('api-settings-list'),
+        controller: _scrollController,
+        padding: settingsPageContentPadding(context),
         children: [
           SettingsSection(
             title: '快捷预设',

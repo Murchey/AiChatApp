@@ -342,6 +342,12 @@ extension AppThemeX on BuildContext {
       ? CupertinoColors.white.withValues(alpha: 0.1)
       : CupertinoColors.systemGrey5;
 
+  /// Chat title separators disappear in dark mode so a signature-expanded
+  /// title does not gain a bright line beneath it.
+  Color get chatTitleDividerColor => isDark
+      ? CupertinoColors.transparent
+      : separatorColor.withValues(alpha: 0.62);
+
   /// 会话列表的弱分割线：接近微信列表的低对比度分隔，避免暗色模式
   /// 因为重复覆盖透明度而出现刺眼的亮线。
   Color get conversationDividerColor => isDark
@@ -376,10 +382,10 @@ extension AppThemeX on BuildContext {
       read<SettingsProvider>().homeNavigationStyle;
 
   /// 底部导航模式对应的主页滚动末尾留白。
-  double get homeContentBottomInset => homeNavigationStyle ==
-          HomeNavigationStyle.floating
-      ? UiSpec.floatingContentBottomInset
-      : UiSpec.bottomPanelContentBottomInset;
+  double get homeContentBottomInset =>
+      homeNavigationStyle == HomeNavigationStyle.floating
+          ? UiSpec.floatingContentBottomInset
+          : UiSpec.bottomPanelContentBottomInset;
 
   /// 气泡圆角半径（Apple 消息样式的柔和胶囊感）
   double get bubbleBorderRadius => 18;

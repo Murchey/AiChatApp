@@ -2,15 +2,27 @@ import 'package:flutter/cupertino.dart';
 import '../config/theme.dart';
 import '../models/provider_preset.dart';
 import '../widgets/settings/settings_ui.dart';
-import '../config/ui_spec.dart';
 import 'provider_config_screen.dart';
 
 /// 快捷预设二级页面：常用 OpenAI 兼容厂商列表
 ///
 /// 点击厂商进入「厂商设置」页：填写请求地址与 API Key，
 /// 勾选本地推荐模型（或在线检测）后批量添加。
-class ProviderPresetScreen extends StatelessWidget {
+class ProviderPresetScreen extends StatefulWidget {
   const ProviderPresetScreen({super.key});
+
+  @override
+  State<ProviderPresetScreen> createState() => _ProviderPresetScreenState();
+}
+
+class _ProviderPresetScreenState extends State<ProviderPresetScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +30,9 @@ class ProviderPresetScreen extends StatelessWidget {
       navigationBar: settingsNavigationBar(context, '快捷预设'),
       backgroundColor: context.scaffoldColor,
       child: ListView(
-        padding: EdgeInsets.only(bottom: UiSpec.floatingContentBottomInset),
+        key: const PageStorageKey<String>('provider-preset-list'),
+        controller: _scrollController,
+        padding: settingsPageContentPadding(context),
         children: [
           const SizedBox(height: 12),
           Padding(

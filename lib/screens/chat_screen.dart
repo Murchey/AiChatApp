@@ -931,7 +931,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         backgroundColor: context.navBarColor.withValues(alpha: 0.78),
         border: Border(
           bottom: BorderSide(
-            color: context.separatorColor.withValues(alpha: 0.62),
+            color: context.chatTitleDividerColor,
             width: 0.5,
           ),
         ),
@@ -1273,6 +1273,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               ),
                             MessageInput(
                               key: _inputKey,
+                              backdropColor: hasBg
+                                  ? context.chatBgColor.withValues(alpha: 0.86)
+                                  : context.chatBgColor,
                               onSend: _handleSend,
                               onPickImage: _handlePickImage,
                               onStickerSelected: _handleStickerSelection,

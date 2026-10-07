@@ -12,6 +12,9 @@ import 'chat_send_button.dart';
 enum _InputPanel { none, grid, sticker }
 
 class MessageInput extends StatefulWidget {
+  /// Full-width backing surface for the input and its tool panel. Chat screens
+  /// pass a translucent chat canvas when a wallpaper is active.
+  final Color? backdropColor;
   final Function(String) onSend;
   final Function(String)? onPickImage;
   final Function(String, String)? onPickFile; // (文件路径, 文件名)
@@ -38,6 +41,7 @@ class MessageInput extends StatefulWidget {
 
   const MessageInput({
     super.key,
+    this.backdropColor,
     this.inputKey,
     required this.onSend,
     this.onPickImage,
@@ -65,8 +69,9 @@ class MessageInput extends StatefulWidget {
 class MessageInputState extends State<MessageInput>
     with WidgetsBindingObserver {
   // 原生系统文件选择（MainActivity 中实现，Android 专用）
-  static const MethodChannel _fileChannel =
-      MethodChannel('com.aichat.ai_chat/files');
+  static const MethodChannel _fileChannel = MethodChannel(
+    'com.aichat.ai_chat/files',
+  );
 
   final TextEditingController _controller = TextEditingController();
   final ImagePicker _picker = ImagePicker();
@@ -187,162 +192,173 @@ class MessageInputState extends State<MessageInput>
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     if (keyboardInset > 0) _lastKeyboardHeight = keyboardInset;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 输入栏
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            UiSpec.floatingHorizontal - 4,
-            UiSpec.spaceSm,
-            UiSpec.floatingHorizontal - 4,
-            _panel == _InputPanel.none ? UiSpec.spaceXs : 0,
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(UiSpec.radiusInputCapsule),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: UiSpec.glassBlurSigma,
-                sigmaY: UiSpec.glassBlurSigma,
+    return Container(
+      color: widget.backdropColor ?? context.navBarColor,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Telegram-style layout: tools grow above the input capsule.
+          if (_panel == _InputPanel.grid)
+            widget.isRoleplayMode
+                ? _buildRoleplayPanel(context)
+                : _buildGridPanel(context),
+          if (_panel == _InputPanel.sticker)
+            SizedBox(
+              height: _panelHeight(context),
+              child: StickerPickerScreen.embedded(
+                onSelected: (selection) async {
+                  await widget.onStickerSelected?.call(selection);
+                  if (mounted) setState(() => _panel = _InputPanel.none);
+                },
+                onClose: () => setState(() => _panel = _InputPanel.none),
               ),
-              child: Container(
-                key: const ValueKey('message-input-capsule'),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                constraints: const BoxConstraints(
-                  minHeight: UiSpec.inputCapsuleMinHeight,
-                  maxHeight: UiSpec.inputCapsuleMaxHeight,
+            ),
+          // 输入栏
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              UiSpec.floatingHorizontal - 4,
+              UiSpec.spaceSm,
+              UiSpec.floatingHorizontal - 4,
+              _panel == _InputPanel.none ? UiSpec.spaceXs : 0,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(UiSpec.radiusInputCapsule),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(
+                  sigmaX: UiSpec.glassBlurSigma,
+                  sigmaY: UiSpec.glassBlurSigma,
                 ),
-                decoration: BoxDecoration(
-                  color: context.navBarColor.withValues(
-                    alpha: context.isDark ? 0.78 : 0.84,
+                child: Container(
+                  key: const ValueKey('message-input-capsule'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
                   ),
-                  borderRadius:
-                      BorderRadius.circular(UiSpec.radiusInputCapsule),
-                  border: Border.all(
-                    color: context.outlineColor.withValues(alpha: 0.45),
-                    width: 0.6,
+                  constraints: const BoxConstraints(
+                    minHeight: UiSpec.inputCapsuleMinHeight,
+                    maxHeight: UiSpec.inputCapsuleMaxHeight,
                   ),
-                ),
-                child: SafeArea(
-                  top: false,
-                  // 加号/表情面板在输入栏下方时，底部安全区只由面板负责；
-                  // 否则输入栏和面板会重复占用导航栏高度，导致与键盘顶端不齐。
-                  bottom: _panel == _InputPanel.none,
-                  child: Row(
-                    children: [
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(32, 32),
-                        onPressed: _handleToggleGrid,
-                        child: Icon(
-                          _panel == _InputPanel.grid
-                              ? CupertinoIcons.keyboard
-                              : CupertinoIcons.add_circled,
-                          size: 24,
-                          color: context.textSecondaryColor,
-                        ),
-                      ),
-                      if (widget.showStickerButton) ...[
-                        const SizedBox(width: 2),
+                  decoration: BoxDecoration(
+                    color: context.navBarColor.withValues(
+                      alpha: context.isDark ? 0.78 : 0.84,
+                    ),
+                    borderRadius: BorderRadius.circular(
+                      UiSpec.radiusInputCapsule,
+                    ),
+                    border: Border.all(
+                      color: context.outlineColor.withValues(alpha: 0.45),
+                      width: 0.6,
+                    ),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    // 加号/表情面板在输入栏下方时，底部安全区只由面板负责；
+                    // 否则输入栏和面板会重复占用导航栏高度，导致与键盘顶端不齐。
+                    bottom: _panel == _InputPanel.none,
+                    child: Row(
+                      children: [
                         CupertinoButton(
                           padding: EdgeInsets.zero,
                           minimumSize: const Size(32, 32),
-                          onPressed: _handleStickerTap,
+                          onPressed: _handleToggleGrid,
                           child: Icon(
-                            CupertinoIcons.smiley,
+                            _panel == _InputPanel.grid
+                                ? CupertinoIcons.keyboard
+                                : CupertinoIcons.add_circled,
                             size: 24,
                             color: context.textSecondaryColor,
                           ),
                         ),
-                      ],
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: CupertinoTextField(
-                          controller: _controller,
-                          focusNode: _inputFocusNode,
-                          placeholder: '输入消息...',
-                          maxLines: 4,
-                          minLines: 1,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: context.textPrimaryColor,
+                        if (widget.showStickerButton) ...[
+                          const SizedBox(width: 2),
+                          CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(32, 32),
+                            onPressed: _handleStickerTap,
+                            child: Icon(
+                              CupertinoIcons.smiley,
+                              size: 24,
+                              color: context.textSecondaryColor,
+                            ),
                           ),
-                          decoration: BoxDecoration(
-                            color: context.fieldBgColor.withValues(alpha: 0.82),
-                            borderRadius: BorderRadius.circular(18),
+                        ],
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: CupertinoTextField(
+                            controller: _controller,
+                            focusNode: _inputFocusNode,
+                            placeholder: '输入消息...',
+                            maxLines: 4,
+                            minLines: 1,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: context.textPrimaryColor,
+                            ),
+                            decoration: BoxDecoration(
+                              color: context.fieldBgColor.withValues(
+                                alpha: 0.82,
+                              ),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            // 桌面端 Enter 发送；手机端保持默认（回车换行由系统键盘决定）
+                            textInputAction: widget.enterToSend
+                                ? TextInputAction.send
+                                : TextInputAction.newline,
+                            onSubmitted: widget.enterToSend
+                                ? (_) {
+                                    final text = _controller.text.trim();
+                                    if (text.isNotEmpty) _handleSend();
+                                  }
+                                : null,
                           ),
-                          // 桌面端 Enter 发送；手机端保持默认（回车换行由系统键盘决定）
-                          textInputAction: widget.enterToSend
-                              ? TextInputAction.send
-                              : TextInputAction.newline,
-                          onSubmitted: widget.enterToSend
-                              ? (_) {
-                                  final text = _controller.text.trim();
-                                  if (text.isNotEmpty) _handleSend();
-                                }
-                              : null,
                         ),
-                      ),
-                      // 右侧按钮只订阅文本值，避免每次输入都重建整个胶囊和
-                      // 已展开的功能面板。
-                      ValueListenableBuilder<TextEditingValue>(
-                        valueListenable: _controller,
-                        builder: (context, value, _) {
-                          final hasText = value.text.trim().isNotEmpty;
-                          if (hasText) {
+                        // 右侧按钮只订阅文本值，避免每次输入都重建整个胶囊和
+                        // 已展开的功能面板。
+                        ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: _controller,
+                          builder: (context, value, _) {
+                            final hasText = value.text.trim().isNotEmpty;
+                            if (hasText) {
+                              return Padding(
+                                padding: const EdgeInsets.only(left: 6),
+                                child: ChatSendButton(onPressed: _handleSend),
+                              );
+                            }
+                            if (widget.onRequestReply == null) {
+                              return const SizedBox.shrink();
+                            }
                             return Padding(
                               padding: const EdgeInsets.only(left: 6),
-                              child: ChatSendButton(onPressed: _handleSend),
-                            );
-                          }
-                          if (widget.onRequestReply == null) {
-                            return const SizedBox.shrink();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(left: 6),
-                            child: CupertinoButton(
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(36, 36),
-                              onPressed: widget.replyEnabled
-                                  ? widget.onRequestReply
-                                  : null,
-                              child: Icon(
-                                CupertinoIcons.checkmark_circle_fill,
-                                size: 28,
-                                color: widget.replyEnabled
-                                    ? context.accentColor
-                                    : context.textSecondaryColor,
+                              child: CupertinoButton(
+                                padding: EdgeInsets.zero,
+                                minimumSize: const Size(36, 36),
+                                onPressed: widget.replyEnabled
+                                    ? widget.onRequestReply
+                                    : null,
+                                child: Icon(
+                                  CupertinoIcons.checkmark_circle_fill,
+                                  size: 28,
+                                  color: widget.replyEnabled
+                                      ? context.accentColor
+                                      : context.textSecondaryColor,
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-        // 网格菜单面板（位于输入框下方，将输入框抬起）
-        if (_panel == _InputPanel.grid)
-          widget.isRoleplayMode
-              ? _buildRoleplayPanel(context)
-              : _buildGridPanel(context),
-        if (_panel == _InputPanel.sticker)
-          SizedBox(
-            height: _panelHeight(context),
-            child: StickerPickerScreen.embedded(
-              onSelected: (selection) async {
-                await widget.onStickerSelected?.call(selection);
-                if (mounted) setState(() => _panel = _InputPanel.none);
-              },
-              onClose: () => setState(() => _panel = _InputPanel.none),
-            ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -362,8 +378,13 @@ class MessageInputState extends State<MessageInput>
   Widget _buildRoleplayChoicesPage(BuildContext context) {
     final choices = widget.roleplayChoices;
     return Container(
-      color: context.navBarColor,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      color: widget.backdropColor ?? context.navBarColor,
+      padding: const EdgeInsets.fromLTRB(
+        16,
+        UiSpec.inputPanelTopPadding,
+        16,
+        UiSpec.inputPanelBottomPadding,
+      ),
       child: SafeArea(
         top: false,
         child: Column(
@@ -393,7 +414,9 @@ class MessageInputState extends State<MessageInput>
                         final choice = choices[index];
                         return CupertinoButton(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
                           color: context.fieldBgColor,
                           borderRadius: BorderRadius.circular(10),
                           alignment: Alignment.centerLeft,
@@ -417,8 +440,10 @@ class MessageInputState extends State<MessageInput>
             Center(
               child: Text(
                 '左划查看更多功能',
-                style:
-                    TextStyle(fontSize: 12, color: context.textSecondaryColor),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.textSecondaryColor,
+                ),
               ),
             ),
           ],
@@ -462,10 +487,7 @@ class MessageInputState extends State<MessageInput>
             final result = await _fileChannel.invokeMethod('pickFile');
             if (result != null && widget.onPickFile != null) {
               final map = Map<String, dynamic>.from(result as Map);
-              widget.onPickFile!(
-                map['path'] as String,
-                map['name'] as String,
-              );
+              widget.onPickFile!(map['path'] as String, map['name'] as String);
             }
           } on PlatformException catch (e) {
             if (mounted) _showPickError(e.message ?? '选择文件失败');
@@ -534,18 +556,39 @@ class MessageInputState extends State<MessageInput>
     return SizedBox(
       height: panelHeight,
       child: Container(
-        color: context.navBarColor,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        color: widget.backdropColor ?? context.navBarColor,
+        padding: const EdgeInsets.fromLTRB(
+          16,
+          UiSpec.inputPanelTopPadding,
+          16,
+          UiSpec.inputPanelBottomPadding,
+        ),
         child: SafeArea(
           top: false,
-          child: GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 4,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 16,
-            children:
-                items.map((item) => _buildGridTile(context, item)).toList(),
+          child: Column(
+            children: [
+              Container(
+                width: UiSpec.inputPanelHandleWidth,
+                height: UiSpec.inputPanelHandleHeight,
+                decoration: BoxDecoration(
+                  color: context.textSecondaryColor.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(height: UiSpec.inputPanelHandleGap),
+              Expanded(
+                child: GridView.count(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  crossAxisCount: 4,
+                  mainAxisSpacing: UiSpec.inputPanelRowGap,
+                  crossAxisSpacing: 16,
+                  children: items
+                      .map((item) => _buildGridTile(context, item))
+                      .toList(),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -556,7 +599,10 @@ class MessageInputState extends State<MessageInput>
     final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
     final keyboardHeight = _lastKeyboardHeight;
     if (keyboardHeight == null) {
-      return (MediaQuery.sizeOf(context).height * 0.4).clamp(280.0, 420.0);
+      return (MediaQuery.sizeOf(context).height * 0.30).clamp(
+        200.0,
+        UiSpec.inputPanelMaxHeight,
+      );
     }
     // SafeArea 会在键盘收起后额外加入底部系统安全区，面板外层先扣除，
     // 使「面板 + SafeArea」的总高度严格等于键盘实际占用高度。
@@ -570,26 +616,19 @@ class MessageInputState extends State<MessageInput>
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 56,
-            height: 56,
+            width: UiSpec.inputPanelButtonSize,
+            height: UiSpec.inputPanelButtonSize,
             decoration: BoxDecoration(
               color: context.fieldBgColor,
               borderRadius: BorderRadius.circular(14),
             ),
             alignment: Alignment.center,
-            child: Icon(
-              item.icon,
-              size: 28,
-              color: context.textPrimaryColor,
-            ),
+            child: Icon(item.icon, size: 28, color: context.textPrimaryColor),
           ),
           const SizedBox(height: 6),
           Text(
             item.label,
-            style: TextStyle(
-              fontSize: 12,
-              color: context.textSecondaryColor,
-            ),
+            style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
           ),
         ],
       ),

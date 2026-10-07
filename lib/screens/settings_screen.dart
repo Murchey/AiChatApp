@@ -41,6 +41,14 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   String _themeLabel(AppThemeMode mode) {
     switch (mode) {
       case AppThemeMode.light:
@@ -205,11 +213,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     // 显示更新弹窗
-    showUpdateAvailableDialog(
-      context,
-      info,
-      proxyUrl: settings.updateProxyUrl,
-    );
+    showUpdateAvailableDialog(context, info, proxyUrl: settings.updateProxyUrl);
   }
 
   void _showUpdateNotification(String body) {
@@ -222,7 +226,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildBubbleFontSizePanel(
-      BuildContext context, SettingsProvider settings, VoidCallback close) {
+    BuildContext context,
+    SettingsProvider settings,
+    VoidCallback close,
+  ) {
     var size = settings.bubbleFontSize;
     return StatefulBuilder(
       builder: (panelContext, update) => SingleChildScrollView(
@@ -243,8 +250,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 16),
             for (final isUser in [false, true])
               Align(
-                alignment:
-                    isUser ? Alignment.centerRight : Alignment.centerLeft,
+                alignment: isUser
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
@@ -281,10 +289,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
               child: const Text('保存'),
             ),
-            CupertinoButton(
-              onPressed: close,
-              child: const Text('取消'),
-            ),
+            CupertinoButton(onPressed: close, child: const Text('取消')),
           ],
         ),
       ),
@@ -318,8 +323,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               for (final slot in BubbleColorSlot.values)
                 CupertinoButton(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   onPressed: () => update(() {
                     selectedSlot = slot;
                     draftColor = settings.bubbleColor(slot);
@@ -435,10 +442,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       navigationBar: settingsNavigationBar(context, '设置'),
       backgroundColor: context.scaffoldColor,
       child: ListView(
-        padding: EdgeInsets.only(
-          top: MediaQuery.paddingOf(context).top + UiSpec.settingsPageTop,
-          bottom: UiSpec.floatingContentBottomInset,
-        ),
+        key: const PageStorageKey<String>('settings-main-list'),
+        controller: _scrollController,
+        padding: settingsPageContentPadding(context),
         children: [
           SettingsSection(
             title: '外观',
@@ -447,10 +453,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: settings.themeMode,
                 options: [
                   for (final mode in AppThemeMode.values)
-                    SettingsChoiceOption(
-                      value: mode,
-                      label: _themeLabel(mode),
-                    ),
+                    SettingsChoiceOption(value: mode, label: _themeLabel(mode)),
                 ],
                 onChanged: settings.setThemeMode,
                 panelKey: 'settings-theme-picker',
@@ -478,7 +481,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: const Text('角色头像框样式'),
                   subtitle: const Text('方形 / 圆形，作用于所有角色头像'),
                   trailing: _value(
-                      context, _avatarFrameLabel(settings.avatarFrameStyle)),
+                    context,
+                    _avatarFrameLabel(settings.avatarFrameStyle),
+                  ),
                   showChevron: true,
                   onTap: toggle,
                 ),
@@ -495,16 +500,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: const Text('查看或编辑已导入的表情包'),
                 showChevron: true,
                 onTap: () => Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                        builder: (_) => const StickerManageScreen())),
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const StickerManageScreen(),
+                  ),
+                ),
               ),
               SettingsRow(
                 icon: CupertinoIcons.hand_thumbsup,
                 title: const Text('允许角色发送表情包'),
-                subtitle: Text(settings.allowStickerSend
-                    ? '角色可按语义发送已保存的表情包'
-                    : '已关闭，角色回复时不发送表情包'),
+                subtitle: Text(
+                  settings.allowStickerSend
+                      ? '角色可按语义发送已保存的表情包'
+                      : '已关闭，角色回复时不发送表情包',
+                ),
                 trailing: CupertinoSwitch(
                   value: settings.allowStickerSend,
                   onChanged: settings.setAllowStickerSend,
@@ -516,8 +525,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: '主题色',
             children: [
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -564,9 +575,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 trailing: _value(context, settings.bubbleStyle.displayName),
                 showChevron: true,
                 onTap: () => Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                        builder: (_) => const BubbleStyleScreen())),
+                  context,
+                  CupertinoPageRoute(builder: (_) => const BubbleStyleScreen()),
+                ),
               ),
               SettingsRow(
                 icon: CupertinoIcons.textformat,
@@ -574,20 +585,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: const Text('会话标题栏与发送按钮'),
                 trailing: _value(context, settings.uiStyle.displayName),
                 showChevron: true,
-                onTap: () => Navigator.push(context,
-                    CupertinoPageRoute(builder: (_) => const UiStyleScreen())),
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(builder: (_) => const UiStyleScreen()),
+                ),
               ),
               SettingsRow(
                 icon: CupertinoIcons.photo,
                 title: const Text('开屏图标'),
                 subtitle: const Text('自定义启动页图片'),
-                trailing:
-                    _value(context, settings.hasSplashIcon ? '自定义' : '默认'),
+                trailing: _value(
+                  context,
+                  settings.hasSplashIcon ? '自定义' : '默认',
+                ),
                 showChevron: true,
                 onTap: () => Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                        builder: (_) => const SplashIconScreen())),
+                  context,
+                  CupertinoPageRoute(builder: (_) => const SplashIconScreen()),
+                ),
               ),
               SettingsRow(
                 icon: CupertinoIcons.textformat_alt,
@@ -595,9 +610,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: const Text('分别设置我方与对方聊天正文，可导入 TTF 文件'),
                 showChevron: true,
                 onTap: () => Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                        builder: (_) => const BubbleFontScreen())),
+                  context,
+                  CupertinoPageRoute(builder: (_) => const BubbleFontScreen()),
+                ),
               ),
               SettingsInlinePanel(
                 estimatedPanelHeight: 410,
@@ -648,9 +663,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               SettingsRow(
                 icon: CupertinoIcons.wrench,
                 title: const Text('开发者模式'),
-                subtitle: Text(settings.developerMode
-                    ? '已开启，「我」页底部显示软件通知互动日志'
-                    : '已关闭，开启后可查看软件通知互动日志'),
+                subtitle: Text(
+                  settings.developerMode
+                      ? '已开启，「我」页底部显示软件通知互动日志'
+                      : '已关闭，开启后可查看软件通知互动日志',
+                ),
                 trailing: CupertinoSwitch(
                   value: settings.developerMode,
                   onChanged: settings.setDeveloperMode,
@@ -690,8 +707,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               SettingsRow(
                 icon: CupertinoIcons.arrow_down_circle,
                 title: const Text('启动时自动检测更新'),
-                subtitle:
-                    Text(settings.autoCheckUpdate ? '已启用，启动时自动检测新版本' : '已关闭'),
+                subtitle: Text(
+                  settings.autoCheckUpdate ? '已启用，启动时自动检测新版本' : '已关闭',
+                ),
                 trailing: CupertinoSwitch(
                   value: settings.autoCheckUpdate,
                   onChanged: settings.setAutoCheckUpdate,
@@ -723,10 +741,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       value: proxy,
                       label: proxyDisplayText(proxy),
                     ),
-                  const SettingsChoiceOption(
-                    value: 'custom',
-                    label: '自定义…',
-                  ),
+                  const SettingsChoiceOption(value: 'custom', label: '自定义…'),
                 ],
                 onChanged: (value) {
                   if (value == 'custom') {
@@ -755,9 +770,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: const Text('管理角色跨场景记忆来源'),
                 showChevron: true,
                 onTap: () => Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                        builder: (_) => const MemoryPoolManagerScreen())),
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const MemoryPoolManagerScreen(),
+                  ),
+                ),
               ),
             ],
           ),
@@ -769,8 +786,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('数据备份'),
                 subtitle: const Text('导出或恢复全部聊天、角色与设置'),
                 showChevron: true,
-                onTap: () => Navigator.push(context,
-                    CupertinoPageRoute(builder: (_) => const BackupScreen())),
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(builder: (_) => const BackupScreen()),
+                ),
               ),
               SettingsRow(
                 icon: CupertinoIcons.folder,
@@ -778,9 +797,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: const Text('查看并清理用户数据与应用缓存'),
                 showChevron: true,
                 onTap: () => Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                        builder: (_) => const StorageManageScreen())),
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const StorageManageScreen(),
+                  ),
+                ),
               ),
             ],
           ),

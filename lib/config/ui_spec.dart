@@ -17,12 +17,16 @@ class UiSpec {
   static const double pageH = spaceLg;
 
   /// 页面上下内边距
-  static const EdgeInsets pagePadding =
-      EdgeInsets.symmetric(horizontal: pageH, vertical: spaceLg);
+  static const EdgeInsets pagePadding = EdgeInsets.symmetric(
+    horizontal: pageH,
+    vertical: spaceLg,
+  );
 
   /// 列表条目水平内边距
-  static const EdgeInsets listTilePadding =
-      EdgeInsets.symmetric(horizontal: spaceLg, vertical: spaceMd);
+  static const EdgeInsets listTilePadding = EdgeInsets.symmetric(
+    horizontal: spaceLg,
+    vertical: spaceMd,
+  );
 
   // ── 移动端现代壳层 ──
   /// 首页悬浮导航胶囊的高度
@@ -60,8 +64,9 @@ class UiSpec {
   static const double settingsInlinePanelShadowBlur = 18;
   static const double settingsInlinePanelShadowOpacity = 0.18;
 
-  /// 设置页顶部与分组之间的留白
-  static const double settingsPageTop = 18;
+  /// 设置页顶部与分组之间的留白。Cupertino 二级页的导航栏会占用
+  /// 一行标题高度，额外留出约一行正文高度，避免首项贴入导航栏底部。
+  static const double settingsPageTop = 42;
 
   /// 设置分组之间的垂直留白
   static const double settingsSectionGap = 24;
@@ -146,6 +151,17 @@ class UiSpec {
   /// 聊天输入浮层的高度范围
   static const double inputCapsuleMinHeight = 48;
   static const double inputCapsuleMaxHeight = 108;
+
+  /// Telegram-style chat tool panel sizing.
+  // 工具面板内容从顶部开始排列，避免加号面板出现一整行多余留白。
+  static const double inputPanelTopPadding = 0;
+  static const double inputPanelBottomPadding = 4;
+  static const double inputPanelHandleGap = 0;
+  static const double inputPanelHandleWidth = 32;
+  static const double inputPanelHandleHeight = 3;
+  static const double inputPanelButtonSize = 56;
+  static const double inputPanelRowGap = 12;
+  static const double inputPanelMaxHeight = 320;
 
   /// 图文间距
   static const double iconLabelGap = spaceSm;

@@ -4,6 +4,20 @@ import '../../config/motion.dart';
 import '../../config/theme.dart';
 import '../../config/ui_spec.dart';
 
+/// Shared content inset for settings pages hosted below a Cupertino bar.
+/// The page scaffold consumes the navigation bar, while the status-bar inset
+/// still needs to be reserved explicitly by the scrolling child.
+EdgeInsets settingsPageContentPadding(
+  BuildContext context, {
+  double? bottom,
+  double extraTop = 0,
+}) {
+  return EdgeInsets.only(
+    top: MediaQuery.paddingOf(context).top + UiSpec.settingsPageTop + extraTop,
+    bottom: bottom ?? UiSpec.floatingContentBottomInset,
+  );
+}
+
 /// Shared navigation chrome for settings pages. It keeps normal
 /// Navigator.pop/back gesture semantics while using a quieter, centered
 /// Obsidian-style title treatment.

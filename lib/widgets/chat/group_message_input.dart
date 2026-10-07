@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../config/theme.dart';
+import '../../config/ui_spec.dart';
 import '../chat_send_button.dart';
 
 /// 群聊底部输入框：与私聊输入框视觉一致（方形 5px 圆角 + 加号面板 + 发送/对号）。
 /// 加号面板含【相册】【拍照】【文件】【功能检测】【导出记录】【导入记录】；
 /// 输入 @ 触发成员选择（onMentionRequest）；对号触发群聊回复。
 class GroupMessageInput extends StatefulWidget {
+  final Color? backdropColor;
   final ValueChanged<String> onSend;
   final VoidCallback onRequestReply;
   final bool replyEnabled;
@@ -29,6 +31,7 @@ class GroupMessageInput extends StatefulWidget {
 
   const GroupMessageInput({
     super.key,
+    this.backdropColor,
     required this.onSend,
     required this.onRequestReply,
     required this.replyEnabled,
@@ -49,8 +52,9 @@ class GroupMessageInput extends StatefulWidget {
 class GroupMessageInputState extends State<GroupMessageInput>
     with WidgetsBindingObserver {
   // 原生系统文件选择（MainActivity 中实现，Android 专用）
-  static const MethodChannel _fileChannel =
-      MethodChannel('com.aichat.ai_chat/files');
+  static const MethodChannel _fileChannel = MethodChannel(
+    'com.aichat.ai_chat/files',
+  );
 
   final TextEditingController _controller = TextEditingController();
   final ImagePicker _picker = ImagePicker();
@@ -169,95 +173,98 @@ class GroupMessageInputState extends State<GroupMessageInput>
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     if (keyboardInset > 0) _lastKeyboardHeight = keyboardInset;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 输入栏
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            color: context.navBarColor,
-            border: Border(top: BorderSide(color: context.separatorColor)),
-          ),
-          child: SafeArea(
-            top: false,
-            // 面板位于下方时，输入栏不重复保留导航栏安全区；
-            // 与键盘展开时一致，避免两种状态的输入栏顶端产生高度差。
-            bottom: !_showGrid,
-            child: Row(
-              children: [
-                // 左侧加号：展开功能面板（相册/拍照/文件/功能检测）
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  minimumSize: const Size(28, 28),
-                  onPressed: _handleToggleGrid,
-                  child: Icon(
-                    _showGrid
-                        ? CupertinoIcons.keyboard
-                        : CupertinoIcons.add_circled,
-                    size: 26,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: CupertinoTextField(
-                    controller: _controller,
-                    focusNode: _inputFocusNode,
-                    onChanged: _handleInputChanged,
-                    placeholder: '输入消息...',
-                    maxLines: 4,
-                    minLines: 1,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: context.textPrimaryColor,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.fieldBgColor,
-                      borderRadius: BorderRadius.circular(10),
+    return Container(
+      color: widget.backdropColor ?? context.navBarColor,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_showGrid) _buildGridPanel(context),
+          // 输入栏
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            decoration: BoxDecoration(
+              color: widget.backdropColor ?? context.navBarColor,
+              border: Border(top: BorderSide(color: context.separatorColor)),
+            ),
+            child: SafeArea(
+              top: false,
+              // 面板位于下方时，输入栏不重复保留导航栏安全区；
+              // 与键盘展开时一致，避免两种状态的输入栏顶端产生高度差。
+              bottom: !_showGrid,
+              child: Row(
+                children: [
+                  // 左侧加号：展开功能面板（相册/拍照/文件/功能检测）
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(28, 28),
+                    onPressed: _handleToggleGrid,
+                    child: Icon(
+                      _showGrid
+                          ? CupertinoIcons.keyboard
+                          : CupertinoIcons.add_circled,
+                      size: 26,
+                      color: context.textSecondaryColor,
                     ),
                   ),
-                ),
-                // 右侧按钮只订阅文本值，避免输入时重建整个输入栏。
-                ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: _controller,
-                  builder: (context, value, _) {
-                    final hasText = value.text.trim().isNotEmpty;
-                    if (hasText) {
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: CupertinoTextField(
+                      controller: _controller,
+                      focusNode: _inputFocusNode,
+                      onChanged: _handleInputChanged,
+                      placeholder: '输入消息...',
+                      maxLines: 4,
+                      minLines: 1,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: context.textPrimaryColor,
+                      ),
+                      decoration: BoxDecoration(
+                        color: context.fieldBgColor,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  // 右侧按钮只订阅文本值，避免输入时重建整个输入栏。
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _controller,
+                    builder: (context, value, _) {
+                      final hasText = value.text.trim().isNotEmpty;
+                      if (hasText) {
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: ChatSendButton(onPressed: _handleSend),
+                        );
+                      }
                       return Padding(
                         padding: const EdgeInsets.only(left: 6),
-                        child: ChatSendButton(onPressed: _handleSend),
-                      );
-                    }
-                    return Padding(
-                      padding: const EdgeInsets.only(left: 6),
-                      child: CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(36, 36),
-                        onPressed:
-                            widget.replyEnabled ? widget.onRequestReply : null,
-                        child: Icon(
-                          CupertinoIcons.checkmark_circle_fill,
-                          size: 30,
-                          color: widget.replyEnabled
-                              ? context.accentColor
-                              : context.textSecondaryColor,
+                        child: CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(36, 36),
+                          onPressed: widget.replyEnabled
+                              ? widget.onRequestReply
+                              : null,
+                          child: Icon(
+                            CupertinoIcons.checkmark_circle_fill,
+                            size: 30,
+                            color: widget.replyEnabled
+                                ? context.accentColor
+                                : context.textSecondaryColor,
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-              ],
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        // 加号功能面板（位于输入框下方，将输入框抬起）
-        if (_showGrid) _buildGridPanel(context),
-      ],
+        ],
+      ),
     );
   }
 
@@ -350,25 +357,48 @@ class GroupMessageInputState extends State<GroupMessageInput>
 
     final keyboardHeight = _lastKeyboardHeight;
     final panelHeight = keyboardHeight == null
-        ? (MediaQuery.sizeOf(context).height * 0.4).clamp(280.0, 420.0)
-        : (keyboardHeight - MediaQuery.viewPaddingOf(context).bottom)
-            .clamp(0.0, keyboardHeight);
+        ? (MediaQuery.sizeOf(context).height * 0.30).clamp(200.0, 320.0)
+        : (keyboardHeight - MediaQuery.viewPaddingOf(context).bottom).clamp(
+            0.0,
+            keyboardHeight,
+          );
 
     return SizedBox(
       height: panelHeight,
       child: Container(
-        color: context.navBarColor,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        color: widget.backdropColor ?? context.navBarColor,
+        padding: const EdgeInsets.fromLTRB(
+          16,
+          UiSpec.inputPanelTopPadding,
+          16,
+          UiSpec.inputPanelBottomPadding,
+        ),
         child: SafeArea(
           top: false,
-          child: GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 4,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 16,
-            children:
-                items.map((item) => _buildGridTile(context, item)).toList(),
+          child: Column(
+            children: [
+              Container(
+                width: UiSpec.inputPanelHandleWidth,
+                height: UiSpec.inputPanelHandleHeight,
+                decoration: BoxDecoration(
+                  color: context.textSecondaryColor.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(height: UiSpec.inputPanelHandleGap),
+              Expanded(
+                child: GridView.count(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  crossAxisCount: 4,
+                  mainAxisSpacing: UiSpec.inputPanelRowGap,
+                  crossAxisSpacing: 16,
+                  children: items
+                      .map((item) => _buildGridTile(context, item))
+                      .toList(),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -389,19 +419,12 @@ class GroupMessageInputState extends State<GroupMessageInput>
               borderRadius: BorderRadius.circular(14),
             ),
             alignment: Alignment.center,
-            child: Icon(
-              item.icon,
-              size: 28,
-              color: context.textPrimaryColor,
-            ),
+            child: Icon(item.icon, size: 28, color: context.textPrimaryColor),
           ),
           const SizedBox(height: 6),
           Text(
             item.label,
-            style: TextStyle(
-              fontSize: 12,
-              color: context.textSecondaryColor,
-            ),
+            style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
           ),
         ],
       ),
