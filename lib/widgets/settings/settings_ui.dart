@@ -1,9 +1,10 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../config/motion.dart';
 import '../../config/theme.dart';
 import '../../config/ui_spec.dart';
 
-/// Shared navigation chrome for settings pages. It keeps the normal
+/// Shared navigation chrome for settings pages. It keeps normal
 /// Navigator.pop/back gesture semantics while using a quieter, centered
 /// Obsidian-style title treatment.
 CupertinoNavigationBar settingsNavigationBar(
@@ -147,7 +148,8 @@ class SettingsSection extends StatelessWidget {
 }
 
 /// A settings row with aligned leading icon, title/subtitle hierarchy, and a
-/// neutral chevron. Interactive controls remain supplied by the caller.
+/// stable trailing slot. Keeping the right slot constrained prevents a
+/// multiline subtitle from shifting values, switches, or chevrons sideways.
 class SettingsRow extends StatelessWidget {
   final Widget? leading;
   final IconData? icon;
@@ -158,6 +160,7 @@ class SettingsRow extends StatelessWidget {
   final VoidCallback? onTap;
   final bool showChevron;
   final bool enabled;
+  final double? trailingWidth;
 
   const SettingsRow({
     super.key,
@@ -170,10 +173,15 @@ class SettingsRow extends StatelessWidget {
     this.onTap,
     this.showChevron = false,
     this.enabled = true,
+    this.trailingWidth,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasTrailing = trailing != null || showChevron;
+    final defaultTrailingWidth = showChevron
+        ? (trailing == null ? 28.0 : 104.0)
+        : (trailing == null ? 0.0 : 58.0);
     final row = ConstrainedBox(
       constraints: const BoxConstraints(minHeight: UiSpec.settingsRowMinHeight),
       child: Padding(
@@ -182,6 +190,7 @@ class SettingsRow extends StatelessWidget {
           vertical: UiSpec.settingsRowVertical,
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             SizedBox(
               width: UiSpec.settingsIconWidth,
@@ -223,16 +232,32 @@ class SettingsRow extends StatelessWidget {
                 ),
               ),
             ),
-            if (trailing != null) ...[
+            if (hasTrailing) ...[
               const SizedBox(width: 10),
-              Flexible(child: trailing!),
-            ],
-            if (showChevron) ...[
-              const SizedBox(width: 8),
-              Icon(
-                CupertinoIcons.chevron_right,
-                size: 17,
-                color: context.textSecondaryColor.withValues(alpha: 0.72),
+              SizedBox(
+                width: trailingWidth ?? defaultTrailingWidth,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (trailing != null)
+                      Flexible(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: trailing!,
+                        ),
+                      ),
+                    if (showChevron) ...[
+                      if (trailing != null) const SizedBox(width: 8),
+                      Icon(
+                        CupertinoIcons.chevron_right,
+                        size: 17,
+                        color:
+                            context.textSecondaryColor.withValues(alpha: 0.72),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ],
           ],
@@ -254,9 +279,328 @@ Widget settingsValueText(BuildContext context, String value) {
     value,
     maxLines: 1,
     overflow: TextOverflow.ellipsis,
+    textAlign: TextAlign.end,
     style: TextStyle(
       fontSize: UiSpec.fontBodySm,
       color: context.textSecondaryColor,
     ),
   );
+}
+
+/// One option shown by an anchored settings picker.
+class SettingsChoiceOption<T> {
+  final T value;
+  final String label;
+  final String? subtitle;
+
+  const SettingsChoiceOption({
+    required this.value,
+    required this.label,
+    this.subtitle,
+  });
+}
+
+/// A reusable overlay anchored to a settings row. It deliberately uses the
+/// app overlay instead of a bottom sheet so the option list stays visually
+/// attached to the setting the user just tapped.
+class SettingsInlinePanel extends StatefulWidget {
+  final Widget Function(BuildContext context, VoidCallback toggle) rowBuilder;
+  final Widget Function(BuildContext context, VoidCallback close) panelBuilder;
+  final double estimatedPanelHeight;
+  final double? panelWidth;
+  final String? panelKey;
+
+  const SettingsInlinePanel({
+    super.key,
+    required this.rowBuilder,
+    required this.panelBuilder,
+    this.estimatedPanelHeight = 220,
+    this.panelWidth,
+    this.panelKey,
+  });
+
+  @override
+  State<SettingsInlinePanel> createState() => _SettingsInlinePanelState();
+}
+
+class _SettingsInlinePanelState extends State<SettingsInlinePanel>
+    with SingleTickerProviderStateMixin {
+  final _targetKey = GlobalKey();
+  OverlayEntry? _overlay;
+  late final AnimationController _animationController;
+  bool _placeAbove = false;
+  double _panelLeft = 0;
+  double _panelTop = 0;
+  double _panelWidth = 0;
+  double _panelHeight = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: AppMotion.quick,
+      reverseDuration: AppMotion.micro,
+    );
+  }
+
+  bool get isOpen => _overlay != null;
+
+  void _toggle() {
+    if (isOpen) {
+      _close();
+    } else {
+      _open();
+    }
+  }
+
+  void _open() {
+    final target = _targetKey.currentContext?.findRenderObject() as RenderBox?;
+    if (target == null || !target.hasSize) return;
+    final topLeft = target.localToGlobal(Offset.zero);
+    final media = MediaQuery.of(context);
+    final viewportTop = media.padding.top;
+    final availableBottom =
+        media.size.height - media.viewInsets.bottom - media.padding.bottom;
+    final availableHeight =
+        (availableBottom - viewportTop).clamp(1.0, double.infinity).toDouble();
+    final viewportBottom = availableBottom > viewportTop
+        ? availableBottom
+        : viewportTop + availableHeight;
+    final maxWidth = media.size.width - UiSpec.pageH * 2;
+    _panelWidth =
+        (widget.panelWidth ?? maxWidth).clamp(1.0, maxWidth).toDouble();
+    _panelLeft = topLeft.dx.clamp(
+      UiSpec.pageH,
+      media.size.width - UiSpec.pageH - _panelWidth,
+    );
+
+    // Give the panel a real height before inserting it into the root overlay.
+    // This keeps shrink-wrapped lists from expanding to the overlay height and
+    // moving their options outside the viewport when the row is near the
+    // bottom of a scrolling settings page.
+    final preferredHeight = widget.estimatedPanelHeight
+        .clamp(1.0, UiSpec.settingsInlinePanelMaxHeight)
+        .toDouble();
+    final belowSpace = viewportBottom -
+        (topLeft.dy + target.size.height + UiSpec.settingsInlinePanelGap);
+    final aboveSpace = topLeft.dy - viewportTop - UiSpec.settingsInlinePanelGap;
+    _placeAbove = belowSpace < preferredHeight && aboveSpace > belowSpace;
+    final sideSpace = _placeAbove ? aboveSpace : belowSpace;
+    final fallbackSpace = _placeAbove ? belowSpace : aboveSpace;
+    _panelHeight = preferredHeight.clamp(1.0, availableHeight).toDouble();
+    if (sideSpace > 1) {
+      _panelHeight = _panelHeight.clamp(1.0, sideSpace).toDouble();
+    } else if (fallbackSpace > 1) {
+      _placeAbove = !_placeAbove;
+      _panelHeight = _panelHeight.clamp(1.0, fallbackSpace).toDouble();
+    }
+    _panelTop = _placeAbove
+        ? topLeft.dy - UiSpec.settingsInlinePanelGap - _panelHeight
+        : topLeft.dy + target.size.height + UiSpec.settingsInlinePanelGap;
+    _panelTop =
+        _panelTop.clamp(viewportTop, viewportBottom - _panelHeight).toDouble();
+
+    _animationController.value = 0;
+    _overlay = OverlayEntry(builder: _buildOverlay);
+    Overlay.of(context, rootOverlay: true).insert(_overlay!);
+    _animationController.forward();
+    setState(() {});
+  }
+
+  Widget _buildOverlay(BuildContext overlayContext) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _close,
+          child: const SizedBox.expand(),
+        ),
+        Positioned(
+          left: _panelLeft,
+          top: _panelTop,
+          width: _panelWidth,
+          height: _panelHeight,
+          child: FadeTransition(
+            opacity: CurvedAnimation(
+              parent: _animationController,
+              curve: Curves.easeOut,
+            ),
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.98, end: 1).animate(
+                CurvedAnimation(
+                  parent: _animationController,
+                  curve: Curves.easeOutCubic,
+                ),
+              ),
+              alignment: _placeAbove ? Alignment.bottomLeft : Alignment.topLeft,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: _panelWidth,
+                  maxHeight: _panelHeight,
+                ),
+                child: KeyedSubtree(
+                  key: widget.panelKey == null
+                      ? null
+                      : ValueKey<String>(widget.panelKey!),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: context.settingsSurfaceColor,
+                      borderRadius: BorderRadius.circular(
+                        UiSpec.settingsInlinePanelRadius,
+                      ),
+                      border: Border.all(
+                        color: context.settingsOutlineColor.withValues(
+                          alpha: 0.82,
+                        ),
+                        width: 0.6,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: CupertinoColors.black.withValues(
+                            alpha: UiSpec.settingsInlinePanelShadowOpacity,
+                          ),
+                          blurRadius: UiSpec.settingsInlinePanelShadowBlur,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        UiSpec.settingsInlinePanelRadius,
+                      ),
+                      child: widget.panelBuilder(context, _close),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _close() {
+    final overlay = _overlay;
+    if (overlay == null) return;
+    _overlay = null;
+    _animationController.reverse().whenCompleteOrCancel(() {
+      overlay.remove();
+    });
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    final overlay = _overlay;
+    _overlay = null;
+    overlay?.remove();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final minWidth =
+            constraints.hasBoundedWidth ? constraints.maxWidth : 0.0;
+        return Align(
+          alignment: Alignment.topLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: minWidth),
+            child: KeyedSubtree(
+              key: _targetKey,
+              child: IntrinsicHeight(
+                child: widget.rowBuilder(context, _toggle),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A compact anchored choice list. The row remains owned by the caller so
+/// existing icons, subtitles, values, and navigation semantics are retained.
+class SettingsInlinePicker<T> extends StatelessWidget {
+  final T value;
+  final List<SettingsChoiceOption<T>> options;
+  final ValueChanged<T> onChanged;
+  final Widget Function(BuildContext context, VoidCallback toggle) rowBuilder;
+  final String? panelKey;
+
+  const SettingsInlinePicker({
+    super.key,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    required this.rowBuilder,
+    this.panelKey,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsInlinePanel(
+      panelKey: panelKey,
+      estimatedPanelHeight: options.fold<double>(
+        12,
+        (height, option) => height + (option.subtitle == null ? 52.0 : 88.0),
+      ),
+      rowBuilder: rowBuilder,
+      panelBuilder: (panelContext, close) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        children: [
+          for (final option in options)
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+              onPressed: () {
+                onChanged(option.value);
+                close();
+              },
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          option.label,
+                          style: TextStyle(
+                            fontSize: UiSpec.settingsRowTitle,
+                            color: panelContext.textPrimaryColor,
+                          ),
+                        ),
+                        if (option.subtitle != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            option.subtitle!,
+                            style: TextStyle(
+                              fontSize: UiSpec.settingsRowSubtitle,
+                              color: panelContext.textSecondaryColor,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (option.value == value)
+                    Icon(
+                      CupertinoIcons.check_mark,
+                      size: 18,
+                      color: panelContext.accentColor,
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

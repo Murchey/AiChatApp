@@ -71,7 +71,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           return ListView(
             padding: EdgeInsets.only(
               top: MediaQuery.paddingOf(context).top + UiSpec.spaceSm,
-              bottom: UiSpec.floatingContentBottomInset +
+              bottom: context.homeContentBottomInset +
                   MediaQuery.viewPaddingOf(context).bottom,
             ),
             children: [
@@ -89,8 +89,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   margin: const EdgeInsets.all(16),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: context.listBgColor,
-                    borderRadius: BorderRadius.circular(12),
+                    color: context.settingsSurfaceColor,
+                    borderRadius: BorderRadius.circular(
+                      UiSpec.settingsSectionRadius,
+                    ),
+                    border: Border.all(
+                      color: context.settingsOutlineColor.withValues(alpha: 0.7),
+                      width: 0.6,
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -136,8 +142,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               CupertinoListSection.insetGrouped(
                 backgroundColor: context.scaffoldColor,
                 decoration: BoxDecoration(
-                  color: context.listBgColor,
-                  borderRadius: BorderRadius.circular(10),
+                  color: context.settingsSurfaceColor,
+                  borderRadius: BorderRadius.circular(
+                    UiSpec.settingsSectionRadius,
+                  ),
+                  border: Border.all(
+                    color: context.settingsOutlineColor.withValues(alpha: 0.7),
+                    width: 0.6,
+                  ),
                 ),
                 children: [
                   CupertinoListTile(
@@ -226,8 +238,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               CupertinoListSection.insetGrouped(
                 backgroundColor: context.scaffoldColor,
                 decoration: BoxDecoration(
-                  color: context.listBgColor,
-                  borderRadius: BorderRadius.circular(10),
+                  color: context.settingsSurfaceColor,
+                  borderRadius: BorderRadius.circular(
+                    UiSpec.settingsSectionRadius,
+                  ),
+                  border: Border.all(
+                    color: context.settingsOutlineColor.withValues(alpha: 0.7),
+                    width: 0.6,
+                  ),
                 ),
                 children: [
                   CupertinoListTile(
@@ -296,8 +314,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               CupertinoListSection.insetGrouped(
                 backgroundColor: context.scaffoldColor,
                 decoration: BoxDecoration(
-                  color: context.listBgColor,
-                  borderRadius: BorderRadius.circular(10),
+                  color: context.settingsSurfaceColor,
+                  borderRadius: BorderRadius.circular(
+                    UiSpec.settingsSectionRadius,
+                  ),
+                  border: Border.all(
+                    color: context.settingsOutlineColor.withValues(alpha: 0.7),
+                    width: 0.6,
+                  ),
                 ),
                 children: [
                   CupertinoListTile(

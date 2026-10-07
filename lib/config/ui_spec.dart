@@ -48,6 +48,18 @@ class UiSpec {
   static const double floatingContentBottomInset =
       floatingNavHeight + floatingBottomGap + spaceLg;
 
+  /// 嵌入式底部导航模式下列表末尾的视觉留白。
+  static const double bottomPanelContentBottomInset = spaceLg;
+
+  /// 设置页浮动选择面板与锚定条目之间的间距。
+  static const double settingsInlinePanelGap = 8;
+
+  /// 设置页浮动选择面板圆角与阴影。
+  static const double settingsInlinePanelRadius = 16;
+  static const double settingsInlinePanelMaxHeight = 520;
+  static const double settingsInlinePanelShadowBlur = 18;
+  static const double settingsInlinePanelShadowOpacity = 0.18;
+
   /// 设置页顶部与分组之间的留白
   static const double settingsPageTop = 18;
 

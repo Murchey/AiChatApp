@@ -276,22 +276,29 @@ class _HomeScreenState extends State<HomeScreen>
           group.totalUnreadCount,
       builder: (context, totalUnread, _) {
         final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+        final navigationStyle = context.select<
+            SettingsProvider, HomeNavigationStyle>(
+          (settings) => settings.homeNavigationStyle,
+        );
+        final pageView = _buildPageView();
+        if (navigationStyle == HomeNavigationStyle.bottomPanel) {
+          return Column(
+            children: [
+              Expanded(child: pageView),
+              _buildBottomPanel(
+                totalUnread: totalUnread,
+                momentsUnread: momentsUnread,
+              ),
+            ],
+          );
+        }
         return Stack(
           children: [
             // 主内容：四个导航页，支持触摸横向滑动切换（与底部 tab 联动）。
             // 页面铺满全高，悬浮导航直接覆盖在真实内容上方；各滚动列表
             // 自己预留末尾安全空间，保证最后一项仍能滚到导航上方。
             Positioned.fill(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: _onPageChanged,
-                children: [
-                  _buildChatList(),
-                  _buildCharacterList(),
-                  const MomentsScreen(),
-                  const ProfileScreen(),
-                ],
-              ),
+              child: pageView,
             ),
             Positioned(
               left: UiSpec.floatingHorizontal,
@@ -305,6 +312,109 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         );
       },
+    );
+  }
+
+  Widget _buildPageView() {
+    return PageView(
+      controller: _pageController,
+      onPageChanged: _onPageChanged,
+      children: [
+        _buildChatList(),
+        _buildCharacterList(),
+        const MomentsScreen(),
+        const ProfileScreen(),
+      ],
+    );
+  }
+
+  Widget _buildBottomPanel({
+    required int totalUnread,
+    required bool momentsUnread,
+  }) {
+    return CupertinoTabBar(
+      key: const ValueKey('home-bottom-panel'),
+      currentIndex: _currentTab,
+      onTap: _onTabTap,
+      backgroundColor: context.navBarColor,
+      activeColor: context.accentColor,
+      inactiveColor: context.textSecondaryColor,
+      border: Border(
+        top: BorderSide(
+          color: context.contactDividerColor,
+          width: 0.5,
+        ),
+      ),
+      items: [
+        BottomNavigationBarItem(
+          icon: _buildBottomPanelIcon(
+            CupertinoIcons.chat_bubble,
+            unreadCount: totalUnread,
+          ),
+          activeIcon: _buildBottomPanelIcon(
+            CupertinoIcons.chat_bubble_fill,
+            unreadCount: totalUnread,
+          ),
+          label: 'AiChat',
+        ),
+        const BottomNavigationBarItem(
+          icon: Icon(CupertinoIcons.person_2),
+          activeIcon: Icon(CupertinoIcons.person_2_fill),
+          label: '通讯录',
+        ),
+        BottomNavigationBarItem(
+          icon: _buildBottomPanelIcon(
+            CupertinoIcons.photo,
+            hasDot: momentsUnread,
+          ),
+          activeIcon: _buildBottomPanelIcon(
+            CupertinoIcons.photo_fill,
+            hasDot: momentsUnread,
+          ),
+          label: '朋友圈',
+        ),
+        const BottomNavigationBarItem(
+          icon: Icon(CupertinoIcons.person_crop_circle),
+          activeIcon: Icon(CupertinoIcons.person_crop_circle_fill),
+          label: '我',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBottomPanelIcon(
+    IconData icon, {
+    int unreadCount = 0,
+    bool hasDot = false,
+  }) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon),
+        if (unreadCount > 0)
+          Positioned(
+            right: -12,
+            top: -8,
+            child: _buildUnreadBadge(unreadCount, context.navBarColor),
+          ),
+        if (hasDot)
+          Positioned(
+            right: -8,
+            top: -7,
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                color: CupertinoColors.systemRed,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: context.navBarColor,
+                  width: 1.2,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -551,8 +661,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  double _floatingContentBottomInset(BuildContext context) {
-    return UiSpec.floatingContentBottomInset +
+  double _homeContentBottomInset(BuildContext context) {
+    return context.homeContentBottomInset +
         MediaQuery.viewPaddingOf(context).bottom;
   }
 
@@ -608,7 +718,7 @@ class _HomeScreenState extends State<HomeScreen>
                 // row below that area so it remains reachable and visible at
                 // the top of the list.
                 top: MediaQuery.paddingOf(context).top + UiSpec.spaceSm,
-                bottom: _floatingContentBottomInset(context),
+                bottom: _homeContentBottomInset(context),
               ),
               itemCount: entries.length,
               separatorBuilder: (_, __) => Container(
@@ -872,7 +982,7 @@ class _HomeScreenState extends State<HomeScreen>
                   padding: EdgeInsets.only(
                     top: topPadding,
                     right: 28,
-                    bottom: _floatingContentBottomInset(context),
+                    bottom: _homeContentBottomInset(context),
                   ),
                   itemCount: entries.length,
                   itemExtentBuilder: (index, _) => entries[index].height,
@@ -913,8 +1023,7 @@ class _HomeScreenState extends State<HomeScreen>
                           key: ValueKey(item.keyValue),
                           child: Container(
                             margin: const EdgeInsets.only(left: 76),
-                            color:
-                                context.separatorColor.withValues(alpha: 0.62),
+                            color: context.contactDividerColor,
                           ),
                         );
                     }
@@ -925,7 +1034,7 @@ class _HomeScreenState extends State<HomeScreen>
               Positioned(
                 right: 0,
                 top: MediaQuery.paddingOf(context).top + 8,
-                bottom: _floatingContentBottomInset(context) + 8,
+                bottom: _homeContentBottomInset(context) + 8,
                 child: AlphabetIndexBar(
                   availableLetters: availableLetters,
                   onDragStart: () {

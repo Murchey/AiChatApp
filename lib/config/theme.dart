@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
+import 'ui_spec.dart';
 
 /// sr 崩铁短信气泡配色（从截图提取）
 class SrBubbleColors {
@@ -347,6 +348,11 @@ extension AppThemeX on BuildContext {
       ? CupertinoColors.white.withValues(alpha: 0.08)
       : CupertinoColors.black.withValues(alpha: 0.07);
 
+  /// 通讯录分割线：比会话列表更轻，避免密集的亮线影响浏览。
+  Color get contactDividerColor => isDark
+      ? CupertinoColors.white.withValues(alpha: 0.045)
+      : CupertinoColors.black.withValues(alpha: 0.05);
+
   /// 朋友圈页面/面板背景
   Color get momentsBgColor =>
       isDark ? AppColors.momentsBgDark : AppColors.momentsBgLight;
@@ -364,6 +370,16 @@ extension AppThemeX on BuildContext {
 
   /// 当前会话 UI 样式
   UiStyle get uiStyle => read<SettingsProvider>().uiStyle;
+
+  /// 当前首页移动端底部导航样式。
+  HomeNavigationStyle get homeNavigationStyle =>
+      read<SettingsProvider>().homeNavigationStyle;
+
+  /// 底部导航模式对应的主页滚动末尾留白。
+  double get homeContentBottomInset => homeNavigationStyle ==
+          HomeNavigationStyle.floating
+      ? UiSpec.floatingContentBottomInset
+      : UiSpec.bottomPanelContentBottomInset;
 
   /// 气泡圆角半径（Apple 消息样式的柔和胶囊感）
   double get bubbleBorderRadius => 18;

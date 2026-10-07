@@ -73,4 +73,19 @@ void main() {
 
     expect(settings.accentColor, savedColor);
   });
+
+  test('home navigation style defaults to floating and persists panel mode',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider();
+    await settings.init();
+
+    expect(settings.homeNavigationStyle, HomeNavigationStyle.floating);
+
+    await settings.setHomeNavigationStyle(HomeNavigationStyle.bottomPanel);
+    final restored = SettingsProvider();
+    await restored.init();
+
+    expect(restored.homeNavigationStyle, HomeNavigationStyle.bottomPanel);
+  });
 }

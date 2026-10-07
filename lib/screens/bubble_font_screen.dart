@@ -68,46 +68,6 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
     }
   }
 
-  Future<void> _selectFont(bool isUser) async {
-    final settings = context.read<SettingsProvider>();
-    final current =
-        isUser ? settings.selfBubbleFontName : settings.otherBubbleFontName;
-    await showCupertinoModalPopup<void>(
-      context: context,
-      builder: (ctx) => CupertinoActionSheet(
-        title: Text(isUser ? '我方气泡字体' : '对方气泡字体'),
-        message: const Text('仅影响聊天正文；留在系统默认可避免字体缺字。'),
-        actions: [
-          CupertinoActionSheetAction(
-            isDefaultAction: current.isEmpty,
-            onPressed: () async {
-              await settings.setBubbleFont(isUser: isUser, name: '');
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('系统默认'),
-          ),
-          for (final font in _fonts)
-            CupertinoActionSheetAction(
-              isDefaultAction: current == font.name,
-              onPressed: () async {
-                try {
-                  await settings.setBubbleFont(isUser: isUser, name: font.name);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                } catch (_) {
-                  if (ctx.mounted) showAppToast('字体加载失败，请重新导入');
-                }
-              },
-              child: Text(font.name),
-            ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('取消'),
-        ),
-      ),
-    );
-  }
-
   Future<void> _deleteFont(ImportedFont font) async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
@@ -197,14 +157,49 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
     );
   }
 
-  Widget _fontTile(String title, String name, bool isUser) => SettingsRow(
+  Widget _fontTile(String title, String name, bool isUser) {
+    final settings = context.read<SettingsProvider>();
+    return SettingsInlinePicker<String>(
+      value: name.isEmpty ? '__system__' : name,
+      options: [
+        const SettingsChoiceOption(
+          value: '__system__',
+          label: '系统默认',
+          subtitle: '留在系统默认可避免字体缺字',
+        ),
+        for (final font in _fonts)
+          SettingsChoiceOption(
+            value: font.name,
+            label: font.name,
+            subtitle: '${_formatBytes(font.sizeBytes)} · TTF',
+          ),
+      ],
+      onChanged: (value) async {
+        try {
+          await settings.setBubbleFont(
+            isUser: isUser,
+            name: value == '__system__' ? '' : value,
+          );
+        } catch (_) {
+          if (mounted) showAppToast('字体加载失败，请重新导入');
+        }
+      },
+      panelKey: isUser
+          ? 'bubble-font-self-picker'
+          : 'bubble-font-other-picker',
+      rowBuilder: (context, toggle) => SettingsRow(
         icon: CupertinoIcons.textformat,
         title: Text(title),
         subtitle: const Text('聊天正文单独设置，不影响界面文字'),
-        trailing: settingsValueText(context, name.isEmpty ? '系统默认' : name),
+        trailing: settingsValueText(
+          context,
+          name.isEmpty ? '系统默认' : name,
+        ),
         showChevron: true,
-        onTap: _fonts.isEmpty ? null : () => _selectFont(isUser),
-      );
+        onTap: _fonts.isEmpty ? null : toggle,
+      ),
+    );
+  }
 
   String _formatBytes(int bytes) => bytes < 1024 * 1024
       ? '${(bytes / 1024).toStringAsFixed(1)} KB'

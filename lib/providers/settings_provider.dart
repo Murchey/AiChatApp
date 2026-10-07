@@ -54,6 +54,32 @@ enum UiStyle {
   zmd,
 }
 
+/// 首页移动端底部导航样式：悬浮胶囊 / 旧版嵌入式底部面板。
+enum HomeNavigationStyle {
+  floating,
+  bottomPanel,
+}
+
+extension HomeNavigationStyleX on HomeNavigationStyle {
+  String get displayName {
+    switch (this) {
+      case HomeNavigationStyle.floating:
+        return '悬浮胶囊';
+      case HomeNavigationStyle.bottomPanel:
+        return '底部面板';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case HomeNavigationStyle.floating:
+        return '半透明悬浮在页面内容上方';
+      case HomeNavigationStyle.bottomPanel:
+        return '嵌入页面底部的一行导航';
+    }
+  }
+}
+
 extension UiStyleX on UiStyle {
   String get displayName {
     switch (this) {
@@ -153,6 +179,8 @@ class SettingsProvider extends ChangeNotifier {
   BubbleStyle _bubbleStyle = BubbleStyle.classic;
   // 会话 UI 样式（默认）
   UiStyle _uiStyle = UiStyle.classic;
+  // 首页底部导航样式（默认悬浮胶囊）
+  HomeNavigationStyle _homeNavigationStyle = HomeNavigationStyle.floating;
   // 自定义开屏图标本地持久化路径（未设置时为空字符串）
   String _splashIconPath = '';
   // 气泡字体分别绑定我方与对方；空串使用系统默认字体。
@@ -175,6 +203,7 @@ class SettingsProvider extends ChangeNotifier {
   AvatarFrameStyle get avatarFrameStyle => _avatarFrameStyle;
   BubbleStyle get bubbleStyle => _bubbleStyle;
   UiStyle get uiStyle => _uiStyle;
+  HomeNavigationStyle get homeNavigationStyle => _homeNavigationStyle;
   String get splashIconPath => _splashIconPath;
   bool get hasSplashIcon => _splashIconPath.isNotEmpty;
   String get selfBubbleFontName => _selfBubbleFontName;
@@ -258,6 +287,10 @@ class SettingsProvider extends ChangeNotifier {
     _uiStyle = UiStyle.values.firstWhere(
       (s) => s.name == prefs.getString('ui_style'),
       orElse: () => UiStyle.classic,
+    );
+    _homeNavigationStyle = HomeNavigationStyle.values.firstWhere(
+      (s) => s.name == prefs.getString('home_navigation_style'),
+      orElse: () => HomeNavigationStyle.floating,
     );
     _splashIconPath = prefs.getString('splash_icon_path') ?? '';
     _selfBubbleFontName = prefs.getString('bubble_font_self') ?? '';
@@ -451,6 +484,14 @@ class SettingsProvider extends ChangeNotifier {
     _uiStyle = style;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('ui_style', style.name);
+    notifyListeners();
+  }
+
+  /// 设置首页底部导航样式。
+  Future<void> setHomeNavigationStyle(HomeNavigationStyle style) async {
+    _homeNavigationStyle = style;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('home_navigation_style', style.name);
     notifyListeners();
   }
 

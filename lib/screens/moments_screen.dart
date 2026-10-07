@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
-import '../config/ui_spec.dart';
 import '../config/theme.dart';
 import '../models/character.dart';
 import '../models/moment.dart';
@@ -125,7 +124,7 @@ class _MomentsScreenState extends State<MomentsScreen> {
           return ListView.builder(
             padding: EdgeInsets.only(
               top: MediaQuery.paddingOf(context).top + 12,
-              bottom: UiSpec.floatingContentBottomInset +
+              bottom: context.homeContentBottomInset +
                   MediaQuery.viewPaddingOf(context).bottom +
                   24,
             ),

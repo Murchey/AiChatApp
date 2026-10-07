@@ -25,21 +25,27 @@ class BubbleStyleScreen extends StatelessWidget {
             _PreviewArea(style: current),
             SettingsSection(
               title: '选择样式',
-              children: BubbleStyle.values.map((style) {
-                final selected = style == current;
-                return SettingsRow(
-                  icon: CupertinoIcons.chat_bubble,
-                  title: Text(style.displayName),
-                  trailing: selected
-                      ? Icon(
-                          CupertinoIcons.check_mark,
-                          color: context.accentColor,
-                          size: 18,
-                        )
-                      : const SizedBox(width: 18, height: 18),
-                  onTap: () => settingsProvider.setBubbleStyle(style),
-                );
-              }).toList(),
+              children: [
+                SettingsInlinePicker<BubbleStyle>(
+                  value: current,
+                  options: [
+                    for (final style in BubbleStyle.values)
+                      SettingsChoiceOption(
+                        value: style,
+                        label: style.displayName,
+                      ),
+                  ],
+                  onChanged: settingsProvider.setBubbleStyle,
+                  panelKey: 'bubble-style-picker',
+                  rowBuilder: (context, toggle) => SettingsRow(
+                    icon: CupertinoIcons.chat_bubble,
+                    title: Text(current.displayName),
+                    trailing: settingsValueText(context, current.displayName),
+                    showChevron: true,
+                    onTap: toggle,
+                  ),
+                ),
+              ],
             ),
             if (current == BubbleStyle.sr ||
                 current == BubbleStyle.ww ||

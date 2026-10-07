@@ -41,8 +41,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  bool _showCustomPicker = false;
-
   String _themeLabel(AppThemeMode mode) {
     switch (mode) {
       case AppThemeMode.light:
@@ -223,81 +221,206 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _showBubbleFontSizePicker(
-      BuildContext context, SettingsProvider settings) async {
+  Widget _buildBubbleFontSizePanel(
+      BuildContext context, SettingsProvider settings, VoidCallback close) {
     var size = settings.bubbleFontSize;
-    final selected = await showCupertinoModalPopup<double>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, update) => SafeArea(
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: ctx.scaffoldColor,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    '调整气泡内字体大小',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: CupertinoColors.label.resolveFrom(ctx),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  for (final isUser in [false, true])
-                    Align(
-                      alignment:
-                          isUser ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: ctx.bubbleBgColor(isUser),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(isUser ? '我方气泡预览 Aa 123' : '对方气泡预览 Aa 123',
-                            style: TextStyle(
-                                fontSize: size,
-                                color: ctx.bubbleTextColor(isUser),
-                                fontFamily: ctx.bubbleFontFamily(isUser))),
-                      ),
-                    ),
-                  Text('${size.round()}（默认 16）', textAlign: TextAlign.center),
-                  CupertinoSlider(
-                    value: size,
-                    min: 12,
-                    max: 24,
-                    divisions: 12,
-                    onChanged: (value) => update(() => size = value),
-                  ),
-                  CupertinoButton(
-                    onPressed: () => update(() => size = 16),
-                    child: const Text('恢复默认'),
-                  ),
-                  CupertinoButton.filled(
-                    onPressed: () => Navigator.pop(ctx, size),
-                    child: const Text('保存'),
-                  ),
-                  CupertinoButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('取消'),
-                  ),
-                ],
+    return StatefulBuilder(
+      builder: (panelContext, update) => SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '调整气泡内字体大小',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: panelContext.textPrimaryColor,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ),
+            const SizedBox(height: 16),
+            for (final isUser in [false, true])
+              Align(
+                alignment:
+                    isUser ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: panelContext.bubbleBgColor(isUser),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    isUser ? '我方气泡预览 Aa 123' : '对方气泡预览 Aa 123',
+                    style: TextStyle(
+                      fontSize: size,
+                      color: panelContext.bubbleTextColor(isUser),
+                      fontFamily: panelContext.bubbleFontFamily(isUser),
+                    ),
+                  ),
+                ),
+              ),
+            Text('${size.round()}（默认 16）', textAlign: TextAlign.center),
+            CupertinoSlider(
+              value: size,
+              min: 12,
+              max: 24,
+              divisions: 12,
+              onChanged: (value) => update(() => size = value),
+            ),
+            CupertinoButton(
+              onPressed: () => update(() => size = 16),
+              child: const Text('恢复默认'),
+            ),
+            CupertinoButton.filled(
+              onPressed: () {
+                settings.setBubbleFontSize(size);
+                close();
+              },
+              child: const Text('保存'),
+            ),
+            CupertinoButton(
+              onPressed: close,
+              child: const Text('取消'),
+            ),
+          ],
         ),
       ),
     );
-    if (selected != null) await settings.setBubbleFontSize(selected);
+  }
+
+  Widget _buildBubbleColorPanel(
+    BuildContext context,
+    SettingsProvider settings,
+    VoidCallback close,
+  ) {
+    BubbleColorSlot? selectedSlot;
+    Color? draftColor;
+    return StatefulBuilder(
+      builder: (panelContext, update) {
+        if (selectedSlot == null) {
+          return ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text(
+                  '气泡颜色',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: panelContext.textPrimaryColor,
+                  ),
+                ),
+              ),
+              for (final slot in BubbleColorSlot.values)
+                CupertinoButton(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  onPressed: () => update(() {
+                    selectedSlot = slot;
+                    draftColor = settings.bubbleColor(slot);
+                  }),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          switch (slot) {
+                            BubbleColorSlot.selfLight => '我方 · 浅色',
+                            BubbleColorSlot.otherLight => '对方 · 浅色',
+                            BubbleColorSlot.selfDark => '我方 · 深色',
+                            BubbleColorSlot.otherDark => '对方 · 深色',
+                          },
+                          textAlign: TextAlign.start,
+                          style: TextStyle(
+                            fontSize: UiSpec.settingsRowTitle,
+                            color: panelContext.textPrimaryColor,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: settings.bubbleColor(slot),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: panelContext.separatorColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        CupertinoIcons.chevron_right,
+                        size: 16,
+                        color: panelContext.textSecondaryColor,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          );
+        }
+
+        final slot = selectedSlot!;
+        final initial = draftColor ?? settings.bubbleColor(slot);
+        return SingleChildScrollView(
+          key: ValueKey(slot),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () => update(() {
+                      selectedSlot = null;
+                      draftColor = null;
+                    }),
+                    child: const Icon(CupertinoIcons.chevron_left, size: 20),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '编辑气泡颜色',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: panelContext.textPrimaryColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 34),
+                ],
+              ),
+              CustomColorPicker(
+                initialColor: initial,
+                onChanged: (color) => draftColor = color,
+              ),
+              CupertinoButton(
+                onPressed: () {
+                  settings.resetBubbleColor(slot);
+                  close();
+                },
+                child: const Text('恢复默认'),
+              ),
+              CupertinoButton.filled(
+                onPressed: () {
+                  if (draftColor != null) {
+                    settings.setBubbleColor(slot, draftColor!);
+                  }
+                  close();
+                },
+                child: const Text('完成'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   /// 弹出深浅色选择（下拉选项框）
@@ -320,22 +443,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SettingsSection(
             title: '外观',
             children: [
-              SettingsRow(
-                icon: CupertinoIcons.moon,
-                title: const Text('深色模式'),
-                trailing: _value(context, _themeLabel(settings.themeMode)),
-                showChevron: true,
-                onTap: () => SettingsPickers.showThemePicker(context, settings),
+              SettingsInlinePicker<AppThemeMode>(
+                value: settings.themeMode,
+                options: [
+                  for (final mode in AppThemeMode.values)
+                    SettingsChoiceOption(
+                      value: mode,
+                      label: _themeLabel(mode),
+                    ),
+                ],
+                onChanged: settings.setThemeMode,
+                panelKey: 'settings-theme-picker',
+                rowBuilder: (context, toggle) => SettingsRow(
+                  icon: CupertinoIcons.moon,
+                  title: const Text('深色模式'),
+                  trailing: _value(context, _themeLabel(settings.themeMode)),
+                  showChevron: true,
+                  onTap: toggle,
+                ),
               ),
-              SettingsRow(
-                icon: CupertinoIcons.person_crop_circle,
-                title: const Text('角色头像框样式'),
-                subtitle: const Text('方形 / 圆形，作用于所有角色头像'),
-                trailing: _value(
-                    context, _avatarFrameLabel(settings.avatarFrameStyle)),
-                showChevron: true,
-                onTap: () =>
-                    SettingsPickers.showAvatarFramePicker(context, settings),
+              SettingsInlinePicker<AvatarFrameStyle>(
+                value: settings.avatarFrameStyle,
+                options: [
+                  for (final style in AvatarFrameStyle.values)
+                    SettingsChoiceOption(
+                      value: style,
+                      label: _avatarFrameLabel(style),
+                    ),
+                ],
+                onChanged: settings.setAvatarFrameStyle,
+                panelKey: 'settings-avatar-frame-picker',
+                rowBuilder: (context, toggle) => SettingsRow(
+                  icon: CupertinoIcons.person_crop_circle,
+                  title: const Text('角色头像框样式'),
+                  subtitle: const Text('方形 / 圆形，作用于所有角色头像'),
+                  trailing: _value(
+                      context, _avatarFrameLabel(settings.avatarFrameStyle)),
+                  showChevron: true,
+                  onTap: toggle,
+                ),
               ),
             ],
           ),
@@ -385,24 +531,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
               ),
-              SettingsRow(
-                icon: CupertinoIcons.paintbrush,
-                title: const Text('自定义颜色'),
-                trailing: Icon(
-                  _showCustomPicker
-                      ? CupertinoIcons.chevron_up
-                      : CupertinoIcons.chevron_down,
-                  size: 17,
-                  color: context.textSecondaryColor,
+              SettingsInlinePanel(
+                estimatedPanelHeight: 460,
+                panelKey: 'settings-accent-color-picker',
+                rowBuilder: (context, toggle) => SettingsRow(
+                  icon: CupertinoIcons.paintbrush,
+                  title: const Text('自定义颜色'),
+                  trailing: Icon(
+                    CupertinoIcons.chevron_down,
+                    size: 17,
+                    color: context.textSecondaryColor,
+                  ),
+                  onTap: toggle,
                 ),
-                onTap: () =>
-                    setState(() => _showCustomPicker = !_showCustomPicker),
+                panelBuilder: (panelContext, close) => SingleChildScrollView(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: CustomColorPicker(
+                    initialColor: settings.accentColor,
+                    onChanged: settings.setAccentColor,
+                  ),
+                ),
               ),
-              if (_showCustomPicker)
-                CustomColorPicker(
-                  initialColor: settings.accentColor,
-                  onChanged: settings.setAccentColor,
-                ),
             ],
           ),
           SettingsSection(
@@ -450,21 +599,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     CupertinoPageRoute(
                         builder: (_) => const BubbleFontScreen())),
               ),
-              SettingsRow(
-                icon: CupertinoIcons.textformat_size,
-                title: const Text('调整气泡内字体大小'),
-                subtitle: Text('${settings.bubbleFontSize.round()}（默认 16）'),
-                showChevron: true,
-                onTap: () => _showBubbleFontSizePicker(context, settings),
+              SettingsInlinePanel(
+                estimatedPanelHeight: 410,
+                panelKey: 'settings-bubble-font-size-picker',
+                rowBuilder: (context, toggle) => SettingsRow(
+                  icon: CupertinoIcons.textformat_size,
+                  title: const Text('调整气泡内字体大小'),
+                  subtitle: Text('${settings.bubbleFontSize.round()}（默认 16）'),
+                  showChevron: true,
+                  onTap: toggle,
+                ),
+                panelBuilder: (panelContext, close) =>
+                    _buildBubbleFontSizePanel(panelContext, settings, close),
               ),
               if (settings.bubbleStyle == BubbleStyle.classic)
-                SettingsRow(
-                  icon: CupertinoIcons.paintbrush,
-                  title: const Text('自定义气泡颜色'),
-                  subtitle: const Text('自己 / 对方，浅色 / 深色模式分别设置'),
-                  showChevron: true,
-                  onTap: () =>
-                      SettingsPickers.showBubbleColorDrawer(context, settings),
+                SettingsInlinePanel(
+                  estimatedPanelHeight: 520,
+                  panelKey: 'settings-bubble-color-picker',
+                  rowBuilder: (context, toggle) => SettingsRow(
+                    icon: CupertinoIcons.paintbrush,
+                    title: const Text('自定义气泡颜色'),
+                    subtitle: const Text('自己 / 对方，浅色 / 深色模式分别设置'),
+                    showChevron: true,
+                    onTap: toggle,
+                  ),
+                  panelBuilder: (panelContext, close) =>
+                      _buildBubbleColorPanel(panelContext, settings, close),
                 ),
             ],
           ),
@@ -553,12 +713,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () =>
                     SettingsPickers.showGitHubRepoDialog(context, settings),
               ),
-              SettingsRow(
-                icon: CupertinoIcons.link,
-                title: const Text('GitHub 加速地址'),
-                subtitle: Text(_proxyDisplayText(settings.updateProxyUrl)),
-                showChevron: true,
-                onTap: () => SettingsPickers.showProxyPicker(context, settings),
+              SettingsInlinePicker<String>(
+                value: kProxySources.contains(settings.updateProxyUrl)
+                    ? settings.updateProxyUrl
+                    : 'custom',
+                options: [
+                  for (final proxy in kProxySources)
+                    SettingsChoiceOption(
+                      value: proxy,
+                      label: proxyDisplayText(proxy),
+                    ),
+                  const SettingsChoiceOption(
+                    value: 'custom',
+                    label: '自定义…',
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value == 'custom') {
+                    SettingsPickers.showCustomProxyDialog(context, settings);
+                  } else {
+                    settings.setUpdateProxyUrl(value);
+                  }
+                },
+                panelKey: 'settings-proxy-picker',
+                rowBuilder: (context, toggle) => SettingsRow(
+                  icon: CupertinoIcons.link,
+                  title: const Text('GitHub 加速地址'),
+                  subtitle: Text(_proxyDisplayText(settings.updateProxyUrl)),
+                  showChevron: true,
+                  onTap: toggle,
+                ),
               ),
             ],
           ),

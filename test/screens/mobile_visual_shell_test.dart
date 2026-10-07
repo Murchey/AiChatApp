@@ -18,12 +18,14 @@ import 'package:ai_chat/providers/token_usage_provider.dart';
 import 'package:ai_chat/providers/workshop_provider.dart';
 import 'package:ai_chat/screens/home_screen.dart';
 import 'package:ai_chat/screens/settings_screen.dart';
+import 'package:ai_chat/screens/ui_style_screen.dart';
 import 'package:ai_chat/models/character.dart';
 import 'package:ai_chat/models/moment.dart';
 import 'package:ai_chat/widgets/message_input.dart';
 import 'package:ai_chat/widgets/chat_title_bar.dart';
 import 'package:ai_chat/widgets/moment_card.dart';
 import 'package:ai_chat/widgets/settings/color_picker_widgets.dart';
+import 'package:ai_chat/widgets/settings/settings_ui.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter_test/flutter_test.dart';
@@ -107,6 +109,66 @@ void main() {
     expect(find.byKey(const ValueKey('message-input-capsule')), findsOneWidget);
     expect(find.byType(BackdropFilter), findsOneWidget);
     expect(find.text('输入消息...'), findsOneWidget);
+  });
+
+  testWidgets(
+      'settings inline picker opens below its row and selects an option',
+      (tester) async {
+    var selected = 'one';
+    await tester.pumpWidget(
+      themed(
+        SettingsInlinePicker<String>(
+          value: selected,
+          options: const [
+            SettingsChoiceOption(value: 'one', label: '一'),
+            SettingsChoiceOption(value: 'two', label: '二'),
+          ],
+          onChanged: (value) => selected = value,
+          panelKey: 'inline-picker-test',
+          rowBuilder: (context, toggle) => SettingsRow(
+            icon: CupertinoIcons.moon,
+            title: const Text('外观模式'),
+            trailing: settingsValueText(context, selected),
+            showChevron: true,
+            onTap: toggle,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('外观模式'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('inline-picker-test')), findsOneWidget);
+    expect(find.text('二'), findsOneWidget);
+
+    await tester.tap(find.text('二'));
+    await tester.pumpAndSettle();
+    expect(selected, 'two');
+    expect(find.byKey(const ValueKey('inline-picker-test')), findsNothing);
+  });
+
+  testWidgets('UI style page changes the bottom navigation style inline',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider();
+    await settings.init();
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: settings,
+        child: themed(const UiStyleScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('悬浮胶囊').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ui-style-navigation-picker')),
+        findsOneWidget);
+
+    await tester.tap(find.text('底部面板'));
+    await tester.pumpAndSettle();
+    expect(settings.homeNavigationStyle, HomeNavigationStyle.bottomPanel);
   });
 
   testWidgets('chat title keeps a compact name and subtitle hierarchy',
@@ -278,5 +340,45 @@ void main() {
     expect(find.byKey(const ValueKey('home-floating-nav-indicator')),
         findsOneWidget);
     expect(find.byIcon(Icons.people_rounded), findsOneWidget);
+  });
+
+  testWidgets('home can restore the embedded bottom navigation panel',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider();
+    await settings.init();
+    await settings.setAutoCheckUpdate(false);
+    await settings.setHomeNavigationStyle(HomeNavigationStyle.bottomPanel);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: settings),
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => ChatProvider()),
+          ChangeNotifierProvider(create: (_) => CharacterProvider()),
+          ChangeNotifierProvider(create: (_) => GroupChatProvider()),
+          ChangeNotifierProvider(create: (_) => ChatBackgroundProvider()),
+          ChangeNotifierProvider(create: (_) => ApiProvider()),
+          ChangeNotifierProvider(create: (_) => ChatSettingsProvider()),
+          ChangeNotifierProvider(create: (_) => MomentNotificationProvider()),
+          ChangeNotifierProvider(create: (_) => MemoryPointProvider()),
+          ChangeNotifierProvider(create: (_) => AutoMomentProvider()),
+          ChangeNotifierProvider(create: (_) => ProactiveGreetingProvider()),
+          ChangeNotifierProvider(create: (_) => WorkshopProvider()),
+          ChangeNotifierProvider(create: (_) => StickerProvider()),
+          ChangeNotifierProvider.value(value: TokenUsageProvider.instance),
+        ],
+        child: themed(const HomeScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('home-bottom-panel')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-floating-nav')), findsNothing);
+    expect(find.text('AiChat'), findsAtLeastNWidgets(1));
+    expect(find.text('通讯录'), findsOneWidget);
+    expect(find.text('朋友圈'), findsOneWidget);
+    expect(find.text('我'), findsOneWidget);
   });
 }

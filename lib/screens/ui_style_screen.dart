@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../config/ui_spec.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/chat_send_button.dart';
 import '../widgets/chat_title_bar.dart';
@@ -15,6 +16,7 @@ class UiStyleScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final settingsProvider = context.watch<SettingsProvider>();
     final current = settingsProvider.uiStyle;
+    final navigationStyle = settingsProvider.homeNavigationStyle;
     return CupertinoPageScaffold(
       navigationBar: settingsNavigationBar(context, 'UI 样式'),
       backgroundColor: context.scaffoldColor,
@@ -25,23 +27,57 @@ class UiStyleScreen extends StatelessWidget {
           children: [
             // 实时预览区：会话上方状态条 + 下方输入栏，随所选样式渲染
             _PreviewArea(style: current),
+            _NavigationPreview(style: navigationStyle),
             SettingsSection(
               title: '选择样式',
-              children: UiStyle.values.map((style) {
-                final selected = style == current;
-                return SettingsRow(
-                  icon: CupertinoIcons.paintbrush,
-                  title: Text(style.displayName),
-                  trailing: selected
-                      ? Icon(
-                          CupertinoIcons.check_mark,
-                          color: context.accentColor,
-                          size: 18,
-                        )
-                      : const SizedBox(width: 18, height: 18),
-                  onTap: () => settingsProvider.setUiStyle(style),
-                );
-              }).toList(),
+              children: [
+                SettingsInlinePicker<UiStyle>(
+                  value: current,
+                  options: [
+                    for (final style in UiStyle.values)
+                      SettingsChoiceOption(
+                        value: style,
+                        label: style.displayName,
+                      ),
+                  ],
+                  onChanged: settingsProvider.setUiStyle,
+                  panelKey: 'ui-style-chat-picker',
+                  rowBuilder: (context, toggle) => SettingsRow(
+                    icon: CupertinoIcons.paintbrush,
+                    title: Text(current.displayName),
+                    trailing: settingsValueText(context, current.displayName),
+                    showChevron: true,
+                    onTap: toggle,
+                  ),
+                ),
+              ],
+            ),
+            SettingsSection(
+              title: '底部导航栏',
+              children: [
+                SettingsInlinePicker<HomeNavigationStyle>(
+                  value: navigationStyle,
+                  options: [
+                    for (final style in HomeNavigationStyle.values)
+                      SettingsChoiceOption(
+                        value: style,
+                        label: style.displayName,
+                        subtitle: style.description,
+                      ),
+                  ],
+                  onChanged: settingsProvider.setHomeNavigationStyle,
+                  panelKey: 'ui-style-navigation-picker',
+                  rowBuilder: (context, toggle) => SettingsRow(
+                    icon: CupertinoIcons.square_stack,
+                    title: Text(navigationStyle.displayName),
+                    subtitle: Text(navigationStyle.description),
+                    trailing:
+                        settingsValueText(context, navigationStyle.displayName),
+                    showChevron: true,
+                    onTap: toggle,
+                  ),
+                ),
+              ],
             ),
             if (current == UiStyle.zmd)
               Padding(
@@ -141,6 +177,76 @@ class _PreviewArea extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _NavigationPreview extends StatelessWidget {
+  final HomeNavigationStyle style;
+
+  const _NavigationPreview({required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    const tabs = [
+      (CupertinoIcons.chat_bubble_fill, 'AiChat'),
+      (CupertinoIcons.person_2_fill, '通讯录'),
+      (CupertinoIcons.photo_fill, '朋友圈'),
+      (CupertinoIcons.person_crop_circle_fill, '我'),
+    ];
+    final panel = Container(
+      height: 62,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.navBarColor.withValues(
+          alpha: style == HomeNavigationStyle.floating ? 0.72 : 1,
+        ),
+        borderRadius: BorderRadius.circular(
+          style == HomeNavigationStyle.floating ? 30 : 14,
+        ),
+        border: Border.all(color: context.settingsOutlineColor, width: 0.6),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          for (var i = 0; i < tabs.length; i++)
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  tabs[i].$1,
+                  size: 18,
+                  color:
+                      i == 0 ? context.accentColor : context.textSecondaryColor,
+                ),
+                Text(
+                  tabs[i].$2,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: i == 0
+                        ? context.accentColor
+                        : context.textSecondaryColor,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+
+    return Container(
+      height: 94,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.settingsSurfaceColor,
+        borderRadius: BorderRadius.circular(UiSpec.settingsSectionRadius),
+        border: Border.all(
+          color: context.settingsOutlineColor.withValues(alpha: 0.7),
+          width: 0.6,
+        ),
+      ),
+      child: Align(alignment: Alignment.bottomCenter, child: panel),
     );
   }
 }

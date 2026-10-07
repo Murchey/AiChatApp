@@ -126,7 +126,7 @@ class _CharacterListScreenState extends State<CharacterListScreen> {
                       Container(
                         height: 0.5,
                         margin: const EdgeInsets.only(left: 76),
-                        color: context.separatorColor,
+                        color: context.contactDividerColor,
                       ),
                     ],
                     for (final group in groups) ...[
@@ -193,7 +193,7 @@ class _CharacterListScreenState extends State<CharacterListScreen> {
                       Container(
                         height: 0.5,
                         margin: const EdgeInsets.only(left: 76),
-                        color: context.separatorColor,
+                        color: context.contactDividerColor,
                       ),
                     ],
                   ],
