@@ -27,6 +27,7 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 - [Persistent Memories (Save & Import / Export)](#persistent-memories-save--import--export)
 - [Group Chat](#group-chat)
 - [Workshop](#workshop)
+- [Story Community and Repository Template](#story-community-and-repository-template)
 - [Self-Hosting Object Storage (COS / OSS)](#self-hosting-object-storage-cos--oss)
 - [Auto-Post Moments & Proactive Greeting](#auto-post-moments--proactive-greeting)
 - [Chat Background & UI Styles](#chat-background--ui-styles)
@@ -524,6 +525,107 @@ When using COS / OSS / S3-compatible object storage, the app auto-discovers asse
 **Change refresh**: Entering a category probes `Note/*.md`; a full re-list is forced only when Note content changes. Manual refresh is also available in repository management.
 
 **Permissions**: by default the bucket must allow anonymous **ListObjects** (GET Bucket) and **GetObject** (GET Object). Alternatively, enable "Use access keys (private read)" when adding a COS repository to sign requests with AccessKey (Tencent COS / Aliyun OSS supported); the bucket can stay private. Keys are stored only on device. Without list permission and without keys, the app cannot enumerate zips and shows HTTP 403.
+
+---
+
+## Story Community and Repository Template
+
+The Story Community entry on the Discover page lets users browse and download text-only story settings, then install them as an independent memory source for a local character.
+
+Use the official repository template:
+
+**[github.com/Murchey/AiChatStories](https://github.com/Murchey/AiChatStories)**
+
+It contains bilingual README files, `index.json`, a sample story, and GitHub / Gitee / COS / OSS setup instructions. Fork or copy it before replacing the example content.
+
+### Repository layout
+
+```text
+index.json
+stories/
+└── <story-id>/
+    └── <version>.json
+```
+
+`index.json` contains catalog metadata:
+
+```json
+{
+  "schemaVersion": 1,
+  "stories": [
+    {
+      "storyId": "my-world",
+      "version": 1,
+      "title": "My World",
+      "author": "Author",
+      "summary": "A short description",
+      "tags": ["sci-fi", "example"],
+      "file": "stories/my-world/1.json"
+    }
+  ]
+}
+```
+
+The story JSON stores chapters and text memories under `chapters[].memories[]`. Version 1 supports text only; images, audio, comments, likes, and ratings are not supported.
+
+### GitHub / Gitee setup
+
+1. Fork or copy [AiChatStories](https://github.com/Murchey/AiChatStories).
+2. Push `index.json` and `stories/` to a public repository.
+3. In the app, open **Discover → Story Community** and choose GitHub or Gitee.
+4. Enter `owner/repository`, the branch (usually `main`), and `index.json` as the index path.
+5. Tap “Save and test source”.
+
+The app reads public Raw files and does not need a GitHub or Gitee token. To publish an update, add a new version file and update `version` and `file` in `index.json`.
+
+### COS / OSS static story directory
+
+The COS / OSS Story Community source reads static JSON files. It does not need `ListObjects`; the app only needs to read `index.json` and the story files referenced by it.
+
+```text
+{BASE_URL}/
+├── index.json
+└── stories/
+    └── my-world/
+        └── 1.json
+```
+
+#### Tencent COS
+
+1. Create a bucket, preferably with **public read / private write**.
+2. Upload `index.json` and the `stories/` directory.
+3. Note the public endpoint, for example:
+
+```text
+https://<bucket>-<appid>.cos.<region>.myqcloud.com
+```
+
+4. In **Discover → Story Community → COS / OSS**, enter the public bucket URL and `index.json`, or enter the complete index URL.
+
+For a private bucket, provide signed URLs for `index.json` and the referenced story files. Never put SecretId, SecretKey, or AccessKey values in the app.
+
+#### Aliyun OSS
+
+1. Create a bucket with **public read** ACL.
+2. Upload the same `index.json` and `stories/` layout.
+3. Note the endpoint, for example:
+
+```text
+https://<bucket>.oss-cn-hangzhou.aliyuncs.com
+```
+
+4. Enter the public URL and `index.json`, or the complete index URL, in the app.
+
+If you use a prefix such as `/aichat`, store files under `aichat/index.json` and `aichat/stories/...`, then enter the prefix or the complete index URL in the app.
+
+#### Check and security
+
+```bash
+curl -i "https://your-domain/index.json"
+curl -I "https://your-domain/stories/my-world/1.json"
+```
+
+Both requests should return `200`. Native app requests do not require CORS. Only publish shareable story content; never upload API keys, user data, or private backups.
 
 ---
 

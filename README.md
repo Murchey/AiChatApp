@@ -30,6 +30,7 @@
 - [持久化记忆（保存与导入 / 导出）](#持久化记忆保存与导入--导出)
 - [群聊功能](#群聊功能)
 - [创意工坊](#创意工坊)
+- [故事线社区与故事仓库模板](#故事线社区与故事仓库模板)
 - [自行配置对象储存（COS / OSS）](#自行配置对象储存cos--oss)
 - [创意工坊表情包 ZIP 打包标准](#创意工坊表情包-zip-打包标准)
 - [自动发朋友圈与主动问候](#自动发朋友圈与主动问候)
@@ -583,6 +584,105 @@ https://my-bucket.oss-cn-hangzhou.aliyuncs.com/aichat
 **变更刷新**：进分类时会用 `Note/*.md` 做变更探测；Note 内容变化才强制重新 List。也可在仓库管理中手动刷新。
 
 **权限要求**：默认桶需允许匿名 `ListObjects`（GET Bucket）与 `GetObject`（GET Object）。也可在添加 COS 仓库时开启「使用访问密钥（私有读）」，用 AccessKey 做请求签名（支持腾讯云 COS、阿里云 OSS），此时桶可保持私有读。密钥仅保存在本机。只开 Get 不开 List 且未配置密钥时无法枚举 zip，App 会提示 HTTP 403。
+
+---
+
+## 故事线社区与故事仓库模板
+
+发现页中的「故事线社区」用于浏览和下载文字故事设定，并将故事安装到本地角色的独立记忆源。官方提供了一个可直接复制的仓库模板：
+
+**[github.com/Murchey/AiChatStories](https://github.com/Murchey/AiChatStories)**
+
+模板包含双语 README、`index.json`、示例故事和 GitHub / Gitee / COS / OSS 配置说明。复制或 Fork 后即可替换示例内容。
+
+### 故事仓库目录
+
+```text
+index.json
+stories/
+└── <story-id>/
+    └── <version>.json
+```
+
+`index.json` 只保存列表元数据：
+
+```json
+{
+  "schemaVersion": 1,
+  "stories": [
+    {
+      "storyId": "my-world",
+      "version": 1,
+      "title": "我的世界观",
+      "author": "作者名",
+      "summary": "故事简介",
+      "tags": ["科幻", "示例"],
+      "file": "stories/my-world/1.json"
+    }
+  ]
+}
+```
+
+故事详情 JSON 使用 `chapters[].memories[]` 保存章节和文字记忆点。第一版只支持文字，不支持图片、音频、评论、点赞或评分。
+
+### GitHub / Gitee 配置
+
+1. Fork 或复制 [AiChatStories](https://github.com/Murchey/AiChatStories)；
+2. 将 `index.json` 和 `stories/` 推送到自己的公开仓库；
+3. 在 App 中进入 **发现 → 故事线社区**，选择 GitHub 或 Gitee；
+4. 填写 `owner/repository`、分支（通常为 `main`）和索引路径 `index.json`；
+5. 点击「保存并测试来源」。
+
+App 读取公开 Raw 文件，不需要 GitHub Token 或 Gitee Token。更新故事时新增版本文件，并同步修改 `index.json` 中的 `version` 和 `file`。
+
+### COS / OSS 静态故事目录配置
+
+故事社区的 COS / OSS 来源使用静态 JSON，不需要对象存储的 `ListObjects` 权限。只要 App 能读取 `index.json` 和其中引用的故事文件即可。
+
+```text
+{BASE_URL}/
+├── index.json
+└── stories/
+    └── my-world/
+        └── 1.json
+```
+
+#### 腾讯云 COS
+
+1. 创建 Bucket，建议使用「公有读、私有写」；
+2. 上传 `index.json` 和 `stories/` 目录；
+3. 记录访问域名，例如：
+
+```text
+https://<bucket>-<appid>.cos.<region>.myqcloud.com
+```
+
+4. 在 App 的 **发现 → 故事线社区 → COS / OSS** 中填写对象存储公共地址，索引路径填写 `index.json`；也可以直接填写完整的 `index.json` 地址。
+
+若不开放公共读，请为 `index.json` 和故事 JSON 生成有效的预签名 URL，并在 App 中填写完整索引地址。不要把 SecretId、SecretKey 或 AccessKey 写入 App。
+
+#### 阿里云 OSS
+
+1. 创建 Bucket，建议 ACL 使用「公共读」；
+2. 上传相同的 `index.json` 和 `stories/` 目录；
+3. 记录访问域名，例如：
+
+```text
+https://<bucket>.oss-cn-hangzhou.aliyuncs.com
+```
+
+4. 在 App 中填写公共地址和 `index.json`，或填写完整索引 URL。
+
+若使用路径前缀，例如 `/aichat`，则目录应为 `aichat/index.json` 和 `aichat/stories/...`，并在 App 中填写对应前缀或完整索引 URL。
+
+#### 自检与安全
+
+```bash
+curl -i "https://你的域名/index.json"
+curl -I "https://你的域名/stories/my-world/1.json"
+```
+
+两个请求都应返回 `200`。原生 App 请求不需要配置 CORS；只公开故事内容，不要把 API Key、用户数据或私有备份上传到该目录。
 
 ---
 
