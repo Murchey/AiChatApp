@@ -17,6 +17,7 @@ import 'providers/settings_provider.dart';
 import 'providers/token_usage_provider.dart';
 import 'providers/workshop_provider.dart';
 import 'providers/story_provider.dart';
+import 'providers/backend_provider.dart';
 import 'services/storage_migration_service.dart';
 
 Future<void> main() async {
@@ -48,7 +49,13 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => AutoMomentProvider()),
         ChangeNotifierProvider(create: (_) => ProactiveGreetingProvider()),
         ChangeNotifierProvider(create: (_) => WorkshopProvider()),
-        ChangeNotifierProvider(create: (_) => StoryProvider()),
+        ChangeNotifierProvider(create: (_) => BackendProvider()),
+        ChangeNotifierProxyProvider<BackendProvider, StoryProvider>(
+          create: (context) =>
+              StoryProvider(backend: context.read<BackendProvider>()),
+          update: (context, backend, previous) =>
+              previous ?? StoryProvider(backend: backend),
+        ),
         ChangeNotifierProvider(create: (_) => StickerProvider()),
         ChangeNotifierProvider.value(value: TokenUsageProvider.instance),
       ],

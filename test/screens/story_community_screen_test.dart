@@ -1,5 +1,7 @@
 import 'package:ai_chat/config/theme.dart';
 import 'package:ai_chat/providers/story_provider.dart';
+import 'package:ai_chat/providers/backend_provider.dart';
+import '../support/backend_test_support.dart';
 import 'package:ai_chat/screens/story_community_screen.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,7 +24,13 @@ void main() {
   testWidgets('feed keeps source settings behind the navigation gear',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
-    final provider = StoryProvider();
+    final backend = BackendProvider(tokenStore: MemoryTokenStore());
+    final provider = StoryProvider(backend: backend);
+    await provider.init();
+    addTearDown(() {
+      provider.dispose();
+      backend.dispose();
+    });
 
     await tester.pumpWidget(
       MultiProvider(

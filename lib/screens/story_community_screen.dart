@@ -10,6 +10,7 @@ import '../models/story_package.dart';
 import '../providers/character_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/story_provider.dart';
+import '../services/backend_http_client.dart';
 import '../utils/app_toast.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/settings/settings_ui.dart';
@@ -26,6 +27,7 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
   final _queryController = TextEditingController();
   bool _ready = false;
   String? _selectedTag;
+  StoryProvider? _provider;
 
   @override
   void initState() {
@@ -33,8 +35,10 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final provider = context.read<StoryProvider>();
+      _provider = provider;
       await provider.init();
       if (!mounted) return;
+      setState(() => _ready = true);
       if (provider.isConfigured) {
         await provider.loadCatalog();
       }
@@ -48,6 +52,9 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
 
   @override
   void dispose() {
+    // Leave no health/version probe or catalog request running after the feed
+    // leaves the navigator; this also prevents late status notifications.
+    _provider?.cancelRequests();
     _queryController.dispose();
     super.dispose();
   }
@@ -64,6 +71,8 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
     await provider.init();
     if (!mounted) return;
     final before = jsonEncode(provider.config.toJson());
+    final beforeToken = provider.backend.config.accessToken;
+    provider.cancelCatalog();
     await Navigator.push<void>(
       context,
       CupertinoPageRoute(
@@ -71,7 +80,8 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
       ),
     );
     if (!mounted) return;
-    final changed = before != jsonEncode(provider.config.toJson());
+    final changed = before != jsonEncode(provider.config.toJson()) ||
+        beforeToken != provider.backend.config.accessToken;
     if (changed) {
       _queryController.clear();
       _selectedTag = null;
@@ -84,9 +94,11 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
     final provider = context.watch<StoryProvider>();
     final tags = provider.entries.expand((entry) => entry.tags).toSet().toList()
       ..sort();
-    final hasStateItem =
-        provider.loading || provider.error != null || provider.entries.isEmpty;
-    final itemCount = 1 + (hasStateItem ? 1 : provider.entries.length);
+    final hasStateItem = !_ready || provider.entries.isEmpty;
+    final hasFooter = !hasStateItem &&
+        (provider.hasMore || provider.loadingMore || provider.error != null);
+    final itemCount =
+        1 + (hasStateItem ? 1 : provider.entries.length + (hasFooter ? 1 : 0));
 
     return CupertinoPageScaffold(
       navigationBar: settingsNavigationBar(
@@ -125,6 +137,9 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
           }
           if (hasStateItem) {
             return _buildFeedState(context, provider);
+          }
+          if (index - 1 == provider.entries.length) {
+            return _buildFeedFooter(context, provider);
           }
           final entry = provider.entries[index - 1];
           return _StoryFeedCard(
@@ -175,7 +190,7 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
               Expanded(
                 child: Text(
                   provider.isConfigured
-                      ? '来源：' + provider.config.type.displayName
+                      ? '来源：${provider.config.type.displayName}'
                       : '还没有配置故事来源',
                   style: TextStyle(
                     fontSize: UiSpec.settingsRowSubtitle,
@@ -216,6 +231,17 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
             ],
           ),
         ),
+        if (provider.usingCache)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Text(
+              '当前显示已缓存内容，连接恢复后可刷新最新故事',
+              style: TextStyle(
+                fontSize: 12,
+                color: context.textSecondaryColor,
+              ),
+            ),
+          ),
         if (tags.isNotEmpty)
           SizedBox(
             height: 42,
@@ -278,6 +304,12 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
               onPressed: provider.loading ? null : _refresh,
               child: const Text('重试'),
             ),
+            CupertinoButton(
+                onPressed: _openSettings, child: const Text('重新配置服务器或切换来源')),
+            if (provider.canUseStaticFallback)
+              CupertinoButton(
+                  onPressed: () => provider.useStaticFallback(),
+                  child: const Text('使用上次的静态来源')),
           ],
         ),
       );
@@ -308,6 +340,50 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
       ),
     );
   }
+
+  Widget _buildFeedFooter(BuildContext context, StoryProvider provider) {
+    if (provider.loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CupertinoActivityIndicator()),
+      );
+    }
+    if (provider.error != null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(28, 12, 28, 28),
+        child: Column(
+          children: [
+            Text(provider.error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: context.textSecondaryColor)),
+            CupertinoButton(
+                onPressed: provider.loading ? null : _retry,
+                child: const Text('重试加载')),
+            CupertinoButton(
+                onPressed: _openSettings, child: const Text('重新配置服务器或切换来源')),
+            if (provider.canUseStaticFallback)
+              CupertinoButton(
+                  onPressed: () => provider.useStaticFallback(),
+                  child: const Text('使用上次的静态来源')),
+          ],
+        ),
+      );
+    }
+    if (!provider.hasMore) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: CupertinoButton(onPressed: _loadMore, child: const Text('加载更多故事')),
+    );
+  }
+
+  Future<void> _loadMore() => context.read<StoryProvider>().loadMoreCatalog(
+        query: _queryController.text,
+        tag: _selectedTag,
+      );
+
+  Future<void> _retry() => context
+      .read<StoryProvider>()
+      .retryCatalog(query: _queryController.text, tag: _selectedTag);
 }
 
 class _StoryFeedCard extends StatelessWidget {
@@ -367,7 +443,7 @@ class _StoryFeedCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          '故事设定 · v' + entry.version.toString(),
+                          '故事设定 · v${entry.version}',
                           style: TextStyle(
                             fontSize: 12,
                             color: context.textSecondaryColor,
@@ -424,7 +500,7 @@ class _StoryFeedCard extends StatelessWidget {
                             vertical: 4,
                           ),
                           child: Text(
-                            '#' + tag,
+                            '#$tag',
                             style: TextStyle(
                               fontSize: 11,
                               color: context.textSecondaryColor,
@@ -449,7 +525,7 @@ class _StoryFeedCard extends StatelessWidget {
                   if (showDownloadCount && entry.downloadCount != null) ...[
                     const SizedBox(width: 12),
                     Text(
-                      '下载 ' + entry.downloadCount.toString(),
+                      '下载 ${entry.downloadCount}',
                       style: TextStyle(
                         fontSize: 12,
                         color: context.textSecondaryColor,
@@ -478,6 +554,7 @@ class StoryDetailScreen extends StatefulWidget {
 }
 
 class _StoryDetailScreenState extends State<StoryDetailScreen> {
+  BackendRequestScope _request = BackendRequestScope();
   StoryPackage? _story;
   String? _error;
   Character? _selectedCharacter;
@@ -490,21 +567,38 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    _request.cancel();
+    _request = BackendRequestScope();
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final story =
-          await context.read<StoryProvider>().loadPackage(widget.entry);
-      if (mounted)
+      final story = await context
+          .read<StoryProvider>()
+          .loadPackage(widget.entry, scope: _request);
+      if (mounted) {
         setState(() {
           _story = story;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (e is RequestCancelled) return;
+      if (mounted) {
         setState(() {
           _error = e.toString().replaceFirst('Exception: ', '');
           _loading = false;
         });
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    _request.cancel();
+    super.dispose();
   }
 
   Future<void> _install() async {
@@ -530,14 +624,28 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
         padding: settingsPageContentPadding(context),
         children: [
           if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(40),
-              child: Center(child: CupertinoActivityIndicator()),
+            Padding(
+              padding: const EdgeInsets.all(40),
+              child: Column(children: [
+                const CupertinoActivityIndicator(),
+                CupertinoButton(
+                    onPressed: () {
+                      _request.cancel();
+                      setState(() {
+                        _loading = false;
+                        _error = '下载已取消，可以重试';
+                      });
+                    },
+                    child: const Text('取消下载'))
+              ]),
             )
           else if (_error != null)
             Padding(
               padding: const EdgeInsets.all(24),
-              child: Text(_error!, textAlign: TextAlign.center),
+              child: Column(children: [
+                Text(_error!, textAlign: TextAlign.center),
+                CupertinoButton(onPressed: _load, child: const Text('重试下载'))
+              ]),
             )
           else if (story != null) ...[
             SettingsSection(
