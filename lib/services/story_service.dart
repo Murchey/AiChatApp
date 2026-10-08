@@ -34,10 +34,18 @@ class StoryService {
       throw HttpException('请求失败（HTTP ${response.statusCode}）');
     }
     try {
-      return jsonDecode(utf8.decode(response.bodyBytes));
+      return decodeJsonText(utf8.decode(response.bodyBytes));
     } catch (_) {
       throw const FormatException('服务器返回的 JSON 无法解析');
     }
+  }
+
+  /// Decodes JSON returned by static story sources. Some Windows editors and
+  /// object-storage upload tools prepend a UTF-8 BOM; JSON parsers reject that
+  /// marker even though the document itself is valid UTF-8.
+  static dynamic decodeJsonText(String text) {
+    final normalized = text.startsWith('\uFEFF') ? text.substring(1) : text;
+    return jsonDecode(normalized);
   }
 
   static Uri serverUri(StorySourceConfig config, String path) {

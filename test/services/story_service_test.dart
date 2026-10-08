@@ -38,4 +38,12 @@ void main() {
       'https://example.com/stories/world/1.json',
     );
   });
+
+  test('static JSON with a UTF-8 BOM is accepted', () {
+    final decoded = StoryService.decodeJsonText(
+      '\uFEFF{"schemaVersion":1,"stories":[]}',
+    ) as Map<String, dynamic>;
+    expect(decoded['schemaVersion'], 1);
+    expect(decoded['stories'], isEmpty);
+  });
 }
