@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -43,6 +44,20 @@ LatestRepositoryRelease? latestPublishedReleaseFromJson(List<dynamic> releases) 
 /// 用户填写 BASE_URL，App 按固定目录约定自动发现资产。
 /// 默认匿名 ListObjects + GetObject；可选访问密钥做私有读鉴权。
 class WorkshopService {
+  /// Converts network failures into text suitable for repository setup and
+  /// asset loading surfaces. In particular, avoid exposing Dart's raw
+  /// `Future not completed` timeout text to users.
+  static String describeError(Object error) {
+    if (error is TimeoutException) {
+      return '仓库请求超时，请检查地址或网络';
+    }
+    if (error is SocketException || error is HandshakeException) {
+      return '无法连接仓库，请检查地址和网络';
+    }
+    final text = error.toString().replaceFirst('Exception: ', '').trim();
+    return text.isEmpty ? '仓库请求失败，请稍后重试' : text;
+  }
+
   /// COS 目录约定：角色分类
   static const String kCosCharactersFolder = 'Characters';
 

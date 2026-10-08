@@ -13,9 +13,9 @@ import '../models/workshop_repository.dart';
 import '../providers/character_provider.dart';
 import '../providers/sticker_provider.dart';
 import '../providers/workshop_provider.dart';
+import '../services/workshop_service.dart';
 import '../services/character_pack_service.dart';
 import '../services/sticker_pack_service.dart';
-import '../services/workshop_service.dart';
 import '../utils/conversation_relink.dart';
 import '../utils/pinyin_util.dart';
 import 'character_import_screen.dart';
@@ -284,7 +284,7 @@ class _WorkshopScreenState extends State<WorkshopScreen> {
         }
       }
     } catch (e) {
-      error = '$e';
+      error = WorkshopService.describeError(e);
     }
     if (!mounted) return;
     setState(() {

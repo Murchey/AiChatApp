@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,6 +8,10 @@ import '../models/story_package.dart';
 
 class StoryService {
   const StoryService._();
+
+  /// Story sources are user-configured external addresses. Keep an unreachable
+  /// source from blocking the community page for the full platform timeout.
+  static const requestTimeout = Duration(seconds: 8);
 
   static Future<dynamic> getJson(
     Uri uri, {
@@ -18,7 +23,13 @@ class StoryService {
         'Accept': 'application/json',
         if (token.trim().isNotEmpty) 'Authorization': 'Bearer ${token.trim()}',
       },
-    ).timeout(const Duration(seconds: 15));
+    ).timeout(
+      requestTimeout,
+      onTimeout: () => throw TimeoutException(
+        '故事来源请求超时，请检查地址、端口或网络',
+        requestTimeout,
+      ),
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException('请求失败（HTTP ${response.statusCode}）');
     }

@@ -241,7 +241,9 @@ class WorkshopProvider extends ChangeNotifier {
       _cosListComplete.remove(repo.id);
       if (repo.isCos) WorkshopService.invalidateCosListCache(repo.url);
     } catch (e) {
-      _repositories[index] = repo.copyWith(error: '$e');
+      _repositories[index] = repo.copyWith(
+        error: WorkshopService.describeError(e),
+      );
     }
     notifyListeners();
     await _persist();

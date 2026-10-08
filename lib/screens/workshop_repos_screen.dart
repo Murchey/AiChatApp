@@ -6,6 +6,7 @@ import '../models/workshop_repository.dart';
 import '../providers/workshop_provider.dart';
 import '../services/cos_auth.dart';
 import '../services/update_service.dart';
+import '../services/workshop_service.dart';
 
 /// 配置可用仓库：列出已添加的角色卡仓库，右上角加号弹窗添加仓库并自动检查可用性。
 class WorkshopReposScreen extends StatefulWidget {
@@ -81,7 +82,7 @@ class _WorkshopReposScreenState extends State<WorkshopReposScreen> {
     } catch (e) {
       if (mounted) {
         await _showTip(
-          '${editing != null ? '仓库更新失败' : '仓库添加失败'}：$e',
+          '${editing != null ? '仓库更新失败' : '仓库添加失败'}：${WorkshopService.describeError(e)}',
         );
       }
     } finally {

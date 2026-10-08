@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 
@@ -11,6 +13,7 @@ import '../providers/story_provider.dart';
 import '../utils/app_toast.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/settings/settings_ui.dart';
+import 'story_community_settings_screen.dart';
 
 class StoryCommunityScreen extends StatefulWidget {
   const StoryCommunityScreen({super.key});
@@ -21,14 +24,7 @@ class StoryCommunityScreen extends StatefulWidget {
 
 class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
   final _queryController = TextEditingController();
-  final _baseUrlController = TextEditingController();
-  final _portController = TextEditingController();
-  final _tokenController = TextEditingController();
-  final _indexController = TextEditingController();
-  final _repositoryController = TextEditingController();
-  final _branchController = TextEditingController();
-  final _pathController = TextEditingController();
-  bool _configured = false;
+  bool _ready = false;
   String? _selectedTag;
 
   @override
@@ -39,66 +35,21 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
       final provider = context.read<StoryProvider>();
       await provider.init();
       if (!mounted) return;
-      _loadControllers(provider.config);
-      await provider.loadCatalog();
-      if (mounted) setState(() => _configured = true);
+      if (provider.isConfigured) {
+        await provider.loadCatalog();
+      }
+      if (mounted) {
+        setState(() {
+          _ready = true;
+        });
+      }
     });
-  }
-
-  void _loadControllers(StorySourceConfig config) {
-    _baseUrlController.text = config.baseUrl;
-    _portController.text = config.port;
-    _tokenController.text = config.token;
-    _indexController.text = config.indexUrl;
-    _repositoryController.text = config.repository;
-    _branchController.text = config.branch;
-    _pathController.text = config.path;
   }
 
   @override
   void dispose() {
-    for (final controller in [
-      _queryController,
-      _baseUrlController,
-      _portController,
-      _tokenController,
-      _indexController,
-      _repositoryController,
-      _branchController,
-      _pathController,
-    ]) {
-      controller.dispose();
-    }
+    _queryController.dispose();
     super.dispose();
-  }
-
-  Future<void> _saveConfig({bool reload = true}) async {
-    final provider = context.read<StoryProvider>();
-    final current = provider.config;
-    await provider.saveConfig(current.copyWith(
-      baseUrl: _baseUrlController.text.trim(),
-      port: _portController.text.trim(),
-      token: _tokenController.text.trim(),
-      indexUrl: _indexController.text.trim(),
-      repository: _repositoryController.text.trim(),
-      branch: _branchController.text.trim().isEmpty
-          ? 'main'
-          : _branchController.text.trim(),
-      path: _pathController.text.trim().isEmpty
-          ? 'index.json'
-          : _pathController.text.trim(),
-    ));
-    if (reload) await provider.loadCatalog();
-  }
-
-  Future<void> _testConnection() async {
-    try {
-      await _saveConfig(reload: false);
-      await context.read<StoryProvider>().testConnection();
-      if (mounted) showAppToast('连接成功');
-    } catch (e) {
-      if (mounted) showAppToast(e.toString().replaceFirst('Exception: ', ''));
-    }
   }
 
   Future<void> _search() async {
@@ -108,265 +59,410 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
         );
   }
 
+  Future<void> _openSettings() async {
+    final provider = context.read<StoryProvider>();
+    await provider.init();
+    if (!mounted) return;
+    final before = jsonEncode(provider.config.toJson());
+    await Navigator.push<void>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => const StoryCommunitySettingsScreen(),
+      ),
+    );
+    if (!mounted) return;
+    final changed = before != jsonEncode(provider.config.toJson());
+    if (changed) {
+      _queryController.clear();
+      _selectedTag = null;
+      if (provider.isConfigured) await provider.loadCatalog();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<StoryProvider>();
-    final config = provider.config;
     final tags = provider.entries.expand((entry) => entry.tags).toSet().toList()
       ..sort();
+    final hasStateItem =
+        provider.loading || provider.error != null || provider.entries.isEmpty;
+    final itemCount = 1 + (hasStateItem ? 1 : provider.entries.length);
+
     return CupertinoPageScaffold(
       navigationBar: settingsNavigationBar(
         context,
         '故事线社区',
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: provider.loading ? null : () => provider.loadCatalog(),
-          child: const Icon(CupertinoIcons.refresh),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(36, 36),
+              onPressed: provider.loading ? null : _refresh,
+              child: const Icon(CupertinoIcons.refresh, size: 20),
+            ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(36, 36),
+              onPressed: _openSettings,
+              child: const Icon(CupertinoIcons.gear, size: 20),
+            ),
+          ],
         ),
       ),
       backgroundColor: context.scaffoldColor,
-      child: ListView(
-        key: const PageStorageKey<String>('story-community-list'),
+      child: ListView.builder(
+        key: const PageStorageKey<String>('story-community-feed-list'),
         padding: settingsPageContentPadding(
           context,
           bottom: UiSpec.floatingContentBottomInset +
               MediaQuery.viewPaddingOf(context).bottom,
         ),
-        children: [
-          SettingsSection(
-            title: '内容来源',
+        itemCount: itemCount,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return _buildFeedHeader(context, provider, tags);
+          }
+          if (hasStateItem) {
+            return _buildFeedState(context, provider);
+          }
+          final entry = provider.entries[index - 1];
+          return _StoryFeedCard(
+            entry: entry,
+            showDownloadCount: provider.supportsServerStats,
+            onTap: () => Navigator.push(
+              context,
+              CupertinoPageRoute(
+                builder: (_) => StoryDetailScreen(entry: entry),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _refresh() async {
+    final provider = context.read<StoryProvider>();
+    if (!provider.isConfigured) {
+      await _openSettings();
+      return;
+    }
+    await provider.loadCatalog(
+      query: _queryController.text,
+      tag: _selectedTag,
+    );
+  }
+
+  Widget _buildFeedHeader(
+    BuildContext context,
+    StoryProvider provider,
+    List<String> tags,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          child: Row(
             children: [
-              SettingsInlinePicker<StorySourceType>(
-                value: config.type,
-                options: [
-                  for (final type in StorySourceType.values)
-                    SettingsChoiceOption(
-                      value: type,
-                      label: type.displayName,
-                      subtitle: type.description,
-                    ),
-                ],
-                onChanged: (type) async {
-                  await provider.saveConfig(config.copyWith(type: type));
-                  _loadControllers(provider.config);
-                  if (mounted) await provider.loadCatalog();
-                },
-                panelKey: 'story-source-picker',
-                rowBuilder: (context, toggle) => SettingsRow(
-                  icon: CupertinoIcons.cloud,
-                  title: const Text('故事来源'),
-                  subtitle: Text(config.type.description),
-                  trailing: settingsValueText(context, config.type.displayName),
-                  showChevron: true,
-                  onTap: toggle,
+              Icon(
+                CupertinoIcons.book,
+                size: 18,
+                color: context.textSecondaryColor,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  provider.isConfigured
+                      ? '来源：' + provider.config.type.displayName
+                      : '还没有配置故事来源',
+                  style: TextStyle(
+                    fontSize: UiSpec.settingsRowSubtitle,
+                    color: context.textSecondaryColor,
+                  ),
                 ),
               ),
-              ..._buildConfigRows(context, config),
+              if (!provider.isConfigured)
+                CupertinoButton(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  minimumSize: Size.zero,
+                  onPressed: _openSettings,
+                  child: const Text('去设置'),
+                ),
             ],
           ),
-          SettingsSection(
-            title: '浏览故事',
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: CupertinoSearchTextField(
-                        controller: _queryController,
-                        placeholder: '搜索标题、简介或标签',
-                        onSubmitted: (_) => _search(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    CupertinoButton.filled(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      onPressed: _search,
-                      child: const Text('搜索'),
-                    ),
-                  ],
+              Expanded(
+                child: CupertinoSearchTextField(
+                  controller: _queryController,
+                  placeholder: '搜索故事标题、简介或标签',
+                  onSubmitted: (_) => _search(),
                 ),
               ),
-              if (tags.isNotEmpty)
-                SizedBox(
-                  height: 42,
-                  child: ListView.separated(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: tags.length + 1,
-                    separatorBuilder: (_, __) => const SizedBox(width: 6),
-                    itemBuilder: (context, index) {
-                      final tag = index == 0 ? null : tags[index - 1];
-                      final selected = _selectedTag == tag;
-                      return CupertinoButton(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        color: selected
-                            ? context.accentColor.withValues(alpha: 0.14)
-                            : context.fieldBgColor,
-                        onPressed: () async {
-                          setState(() => _selectedTag = tag);
-                          await _search();
-                        },
-                        child: Text(
-                          tag ?? '全部',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: selected
-                                ? context.accentColor
-                                : context.textSecondaryColor,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              if (provider.loading)
-                const Padding(
-                  padding: EdgeInsets.all(28),
-                  child: Center(child: CupertinoActivityIndicator()),
-                )
-              else if (provider.error != null)
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      Text(
-                        provider.error!,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: context.textSecondaryColor),
-                      ),
-                      const SizedBox(height: 10),
-                      CupertinoButton(
-                        onPressed: () => provider.loadCatalog(),
-                        child: const Text('重试'),
-                      ),
-                    ],
-                  ),
-                )
-              else if (provider.entries.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(28),
+              const SizedBox(width: 8),
+              CupertinoButton.filled(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+                minimumSize: Size.zero,
+                onPressed: provider.isConfigured ? _search : _openSettings,
+                child: const Text('搜索'),
+              ),
+            ],
+          ),
+        ),
+        if (tags.isNotEmpty)
+          SizedBox(
+            height: 42,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              scrollDirection: Axis.horizontal,
+              itemCount: tags.length + 1,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (context, index) {
+                final tag = index == 0 ? null : tags[index - 1];
+                final selected = _selectedTag == tag;
+                return CupertinoButton(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: Size.zero,
+                  color: selected
+                      ? context.accentColor.withValues(alpha: 0.14)
+                      : context.fieldBgColor,
+                  onPressed: () async {
+                    setState(() => _selectedTag = tag);
+                    await _search();
+                  },
                   child: Text(
-                    _configured ? '暂无故事内容，请先配置来源或刷新' : '正在读取故事来源…',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: context.textSecondaryColor),
+                    tag ?? '全部',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: selected
+                          ? context.accentColor
+                          : context.textSecondaryColor,
+                    ),
                   ),
-                )
-              else
-                for (final entry in provider.entries)
-                  _StoryEntryTile(entry: entry),
-            ],
+                );
+              },
+            ),
           ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  Widget _buildFeedState(BuildContext context, StoryProvider provider) {
+    if (!_ready || provider.loading) {
+      return const Padding(
+        padding: EdgeInsets.all(40),
+        child: Center(child: CupertinoActivityIndicator()),
+      );
+    }
+    if (provider.error != null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(28, 32, 28, 40),
+        child: Column(
+          children: [
+            Text(
+              provider.error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.textSecondaryColor),
+            ),
+            const SizedBox(height: 10),
+            CupertinoButton(
+              onPressed: provider.loading ? null : _refresh,
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 36, 28, 44),
+      child: Column(
+        children: [
+          Icon(
+            provider.isConfigured ? CupertinoIcons.book : CupertinoIcons.cloud,
+            size: 30,
+            color: context.textSecondaryColor,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            provider.isConfigured ? '暂无故事内容' : '请先配置故事来源',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: context.textSecondaryColor),
+          ),
+          if (!provider.isConfigured) ...[
+            const SizedBox(height: 10),
+            CupertinoButton(
+              onPressed: _openSettings,
+              child: const Text('打开故事线设置'),
+            ),
+          ],
         ],
       ),
     );
   }
-
-  List<Widget> _buildConfigRows(
-      BuildContext context, StorySourceConfig config) {
-    if (config.type == StorySourceType.server) {
-      return [
-        _textRow('服务器地址', _baseUrlController, 'https://example.com'),
-        _textRow('端口', _portController, '8080',
-            keyboardType: TextInputType.number),
-        _textRow('设备令牌（可选）', _tokenController, 'Bearer token'),
-        SettingsRow(
-          icon: CupertinoIcons.link,
-          title: const Text('测试连接'),
-          subtitle: const Text('请求 /api/health 检查服务是否可用'),
-          trailing: const Icon(CupertinoIcons.arrow_right, size: 18),
-          onTap: _testConnection,
-        ),
-      ];
-    }
-    if (config.type == StorySourceType.cos) {
-      return [
-        _textRow('对象存储公共地址', _baseUrlController, 'https://bucket.example.com'),
-        _textRow('索引地址（可选）', _indexController, 'https://.../index.json'),
-        _textRow('索引路径', _pathController, 'index.json'),
-        SettingsRow(
-          icon: CupertinoIcons.link,
-          title: const Text('保存并测试来源'),
-          subtitle: const Text('使用公共只读地址，不在 App 内保存 AccessKey'),
-          trailing: const Icon(CupertinoIcons.arrow_right, size: 18),
-          onTap: _testConnection,
-        ),
-      ];
-    }
-    return [
-      _textRow('索引地址（可选）', _indexController, 'https://.../index.json'),
-      _textRow('仓库地址', _repositoryController, 'owner/repository'),
-      _textRow('分支', _branchController, 'main'),
-      _textRow('索引路径', _pathController, 'index.json'),
-      SettingsRow(
-        icon: CupertinoIcons.link,
-        title: const Text('保存并测试来源'),
-        subtitle: const Text('静态来源只读取公开 JSON，不保存平台密钥'),
-        trailing: const Icon(CupertinoIcons.arrow_right, size: 18),
-        onTap: _testConnection,
-      ),
-    ];
-  }
-
-  Widget _textRow(
-    String title,
-    TextEditingController controller,
-    String placeholder, {
-    TextInputType? keyboardType,
-  }) {
-    return SettingsRow(
-      icon: CupertinoIcons.pencil,
-      title: Text(title),
-      subtitle: CupertinoTextField(
-          controller: controller,
-          placeholder: placeholder,
-          keyboardType: keyboardType,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            color: context.fieldBgColor,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          onSubmitted: (_) => _saveConfig()),
-    );
-  }
 }
 
-class _StoryEntryTile extends StatelessWidget {
+class _StoryFeedCard extends StatelessWidget {
   final StoryCatalogEntry entry;
+  final bool showDownloadCount;
+  final VoidCallback onTap;
 
-  const _StoryEntryTile({required this.entry});
+  const _StoryFeedCard({
+    required this.entry,
+    required this.showDownloadCount,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.read<StoryProvider>();
-    return SettingsRow(
-      icon: CupertinoIcons.book_fill,
-      iconColor: const Color(0xFF6C7FA8),
-      title: Text(entry.title),
-      subtitle: Text(
-        [
-          if (entry.author.isNotEmpty) entry.author,
-          if (entry.summary.isNotEmpty) entry.summary,
-          'v${entry.version}',
-          if (provider.supportsServerStats && entry.downloadCount != null)
-            '下载 ${entry.downloadCount}',
-        ].join(' · '),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: entry.tags.isEmpty
-          ? null
-          : Text(
-              entry.tags.first,
-              style: TextStyle(fontSize: 11, color: context.textSecondaryColor),
-            ),
-      showChevron: true,
-      onTap: () => Navigator.push(
-        context,
-        CupertinoPageRoute(builder: (_) => StoryDetailScreen(entry: entry)),
+    final author = entry.author.trim().isEmpty ? '故事线社区' : entry.author.trim();
+    return RepaintBoundary(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: context.fieldBgColor,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      CupertinoIcons.book,
+                      size: 21,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          author,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: context.textPrimaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '故事设定 · v' + entry.version.toString(),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.textSecondaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    CupertinoIcons.chevron_right,
+                    size: 17,
+                    color: context.textSecondaryColor.withValues(alpha: 0.7),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                entry.title,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: context.textPrimaryColor,
+                  height: 1.25,
+                ),
+              ),
+              if (entry.summary.trim().isNotEmpty) ...[
+                const SizedBox(height: 7),
+                Text(
+                  entry.summary.trim(),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.45,
+                    color: context.textPrimaryColor.withValues(alpha: 0.86),
+                  ),
+                ),
+              ],
+              if (entry.tags.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final tag in entry.tags.take(5))
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: context.fieldBgColor,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          child: Text(
+                            '#' + tag,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.textSecondaryColor,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 11),
+              Row(
+                children: [
+                  Text(
+                    '查看详情',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: context.accentColor,
+                    ),
+                  ),
+                  if (showDownloadCount && entry.downloadCount != null) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      '下载 ' + entry.downloadCount.toString(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondaryColor,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 14),
+              Container(height: 0.5, color: context.settingsDividerColor),
+            ],
+          ),
+        ),
       ),
     );
   }
