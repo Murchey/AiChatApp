@@ -47,10 +47,19 @@ public class AppProperties {
     public static class Security {
         private String tokenPepper = "";
         private boolean requireTokenPepper;
+        private String bootstrapAdminToken = "";
+        private int accessTokenMinutes = 15;
+        private int refreshTokenDays = 30;
 
         public String getTokenPepper() { return tokenPepper; }
         public void setTokenPepper(String tokenPepper) { this.tokenPepper = tokenPepper; }
         public boolean isRequireTokenPepper() { return requireTokenPepper; }
         public void setRequireTokenPepper(boolean requireTokenPepper) { this.requireTokenPepper = requireTokenPepper; }
+        public String getBootstrapAdminToken() { return bootstrapAdminToken; }
+        public void setBootstrapAdminToken(String bootstrapAdminToken) { this.bootstrapAdminToken = bootstrapAdminToken; }
+        public int getAccessTokenMinutes() { return accessTokenMinutes; }
+        public void setAccessTokenMinutes(int accessTokenMinutes) { this.accessTokenMinutes = accessTokenMinutes; }
+        public int getRefreshTokenDays() { return refreshTokenDays; }
+        public void setRefreshTokenDays(int refreshTokenDays) { this.refreshTokenDays = refreshTokenDays; }
     }
 }

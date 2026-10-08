@@ -37,3 +37,6 @@ app:
   security:
     token-pepper: ${AICHAT_TOKEN_PEPPER:}
     require-token-pepper: ${AICHAT_REQUIRE_TOKEN_PEPPER:false}
+    bootstrap-admin-token: ${AICHAT_BOOTSTRAP_ADMIN_TOKEN:}
+    access-token-minutes: ${AICHAT_ACCESS_TOKEN_MINUTES:15}
+    refresh-token-days: ${AICHAT_REFRESH_TOKEN_DAYS:30}

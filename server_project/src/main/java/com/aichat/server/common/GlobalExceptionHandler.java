@@ -11,6 +11,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ApiErrorResponse> api(ApiException exception, HttpServletRequest request) {
+        return response(exception.getStatus(), exception.getCode(), exception.getMessage(), exception.getDetails(), request);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> validation(
             MethodArgumentNotValidException exception,
