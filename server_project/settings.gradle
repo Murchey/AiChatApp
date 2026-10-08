@@ -1,0 +1,22 @@
+pluginManagement {
+    repositories {
+        maven {
+            name = 'TencentMaven'
+            url = uri('https://mirrors.cloud.tencent.com/repository/maven-public/')
+        }
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        maven {
+            name = 'TencentMaven'
+            url = uri('https://mirrors.cloud.tencent.com/repository/maven-public/')
+        }
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'aichat-backend'

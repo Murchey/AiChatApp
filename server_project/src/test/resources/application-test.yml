@@ -1,0 +1,15 @@
+spring:
+  flyway:
+    enabled: true
+  main:
+    banner-mode: off
+
+app:
+  security:
+    require-token-pepper: false
+  features:
+    stories: true
+    sync: false
+    comments: false
+    admin-publish: true
+    llm-relay: false

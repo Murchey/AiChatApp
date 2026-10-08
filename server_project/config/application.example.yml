@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    url: jdbc:sqlite:${AICHAT_DATA_DIR:./data}/aichat.sqlite
+  flyway:
+    enabled: true
+
+server:
+  port: ${AICHAT_PORT:8080}
+
+app:
+  server-version: 0.1.0-m0
+  min-client-version: 1.6.0
+  invite-required: true
+  features:
+    stories: true
+    sync: false
+    comments: false
+    admin-publish: true
+    llm-relay: false
+  security:
+    token-pepper: ${AICHAT_TOKEN_PEPPER:}
+    require-token-pepper: ${AICHAT_REQUIRE_TOKEN_PEPPER:true}

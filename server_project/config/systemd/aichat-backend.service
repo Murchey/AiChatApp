@@ -1,0 +1,17 @@
+[Unit]
+Description=AiChat optional backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aichat
+Group=aichat
+WorkingDirectory=/opt/aichat
+EnvironmentFile=/etc/aichat/aichat.env
+ExecStart=/usr/bin/java -jar /opt/aichat/aichat-backend.jar
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: aichat-backend
+  datasource:
+    url: jdbc:sqlite:${AICHAT_DATA_DIR:./data}/aichat.sqlite
+    driver-class-name: org.sqlite.JDBC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    time-zone: UTC
+    deserialization:
+      fail-on-unknown-properties: true
+
+server:
+  port: ${AICHAT_PORT:8080}
+  forward-headers-strategy: framework
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+app:
+  server-version: ${AICHAT_SERVER_VERSION:0.1.0-m0}
+  api-version: v1
+  min-client-version: ${AICHAT_MIN_CLIENT_VERSION:1.6.0}
+  public-base-url: ${AICHAT_PUBLIC_BASE_URL:}
+  invite-required: ${AICHAT_INVITE_REQUIRED:true}
+  features:
+    sync: ${AICHAT_FEATURE_SYNC:false}
+    stories: ${AICHAT_FEATURE_STORIES:true}
+    comments: ${AICHAT_FEATURE_COMMENTS:false}
+    admin-publish: ${AICHAT_FEATURE_ADMIN_PUBLISH:true}
+    llm-relay: ${AICHAT_FEATURE_LLM_RELAY:false}
+  security:
+    token-pepper: ${AICHAT_TOKEN_PEPPER:}
+    require-token-pepper: ${AICHAT_REQUIRE_TOKEN_PEPPER:false}
