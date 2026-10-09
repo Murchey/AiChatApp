@@ -16,6 +16,7 @@ class StoryService {
   static Future<dynamic> getJson(
     Uri uri, {
     String token = '',
+    Duration? requestTimeout,
   }) async {
     final response = await http.get(
       uri,
@@ -24,10 +25,10 @@ class StoryService {
         if (token.trim().isNotEmpty) 'Authorization': 'Bearer ${token.trim()}',
       },
     ).timeout(
-      requestTimeout,
+      requestTimeout ?? StoryService.requestTimeout,
       onTimeout: () => throw TimeoutException(
         '故事来源请求超时，请检查地址、端口或网络',
-        requestTimeout,
+        requestTimeout ?? StoryService.requestTimeout,
       ),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {

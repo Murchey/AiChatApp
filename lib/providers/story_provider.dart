@@ -267,8 +267,11 @@ class StoryProvider extends ChangeNotifier {
       return backend.loadStories(
           query: q, tag: t, cursor: cursor, scope: scope);
     }
-    return _staticClient.getJson(StoryService.staticIndexUri(config),
-        scope: scope);
+    // Static GitHub/Gitee/COS sources are public JSON endpoints. Keep them on
+    // the plain HTTP path: the backend client adds server request semantics
+    // (abortable requests and API headers) that are not needed by raw hosts
+    // and can make redirected raw URLs fail on desktop platforms.
+    return StoryService.getJson(StoryService.staticIndexUri(config));
   }
 
   Future<void> loadMoreCatalog({String? query, String? tag}) =>
@@ -288,11 +291,11 @@ class StoryProvider extends ChangeNotifier {
       if (source.type == StorySourceType.server) {
         story = await backend.loadStoryPackage(entry, scope: operation);
       } else {
-        final decoded = await _staticClient.getJson(
-            StoryService.resolveStaticFile(
-                StoryService.staticIndexUri(source), entry.file),
-            scope: operation,
-            requestTimeout: const Duration(seconds: 20));
+        final decoded = await StoryService.getJson(
+          StoryService.resolveStaticFile(
+              StoryService.staticIndexUri(source), entry.file),
+          requestTimeout: const Duration(seconds: 20),
+        );
         if (decoded is! Map) throw const FormatException('故事详情格式无效');
         story = StoryPackage.fromJson(decoded.cast<String, dynamic>());
       }
@@ -346,7 +349,7 @@ class StoryProvider extends ChangeNotifier {
       }
     } else {
       _parseEntries(
-          await _staticClient.getJson(StoryService.staticIndexUri(_config)));
+          await StoryService.getJson(StoryService.staticIndexUri(_config)));
     }
   }
 
