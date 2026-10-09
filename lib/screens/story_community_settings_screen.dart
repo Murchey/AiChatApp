@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../config/ui_spec.dart';
 import '../models/story_package.dart';
+import '../models/workshop_repository.dart';
 import '../providers/story_provider.dart';
 import '../providers/backend_provider.dart';
+import '../providers/workshop_provider.dart';
 import '../utils/app_toast.dart';
 import '../widgets/settings/settings_ui.dart';
 import 'sync_settings_screen.dart';
@@ -57,7 +59,12 @@ class _StoryCommunitySettingsScreenState
       final provider = context.read<StoryProvider>();
       _provider = provider;
       final backend = provider.backend;
+      WorkshopProvider? workshop;
+      try {
+        workshop = context.read<WorkshopProvider>();
+      } catch (_) {}
       await provider.init();
+      await workshop?.init();
       if (!mounted) return;
       _loadControllers(provider.config);
       if (backend.config.deviceId.isNotEmpty) {
@@ -120,7 +127,7 @@ class _StoryCommunitySettingsScreenState
           : _pathController.text.trim(),
       storagePath: _storagePathController.text.trim().isEmpty
           ? 'stories'
-          : _storagePathController.text.trim(),
+          : '${_storagePathController.text.trim().replaceAll(RegExp(r'/+$'), '')}/',
       secretId: _secretIdController.text.trim(),
       secretKey: _secretKeyController.text.trim(),
     ));
@@ -202,6 +209,7 @@ class _StoryCommunitySettingsScreenState
                         value: type,
                         label: type.displayName,
                         subtitle: type.description,
+                        enabled: type != StorySourceType.server,
                       ),
                   ],
                   onChanged: (type) async {
@@ -338,14 +346,32 @@ class _StoryCommunitySettingsScreenState
       ];
     }
     if (config.type == StorySourceType.cos) {
+      final workshopRepos = _workshopRepositories(context)
+          .where((repo) => repo.isCos)
+          .toList(growable: false);
       return [
         _textRow('对象存储公共地址', _baseUrlController, 'https://bucket.example.com'),
         _textRow('索引地址（可选）', _indexController, 'https://.../index.json'),
-        _textRow('存储桶路径', _storagePathController, 'stories'),
+        _textRow('存储桶路径', _storagePathController, 'stories/'),
         _textRow('索引路径', _pathController, 'index.json'),
         _textRow('Secret ID（可选）', _secretIdController, '公共读可留空'),
         _textRow('Secret Key（可选）', _secretKeyController, '私有读时填写',
             secret: true),
+        if (workshopRepos.isNotEmpty)
+          SettingsRow(
+            icon: CupertinoIcons.arrow_down_circle,
+            title: const Text('从角色包对象存储配置同步'),
+            subtitle: Text('已配置 ${workshopRepos.length} 个对象存储仓库'),
+            showChevron: true,
+            onTap: () {
+              final repo = workshopRepos.first;
+              _baseUrlController.text = repo.url;
+              _secretIdController.text = repo.cosAuth.accessKeyId;
+              _secretKeyController.text = repo.cosAuth.secretAccessKey;
+              showAppToast('已同步「${repo.name}」的对象存储配置');
+              setState(() {});
+            },
+          ),
         _connectionRow(
           title: '保存并测试来源',
           subtitle: '公共读可留空密钥；私有读使用 Secret ID / Secret Key 签名请求',
@@ -362,6 +388,14 @@ class _StoryCommunitySettingsScreenState
         subtitle: '静态来源只读取公开 JSON，不保存平台密钥',
       ),
     ];
+  }
+
+  List<WorkshopRepository> _workshopRepositories(BuildContext context) {
+    try {
+      return context.read<WorkshopProvider>().repositories;
+    } catch (_) {
+      return const [];
+    }
   }
 
   Widget _connectionRow({required String title, required String subtitle}) {

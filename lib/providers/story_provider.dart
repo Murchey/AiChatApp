@@ -12,6 +12,7 @@ import 'backend_provider.dart';
 class StoryProvider extends ChangeNotifier {
   static const _configKey = 'story_community_source_v1';
   static const _fallbackKey = 'story_community_static_fallback_v1';
+  static const _catalogFetchedAtKey = 'story_community_catalog_fetched_at_v1';
   final BackendProvider backend;
   final bool _ownsBackend;
   final BackendHttpClient _staticClient;
@@ -37,6 +38,7 @@ class StoryProvider extends ChangeNotifier {
   Future<void>? _initFuture, _catalogFuture;
   BackendRequestScope? _catalogScope;
   int _generation = 0;
+  DateTime? _catalogFetchedAt;
   bool _failedAppend = false;
   final _packageScopes = <BackendRequestScope>{};
   StorySourceConfig get config => _config;
@@ -69,6 +71,10 @@ class StoryProvider extends ChangeNotifier {
       if (raw != null) {
         _config = StorySourceConfig.fromJson(
             (jsonDecode(raw) as Map).cast<String, dynamic>());
+      }
+      final fetched = prefs.getInt(_catalogFetchedAtKey);
+      if (fetched != null) {
+        _catalogFetchedAt = DateTime.fromMillisecondsSinceEpoch(fetched);
       }
       final fallback = prefs.getString(_fallbackKey);
       if (fallback != null) {
@@ -181,11 +187,27 @@ class StoryProvider extends ChangeNotifier {
   }
 
   Future<void> loadCatalog(
-      {String? query, String? tag, bool append = false}) async {
+      {String? query,
+      String? tag,
+      bool append = false,
+      bool force = false}) async {
     await init();
     if (_disposed) return;
     if (!isConfigured) return;
     final q = query?.trim() ?? '', t = tag?.trim() ?? '';
+    if (!force &&
+        !append &&
+        q.isEmpty &&
+        t.isEmpty &&
+        _cachedEntries.isNotEmpty &&
+        _catalogFetchedAt != null &&
+        DateTime.now().difference(_catalogFetchedAt!).inMinutes < 5) {
+      _entries = _cachedEntries;
+      _usingCache = true;
+      _error = null;
+      _notify();
+      return;
+    }
     if (append && (q != _query || t != _tag || !_hasMore)) return;
     final key = '$q\n$t\n${append ? _nextCursor : ''}';
     if (_loading && _requestKey == key) {
@@ -235,6 +257,9 @@ class StoryProvider extends ChangeNotifier {
         _cachedEntries = _entries;
         final prefs = await SharedPreferences.getInstance();
         if (generation == _generation) {
+          _catalogFetchedAt = DateTime.now();
+          await prefs.setInt(
+              _catalogFetchedAtKey, _catalogFetchedAt!.millisecondsSinceEpoch);
           await prefs.setString(_cacheKey,
               jsonEncode(_entries.take(500).map((v) => v.toJson()).toList()));
         }
@@ -281,6 +306,19 @@ class StoryProvider extends ChangeNotifier {
 
   Future<void> loadMoreCatalog({String? query, String? tag}) =>
       loadCatalog(query: query, tag: tag, append: true);
+
+  /// Return to the unfiltered cached feed without touching the network.
+  void restoreCachedCatalog() {
+    if (_cachedEntries.isEmpty) return;
+    cancelCatalog();
+    _entries = _cachedEntries;
+    _query = '';
+    _tag = '';
+    _error = null;
+    _usingCache = true;
+    _notify();
+  }
+
   Future<void> retryCatalog({String? query, String? tag}) =>
       loadCatalog(query: query, tag: tag, append: _failedAppend);
   Future<StoryPackage> loadPackage(StoryCatalogEntry entry,

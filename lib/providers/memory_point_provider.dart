@@ -153,6 +153,15 @@ class MemoryPointProvider extends ChangeNotifier {
 
   /// 安装或更新一条故事线：仅替换同一 storyId 产生的记忆，不碰普通记忆。
   Future<void> installStory(String characterId, StoryPackage story) async {
+    final previousList = (_installationsByCharacter[characterId] ?? const [])
+        .where((item) => item.storyId == story.storyId)
+        .toList(growable: false);
+    // Re-importing the same version is idempotent. A newer published version
+    // is a deliberate user import and may replace the old package.
+    if (previousList.isNotEmpty &&
+        previousList.first.version >= story.version) {
+      return;
+    }
     final existing = _pointsByCharacter[characterId] ?? <MemoryPoint>[];
     final retained = existing
         .where((point) =>

@@ -61,6 +61,10 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
   }
 
   Future<void> _search() async {
+    if (_queryController.text.trim().isEmpty && _selectedTag == null) {
+      context.read<StoryProvider>().restoreCachedCatalog();
+      return;
+    }
     await context.read<StoryProvider>().loadCatalog(
           query: _queryController.text,
           tag: _selectedTag,
@@ -167,6 +171,7 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
     await provider.loadCatalog(
       query: _queryController.text,
       tag: _selectedTag,
+      force: true,
     );
   }
 
@@ -219,6 +224,11 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
                   controller: _queryController,
                   placeholder: '搜索故事标题、简介或标签',
                   onSubmitted: (_) => _search(),
+                  onChanged: (value) {
+                    if (value.trim().isEmpty && _selectedTag == null) {
+                      context.read<StoryProvider>().restoreCachedCatalog();
+                    }
+                  },
                 ),
               ),
               const SizedBox(width: 8),
@@ -545,6 +555,70 @@ class _StoryFeedCard extends StatelessWidget {
   }
 }
 
+class _StoryCharacterPickerScreen extends StatefulWidget {
+  final Character? selected;
+  const _StoryCharacterPickerScreen({this.selected});
+
+  @override
+  State<_StoryCharacterPickerScreen> createState() =>
+      _StoryCharacterPickerScreenState();
+}
+
+class _StoryCharacterPickerScreenState
+    extends State<_StoryCharacterPickerScreen> {
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final all = context.watch<CharacterProvider>().manageableCharacters;
+    final query = _search.text.trim().toLowerCase();
+    final characters = query.isEmpty
+        ? all
+        : all
+            .where((c) => c.displayName.toLowerCase().contains(query))
+            .toList();
+    return CupertinoPageScaffold(
+      navigationBar: settingsNavigationBar(context, '选择本地角色'),
+      backgroundColor: context.scaffoldColor,
+      child: ListView(
+        padding: settingsPageContentPadding(context),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: CupertinoSearchTextField(
+              controller: _search,
+              placeholder: '搜索角色',
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+          SettingsSection(
+            title: '本地角色',
+            children: [
+              for (final character in characters)
+                SettingsRow(
+                  leading: CharacterAvatar(base64: character.avatar, size: 38),
+                  title: Text(character.displayName),
+                  subtitle: const Text('首次导入故事记忆点'),
+                  trailing: character.id == widget.selected?.id
+                      ? Icon(CupertinoIcons.check_mark,
+                          color: context.accentColor)
+                      : null,
+                  onTap: () => Navigator.of(context).pop(character),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class StoryDetailScreen extends StatefulWidget {
   final StoryCatalogEntry entry;
 
@@ -690,42 +764,44 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                   for (var i = 0; i < story.memories.length; i++)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                      child: Text('${i + 1}. ${story.memories[i].content}'),
+                      child: Text(
+                        '${i + 1}. ${story.memories[i].content}',
+                        style: TextStyle(
+                            color: context.textPrimaryColor, height: 1.45),
+                      ),
                     ),
               ],
             ),
             SettingsSection(
               title: '安装到角色',
               children: [
-                SettingsInlinePicker<Character?>(
-                  value: _selectedCharacter,
-                  options: [
-                    for (final character in characters)
-                      SettingsChoiceOption<Character?>(
-                        value: character,
-                        label: character.displayName,
-                        subtitle: '将故事设定作为独立记忆源安装',
+                SettingsRow(
+                  leading: _selectedCharacter == null
+                      ? const Icon(CupertinoIcons.person_crop_circle)
+                      : CharacterAvatar(
+                          base64: _selectedCharacter!.avatar, size: 38),
+                  title: Text(_selectedCharacter?.displayName ?? '选择本地角色'),
+                  subtitle: const Text('故事线记忆不会覆盖已有记忆'),
+                  showChevron: true,
+                  onTap: () async {
+                    final character = await Navigator.push<Character?>(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (_) => _StoryCharacterPickerScreen(
+                          selected: _selectedCharacter,
+                        ),
                       ),
-                  ],
-                  onChanged: (character) =>
-                      setState(() => _selectedCharacter = character),
-                  panelKey: 'story-character-picker',
-                  rowBuilder: (context, toggle) => SettingsRow(
-                    leading: _selectedCharacter == null
-                        ? const Icon(CupertinoIcons.person_crop_circle)
-                        : CharacterAvatar(
-                            base64: _selectedCharacter!.avatar, size: 38),
-                    title: Text(_selectedCharacter?.displayName ?? '选择本地角色'),
-                    subtitle: const Text('故事线记忆不会覆盖已有记忆'),
-                    showChevron: true,
-                    onTap: toggle,
-                  ),
+                    );
+                    if (mounted && character != null) {
+                      setState(() => _selectedCharacter = character);
+                    }
+                  },
                 ),
                 SettingsRow(
                   icon: CupertinoIcons.arrow_down_circle,
                   iconColor: context.accentColor,
                   title: const Text('下载并安装'),
-                  subtitle: const Text('同一故事再次安装会更新原有故事记忆'),
+                  subtitle: const Text('仅首次导入故事记忆点，之后不会主动覆盖角色记录'),
                   trailing: const Icon(CupertinoIcons.arrow_right, size: 18),
                   onTap: characters.isEmpty ? null : _install,
                 ),
@@ -751,7 +827,8 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Text(
             story.introduction.isEmpty ? story.summary : story.introduction,
-            style: const TextStyle(fontSize: 16, height: 1.55),
+            style: TextStyle(
+                fontSize: 16, height: 1.55, color: context.textPrimaryColor),
           ),
         ),
         for (final image in story.images)
@@ -762,6 +839,8 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                 borderRadius: BorderRadius.circular(10),
                 child: Image.network(
                   detailUri.resolve(image).toString(),
+                  headers: StoryService.staticHeaders(
+                      provider.config, detailUri.resolve(image)),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                 ),

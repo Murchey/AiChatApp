@@ -306,11 +306,13 @@ class SettingsChoiceOption<T> {
   final T value;
   final String label;
   final String? subtitle;
+  final bool enabled;
 
   const SettingsChoiceOption({
     required this.value,
     required this.label,
     this.subtitle,
+    this.enabled = true,
   });
 }
 
@@ -572,10 +574,12 @@ class SettingsInlinePicker<T> extends StatelessWidget {
           for (final option in options)
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-              onPressed: () {
-                onChanged(option.value);
-                close();
-              },
+              onPressed: option.enabled
+                  ? () {
+                      onChanged(option.value);
+                      close();
+                    }
+                  : null,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -588,7 +592,10 @@ class SettingsInlinePicker<T> extends StatelessWidget {
                           option.label,
                           style: TextStyle(
                             fontSize: UiSpec.settingsRowTitle,
-                            color: panelContext.textPrimaryColor,
+                            color: option.enabled
+                                ? panelContext.textPrimaryColor
+                                : panelContext.textSecondaryColor
+                                    .withValues(alpha: 0.5),
                           ),
                         ),
                         if (option.subtitle != null) ...[

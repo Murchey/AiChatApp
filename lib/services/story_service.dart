@@ -309,6 +309,17 @@ class StoryService {
         secretAccessKey: config.secretKey);
   }
 
+  static Map<String, String> staticHeaders(StorySourceConfig config, Uri uri) {
+    final auth = _authFor(config);
+    if (auth == null) return const {};
+    return buildCosAuthHeaders(
+      method: 'GET',
+      uri: uri,
+      accessKeyId: auth.accessKeyId,
+      secretAccessKey: auth.secretAccessKey,
+    );
+  }
+
   static String _cosPath(StorySourceConfig config, String fallback,
       {String? base}) {
     final prefix = config.storagePath.trim().replaceAll(RegExp(r'^/+|/+$'), '');
