@@ -41,6 +41,60 @@ class StoryService {
     }
   }
 
+  /// Reads a public GitHub/Gitee file. Raw endpoints are fast when reachable,
+  /// but are often blocked independently of the normal repository website.
+  /// Fall back to the platform Contents API and decode its base64 payload.
+  static Future<dynamic> getStaticJson(
+    StorySourceConfig config,
+    Uri uri, {
+    required String filePath,
+    Duration? requestTimeout,
+  }) async {
+    try {
+      return await getJson(uri, requestTimeout: requestTimeout);
+    } catch (error) {
+      if (config.type != StorySourceType.github &&
+          config.type != StorySourceType.gitee) {
+        rethrow;
+      }
+      final apiUri = _contentsApiUri(config, filePath);
+      if (apiUri == null) rethrow;
+      try {
+        final decoded = await getJson(apiUri, requestTimeout: requestTimeout);
+        if (decoded is! Map || decoded['content'] == null) rethrow;
+        final encoded =
+            decoded['content'].toString().replaceAll(RegExp(r'\s'), '');
+        final text = utf8.decode(base64.decode(base64.normalize(encoded)));
+        return decodeJsonText(text);
+      } catch (_) {
+        rethrow;
+      }
+    }
+  }
+
+  static Uri? _contentsApiUri(StorySourceConfig config, String filePath) {
+    var repository = config.repository.trim().replaceAll(RegExp(r'/+$'), '');
+    final parsed = Uri.tryParse(repository);
+    if (parsed != null && parsed.host.isNotEmpty) {
+      repository = parsed.path.replaceFirst(RegExp(r'^/+'), '');
+    }
+    final parts = repository.split('/').where((v) => v.isNotEmpty).toList();
+    if (parts.length < 2) return null;
+    final owner = parts[0];
+    final repo = parts[1].replaceFirst(RegExp(r'\.git$'), '');
+    final branch = config.branch.trim().isEmpty ? 'main' : config.branch.trim();
+    final path = filePath.trim().replaceFirst(RegExp(r'^/+'), '');
+    if (path.isEmpty) return null;
+    final host =
+        config.type == StorySourceType.gitee ? 'gitee.com' : 'api.github.com';
+    final apiPath = config.type == StorySourceType.gitee
+        ? '/api/v5/repos/$owner/$repo/contents/$path'
+        : '/repos/$owner/$repo/contents/$path';
+    return Uri.https(host, apiPath, {
+      'ref': branch,
+    });
+  }
+
   /// Decodes JSON returned by static story sources. Some Windows editors and
   /// object-storage upload tools prepend a UTF-8 BOM; JSON parsers reject that
   /// marker even though the document itself is valid UTF-8.
@@ -97,8 +151,9 @@ class StoryService {
       ownerRepo = normalized.replaceFirst(RegExp(r'^/+'), '');
     }
     final parts = ownerRepo.split('/').where((e) => e.isNotEmpty).toList();
-    if (parts.length < 2)
+    if (parts.length < 2) {
       throw const FormatException('仓库地址应为 owner/repository');
+    }
     final owner = parts[0];
     final repository = parts[1].replaceFirst(RegExp(r'\.git$'), '');
     if (host.contains('gitee.com') || config.type == StorySourceType.gitee) {

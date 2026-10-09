@@ -271,7 +271,11 @@ class StoryProvider extends ChangeNotifier {
     // the plain HTTP path: the backend client adds server request semantics
     // (abortable requests and API headers) that are not needed by raw hosts
     // and can make redirected raw URLs fail on desktop platforms.
-    return StoryService.getJson(StoryService.staticIndexUri(config));
+    return StoryService.getStaticJson(
+      config,
+      StoryService.staticIndexUri(config),
+      filePath: config.path,
+    );
   }
 
   Future<void> loadMoreCatalog({String? query, String? tag}) =>
@@ -291,9 +295,11 @@ class StoryProvider extends ChangeNotifier {
       if (source.type == StorySourceType.server) {
         story = await backend.loadStoryPackage(entry, scope: operation);
       } else {
-        final decoded = await StoryService.getJson(
+        final decoded = await StoryService.getStaticJson(
+          source,
           StoryService.resolveStaticFile(
               StoryService.staticIndexUri(source), entry.file),
+          filePath: entry.file,
           requestTimeout: const Duration(seconds: 20),
         );
         if (decoded is! Map) throw const FormatException('故事详情格式无效');
@@ -348,8 +354,11 @@ class StoryProvider extends ChangeNotifier {
             code: 'FEATURE_DISABLED', message: '服务器未开启故事服务');
       }
     } else {
-      _parseEntries(
-          await StoryService.getJson(StoryService.staticIndexUri(_config)));
+      _parseEntries(await StoryService.getStaticJson(
+        _config,
+        StoryService.staticIndexUri(_config),
+        filePath: _config.path,
+      ));
     }
   }
 
