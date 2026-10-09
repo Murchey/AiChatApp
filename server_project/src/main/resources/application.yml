@@ -4,6 +4,11 @@ spring:
   datasource:
     url: jdbc:sqlite:${AICHAT_DATA_DIR:./data}/aichat.sqlite
     driver-class-name: org.sqlite.JDBC
+    hikari:
+      # One writer connection prevents deferred SQLite transaction upgrade races.
+      maximum-pool-size: 1
+      minimum-idle: 1
+      connection-init-sql: PRAGMA foreign_keys=ON
   flyway:
     enabled: true
     locations: classpath:db/migration

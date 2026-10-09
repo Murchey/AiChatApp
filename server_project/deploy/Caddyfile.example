@@ -1,0 +1,6 @@
+# Replace example.com and keep the backend bound to 127.0.0.1:8080.
+example.com {
+    encode zstd gzip
+    request_body { max_size 4MB }
+    reverse_proxy 127.0.0.1:8080 { flush_interval -1 }
+}

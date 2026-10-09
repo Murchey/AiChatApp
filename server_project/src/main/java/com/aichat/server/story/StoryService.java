@@ -71,6 +71,7 @@ public class StoryService {
     @Transactional
     public StoryCatalogEntry publish(JsonNode document) {
         requireStories();
+        if (!properties.getFeatures().isAdminPublish()) throw new ApiException(HttpStatus.FORBIDDEN, "FEATURE_DISABLED", "管理员故事发布未启用");
         validator.validate(document);
         return repository.publish(document);
     }
@@ -87,6 +88,6 @@ public class StoryService {
     }
 
     private void requireStories() {
-        if (!properties.getFeatures().isStories()) throw new ApiException(HttpStatus.NOT_FOUND, "FEATURE_DISABLED", "故事服务未启用");
+        if (!properties.getFeatures().isStories()) throw new ApiException(HttpStatus.FORBIDDEN, "FEATURE_DISABLED", "故事服务未启用");
     }
 }

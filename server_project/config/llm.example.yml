@@ -1,0 +1,23 @@
+# Explicit server-owned model catalog. Contains no API keys.
+# Load with --spring.config.additional-location=optional:file:./config/llm.example.yml
+# Keep llm-relay false until HTTPS, quotas and the provider catalog are reviewed.
+app:
+  llm:
+    timeout-seconds: 45
+    allow-local-http: false
+    models:
+      - id: openai-text
+        provider-model-id: custom-model
+        display-name: OpenAI-compatible text
+        provider: OPENAI
+        endpoint: https://provider.example.com/v1
+        deprecated: false
+        capabilities:
+          text: true
+          vision: false
+          audio-input: false
+          audio-output: false
+          tools: false
+          json-mode: false
+          streaming: true
+          context-window: 8192

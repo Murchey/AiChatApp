@@ -37,7 +37,8 @@ public class AdminInviteController {
         Map<String, Object> safe = body == null ? Map.of() : body;
         int maxUses = number(safe.get("maxUses"), safe.get("max_uses"), 1);
         Integer expires = numberOrNull(safe.get("expiresInHours"), safe.get("expires_in_hours"));
-        var created = invites.create(maxUses, expires);
+        String role = safe.get("role") == null ? "USER" : safe.get("role").toString();
+        var created = invites.create(maxUses, expires, role);
         audit.record(actor, "INVITE_CREATED", "INVITE", null, RequestIdFilter.from(request));
         return new ApiResponse<>(created, RequestIdFilter.from(request));
     }

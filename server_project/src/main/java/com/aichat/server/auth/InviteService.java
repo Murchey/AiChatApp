@@ -19,11 +19,21 @@ public class InviteService {
     }
 
     public CreatedInvite create(int maxUses, Integer expiresInHours) {
+        return create(maxUses, expiresInHours, "USER");
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public CreatedInvite create(int maxUses, Integer expiresInHours, String role) {
+        if (!"USER".equals(role) && !"ADMIN".equals(role)) {
+            throw new com.aichat.server.common.ApiException(org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "VALIDATION_ERROR", "邀请码角色只能为 USER 或 ADMIN");
+        }
         int uses = Math.max(1, Math.min(maxUses, 1000));
         Instant expires = expiresInHours == null || expiresInHours <= 0
                 ? null : Instant.now().plus(Math.min(expiresInHours, 24 * 365), ChronoUnit.HOURS);
         String code = "AIC-" + randomCode(20);
-        repository.create(tokens.hash(code), uses, expires, Instant.now());
+        String id = repository.create(tokens.hash(code), uses, expires, Instant.now());
+        repository.assignRole(id, role);
         return new CreatedInvite(code, expires, uses);
     }
 

@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiErrorResponse> api(ApiException exception, HttpServletRequest request) {
-        return response(exception.getStatus(), exception.getCode(), exception.getMessage(), exception.getDetails(), request);
+        var result=response(exception.getStatus(), exception.getCode(), exception.getMessage(), exception.getDetails(), request);
+        if(exception.getRetryAfterSeconds()!=null)return ResponseEntity.status(exception.getStatus()).header("Retry-After",exception.getRetryAfterSeconds().toString()).body(result.getBody());
+        return result;
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

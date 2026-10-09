@@ -26,6 +26,12 @@ class SystemControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Test void oversizedBodyHasBoundedReadableErrorAndRequestId()throws Exception{
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/invite/exchange")
+            .contentType("application/json").content("x".repeat(com.aichat.server.common.JsonBodyLimitFilter.LIMIT+1)))
+            .andExpect(status().isPayloadTooLarge()).andExpect(jsonPath("$.error.code").value("PAYLOAD_TOO_LARGE"))
+            .andExpect(header().exists("X-Request-Id"));
+    }
 
     @BeforeAll
     static void createDatabaseUrl() {

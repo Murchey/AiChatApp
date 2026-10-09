@@ -27,4 +27,13 @@ public class InviteRepository {
                 codeHash, now.toString());
         return updated == 1;
     }
+
+    public String role(String codeHash) {
+        return jdbc.query("SELECT role FROM invite_code WHERE code_hash=?", (rs, row) -> rs.getString(1), codeHash)
+                .stream().findFirst().orElse("USER");
+    }
+
+    public void assignRole(String id, String role) {
+        jdbc.update("UPDATE invite_code SET role=? WHERE id=?", role, id);
+    }
 }

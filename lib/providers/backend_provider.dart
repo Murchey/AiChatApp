@@ -319,7 +319,10 @@ class BackendProvider extends ChangeNotifier {
   Future<StoryBackendService> _storyService(BackendRequestScope? scope) async {
     scope?.check();
     _checkRateLimit();
+    await init();
+    final epoch = _epoch;
     await refreshStatus(force: false, scope: scope);
+    _guard(epoch);
     scope?.check();
     if (!storiesEnabled) {
       throw const BackendException(
@@ -327,6 +330,7 @@ class BackendProvider extends ChangeNotifier {
     }
     if (_config.accessExpired && _config.refreshToken.isNotEmpty) {
       await refreshAccessToken();
+      _guard(epoch);
     }
     scope?.check();
     final usedToken = _config.accessToken;
@@ -371,6 +375,53 @@ class BackendProvider extends ChangeNotifier {
   }
 
   Future<void> testStoryConnection() => refreshStatus();
+
+  /// Optional modules share the same auth/session lifecycle as story requests.
+  Future<dynamic> requestModule(String feature, String path,
+      {String method = 'GET',
+      Object? body,
+      Map<String, String> headers = const {},
+      BackendRequestScope? scope}) async {
+    scope?.check();
+    _checkRateLimit();
+    await init();
+    final epoch = _epoch;
+    await refreshStatus(force: false, scope: scope);
+    _guard(epoch);
+    if (_capabilities?.features[feature] != true) {
+      throw BackendException(
+          statusCode: 403,
+          code: 'FEATURE_DISABLED',
+          message: '服务器未启用 $feature');
+    }
+    if (_config.accessExpired && _config.refreshToken.isNotEmpty) {
+      await refreshAccessToken();
+      _guard(epoch);
+    }
+    scope?.check();
+    final usedToken = _config.accessToken;
+    try {
+      final response = await _client.requestJson(_config.endpoint(path),
+          method: method,
+          body: body,
+          headers: headers,
+          scope: scope,
+          token: usedToken, onUnauthorized: () {
+        _guard(epoch);
+        return _config.accessToken.isNotEmpty &&
+                _config.accessToken != usedToken
+            ? Future.value(_config.accessToken)
+            : refreshAccessToken();
+      });
+      _guard(epoch);
+      return response;
+    } on BackendException catch (error) {
+      _guard(epoch);
+      await _recordRequestError(error);
+      rethrow;
+    }
+  }
+
   void cancelRequests() => _client.cancelAll();
   void _checkRateLimit() {
     final remaining = _retryAt?.difference(DateTime.now()).inSeconds ?? 0;

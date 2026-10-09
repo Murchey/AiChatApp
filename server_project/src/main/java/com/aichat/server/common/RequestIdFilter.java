@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
+@org.springframework.core.annotation.Order(0)
 public class RequestIdFilter extends OncePerRequestFilter {
     public static final String ATTRIBUTE = RequestIdFilter.class.getName() + ".requestId";
     private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9._-]{1,80}");

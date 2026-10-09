@@ -8,6 +8,7 @@ import '../providers/story_provider.dart';
 import '../providers/backend_provider.dart';
 import '../utils/app_toast.dart';
 import '../widgets/settings/settings_ui.dart';
+import 'sync_settings_screen.dart';
 
 /// Story source configuration is kept separate from the feed so the main
 /// page can stay focused on browsing stories.
@@ -285,6 +286,14 @@ class _StoryCommunitySettingsScreenState
         _connectionRow(
           title: '测试服务器连接',
           subtitle: '请求 /api/health 检查服务是否可用',
+        ),
+        SettingsRow(
+          icon: CupertinoIcons.cloud,
+          title: const Text('设置同步（试点）'),
+          subtitle: const Text('可选加密同步，需要服务端启用 sync'),
+          showChevron: true,
+          onTap: () => Navigator.of(context).push(CupertinoPageRoute<void>(
+              builder: (_) => const SyncSettingsScreen())),
         ),
         SettingsRow(
             icon: CupertinoIcons.lock,

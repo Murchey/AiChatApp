@@ -23,7 +23,8 @@ public class SimpleRateLimiter {
             return old;
         });
         if (bucket.count().get() > limit) {
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "请求过于频繁，请稍后再试");
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "请求过于频繁，请稍后再试")
+                .retryAfter((int)Math.max(1,java.time.Duration.between(now,bucket.startedAt().plusSeconds(windowSeconds)).toSeconds()));
         }
     }
 }
