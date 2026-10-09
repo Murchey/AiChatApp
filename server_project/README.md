@@ -2,7 +2,7 @@
 
 这是 AiChat 可选后端的 Spring Boot 3 / Java 21 / SQLite 实现。M0–M3基线已完成；当前增加管理员草稿发布、设备私有加密同步、四协议LLM中继和待审核评论。同步、中继、评论默认关闭；完整验收进度见 [实施进度](../developDocs/backend-plan/M4-M7-服务端实施进度.md)。
 
-新增模块配置与调用说明见 [模块部署指南](docs/optional-modules.md)，systemd/Caddy/Nginx 样例位于 `deploy/`。App管理员编辑器/评论UI尚未接入，不应把服务端接口测试理解为这些App功能已验收。
+完整部署步骤见 [部署指南](docs/部署指南.md)；新增模块配置与调用说明见 [模块部署指南](docs/optional-modules.md)，systemd/Caddy/Nginx 样例位于 `deploy/`。App管理员编辑器/评论UI尚未接入，不应把服务端接口测试理解为这些App功能已验收。
 
 ## 环境
 
