@@ -47,6 +47,39 @@ class StorageMigrationService {
     return db;
   }
 
+  /// Writes a consistent SQLite snapshot without copying the live database
+  /// file while it may still have an open WAL transaction.
+  static Future<void> exportSqlite(File destination) async {
+    if (await destination.exists()) await destination.delete();
+    await destination.parent.create(recursive: true);
+    await database.customStatement('VACUUM INTO ?', [destination.path]);
+  }
+
+  /// Restores the core tables from a SQLite snapshot. The current connection
+  /// stays open, so providers can continue using the same database instance.
+  static Future<void> importSqlite(File source) async {
+    if (!await source.exists()) throw StateError('SQLite 备份文件不存在');
+    final path = source.path.replaceAll("'", "''");
+    await database.customStatement('ATTACH DATABASE ? AS backup_db', [path]);
+    try {
+      const tables = [
+        'characters',
+        'character_metas',
+        'conversations',
+        'messages',
+        'chat_metas',
+      ];
+      for (final table in tables) {
+        await database.customStatement('DELETE FROM main.$table');
+        await database.customStatement(
+          'INSERT INTO main.$table SELECT * FROM backup_db.$table',
+        );
+      }
+    } finally {
+      await database.customStatement('DETACH DATABASE backup_db');
+    }
+  }
+
   /// 启动时调用：打开库并按需执行迁移。
   static Future<void> init() async {
     if (_initialized) return;
@@ -95,17 +128,17 @@ class StorageMigrationService {
     // 会话行数：用 DAO 同源统计
     final convsSqlite = (await conversationDao.all()).length;
 
-    final charsPrefs =
-        _decodeJsonObjectCount(prefs.getString('characters_v1'));
+    final charsPrefs = _decodeJsonObjectCount(prefs.getString('characters_v1'));
     final convsPrefs =
         _decodeJsonListCount(prefs.getString('chat_conversations_v1'));
     final msgsPrefs =
         _decodeMessageMapCount(prefs.getString('chat_messages_v1'));
 
-    // prefs 明显有数据而库为空 → 需要修复
-    if (charsPrefs > 0 && charsSqlite == 0) return true;
-    if (convsPrefs > 0 && convsSqlite == 0) return true;
-    if (msgsPrefs > 0 && msgsSqlite == 0) return true;
+    // SQLite 可能在迁移中途已经写入部分数据；只检查“为空”会把这种
+    // 部分导入误判为成功，读取层随后会遮住仍然完整的 prefs 数据。
+    if (charsPrefs > charsSqlite) return true;
+    if (convsPrefs > convsSqlite) return true;
+    if (msgsPrefs > msgsSqlite) return true;
     return false;
   }
 

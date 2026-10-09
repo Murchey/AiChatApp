@@ -5,3 +5,5 @@ data/*.sqlite
 data/*.sqlite-*
 data/**/*.sqlite
 data/**/*.sqlite-*
+admin-panel/node_modules/
+admin-panel/dist/

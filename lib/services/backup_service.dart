@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
@@ -9,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'backup_crypto.dart';
+import 'storage_migration_service.dart';
 
 /// 备份/恢复过程进度回调：[progress] 0~1，[stage] 为阶段说明。
 typedef BackupProgressCallback = void Function(double progress, String stage);
@@ -30,14 +30,16 @@ class LocalExport {
 ///
 /// 备份 zip 结构（对齐 inkqilin-ledger 本地备份能力）：
 ///   manifest.json   格式与应用信息
-///   prefs.json      全部 SharedPreferences（路径已相对化）
+///   prefs.json      全部 SharedPreferences（路径已相对化，兼容旧版本）
+///   database.sqlite SQLite 核心数据快照（新版本优先恢复）
 ///   files/**        用户数据文件（相对文档目录）
 ///
 /// 可选 AES-256-GCM 密码加密整包（密文布局见 [BackupCrypto]）。
 class BackupService {
-  static const int formatVersion = 1;
+  static const int formatVersion = 2;
   static const String _manifestName = 'manifest.json';
   static const String _prefsName = 'prefs.json';
+  static const String _sqliteName = 'database.sqlite';
   static const String _filesPrefix = 'files/';
   static const String _docsPlaceholder = '{DOCS}';
 
@@ -76,6 +78,19 @@ class BackupService {
     'chat_import_',
   ];
 
+  // These large records are represented by database.sqlite in format v2.
+  // They remain readable from prefs.json when importing a format v1 backup.
+  static const Set<String> _sqliteOwnedPrefsKeys = {
+    'characters_v1',
+    'characters_deleted_v1',
+    'visibility_groups_v1',
+    'chat_conversations_v1',
+    'chat_messages_v1',
+    'chat_context_tokens_v1',
+    'chat_system_tokens_v1',
+    'chat_roleplay_choices_v1',
+  };
+
   /// 排除（缓存 / 系统 / 备份自身）
   static const List<String> _excludedDirs = [
     'workshop',
@@ -98,7 +113,8 @@ class BackupService {
     String fileNamePrefix = 'aichat_backup',
     BackupProgressCallback? onProgress,
   }) async {
-    void report(double p, String stage) => onProgress?.call(p.clamp(0, 1), stage);
+    void report(double p, String stage) =>
+        onProgress?.call(p.clamp(0, 1), stage);
 
     report(0.02, '准备导出');
     final docDir = await getApplicationDocumentsDirectory();
@@ -109,6 +125,7 @@ class BackupService {
     report(0.08, '读取应用设置');
     final rawPrefs = <String, dynamic>{};
     for (final key in prefs.getKeys()) {
+      if (_sqliteOwnedPrefsKeys.contains(key)) continue;
       final value = prefs.get(key);
       if (value == null) continue;
       final sanitized = sanitizePrefForExport(
@@ -180,6 +197,22 @@ class BackupService {
       _prefsName,
       const JsonEncoder.withIndent('  ').convert(rawPrefs),
     ));
+
+    // SQLite is the efficient primary representation for large core data.
+    // prefs.json remains for settings and for importing older format-v1 ZIPs.
+    report(0.86, '生成 SQLite 数据快照');
+    final sqliteTemp = File(
+      '${docDir.path}/.aichat_backup_${DateTime.now().microsecondsSinceEpoch}.sqlite',
+    );
+    try {
+      await StorageMigrationService.exportSqlite(sqliteTemp);
+      archive.addFile(ArchiveFile.bytes(
+        _sqliteName,
+        await sqliteTemp.readAsBytes(),
+      ));
+    } finally {
+      if (await sqliteTemp.exists()) await sqliteTemp.delete();
+    }
 
     report(0.88, '压缩打包');
     final zipBytes = Uint8List.fromList(ZipEncoder().encode(archive));
@@ -318,7 +351,8 @@ class BackupService {
     String? password,
     BackupProgressCallback? onProgress,
   }) async {
-    void report(double p, String stage) => onProgress?.call(p.clamp(0, 1), stage);
+    void report(double p, String stage) =>
+        onProgress?.call(p.clamp(0, 1), stage);
 
     report(0.05, '读取备份文件');
     if (!await file.exists()) {
@@ -339,7 +373,8 @@ class BackupService {
     Uint8List zipBytes, {
     BackupProgressCallback? onProgress,
   }) async {
-    void report(double p, String stage) => onProgress?.call(p.clamp(0, 1), stage);
+    void report(double p, String stage) =>
+        onProgress?.call(p.clamp(0, 1), stage);
 
     if (zipBytes.isEmpty) {
       throw StateError('备份内容为空，已取消恢复');
@@ -353,12 +388,15 @@ class BackupService {
     }
 
     Uint8List? prefsBytes;
+    Uint8List? sqliteBytes;
     final fileEntries = <String, Uint8List>{};
     for (final entry in archive) {
       if (!entry.isFile) continue;
       final name = entry.name.replaceAll('\\', '/');
       if (name == _prefsName) {
         prefsBytes = Uint8List.fromList(entry.content as List<int>);
+      } else if (name == _sqliteName) {
+        sqliteBytes = Uint8List.fromList(entry.content as List<int>);
       } else if (name.startsWith(_filesPrefix)) {
         final rel = name.substring(_filesPrefix.length);
         if (rel.isEmpty || rel.endsWith('/')) continue;
@@ -478,12 +516,28 @@ class BackupService {
           );
         }
       }
+      if (sqliteBytes != null) {
+        report(0.98, '恢复 SQLite 数据');
+        final sqliteTemp = File(
+          '${docDir.path}/.aichat_restore_${DateTime.now().microsecondsSinceEpoch}.sqlite',
+        );
+        try {
+          await sqliteTemp.writeAsBytes(sqliteBytes, flush: true);
+          await StorageMigrationService.importSqlite(sqliteTemp);
+        } catch (e) {
+          // A format v2 backup intentionally omits large core JSON from
+          // prefs.json, so a failed SQLite restore must abort and roll back.
+          throw StateError('SQLite 数据恢复失败：$e');
+        } finally {
+          if (await sqliteTemp.exists()) await sqliteTemp.delete();
+        }
+      }
       report(1, '恢复完成');
     } catch (e) {
       // 回滚设置
       try {
-        final rollback =
-            jsonDecode(await safetyPrefs.readAsString()) as Map<String, dynamic>;
+        final rollback = jsonDecode(await safetyPrefs.readAsString())
+            as Map<String, dynamic>;
         await prefs.clear();
         for (final entry in rollback.entries) {
           await _setPrefValue(prefs, entry.key, entry.value, docDir.path);
@@ -552,8 +606,9 @@ class BackupService {
     final dir = await localBackupDir();
     final safetyDir = await _safetyDir();
     final backups = await listLocalBackups();
-    final names =
-        backups.isEmpty ? '无' : backups.map((f) => _basename(f.path)).join(', ');
+    final names = backups.isEmpty
+        ? '无'
+        : backups.map((f) => _basename(f.path)).join(', ');
     final safety = File('${safetyDir.path}/prefs.json');
     final safetyInfo =
         safety.existsSync() ? 'prefs.json(${safety.lengthSync()})' : '无';

@@ -2,7 +2,9 @@
 
 这是 AiChat 可选后端的 Spring Boot 3 / Java 21 / SQLite 实现。M0–M3基线已完成；当前增加管理员草稿发布、设备私有加密同步、四协议LLM中继和待审核评论。同步、中继、评论默认关闭；完整验收进度见 [实施进度](../developDocs/backend-plan/M4-M7-服务端实施进度.md)。
 
-完整部署步骤见 [部署指南](docs/部署指南.md)；新增模块配置与调用说明见 [模块部署指南](docs/optional-modules.md)，systemd/Caddy/Nginx 样例位于 `deploy/`。App管理员编辑器/评论UI尚未接入，不应把服务端接口测试理解为这些App功能已验收。
+入门用户建议先看 [5 分钟快速开始](docs/快速开始.md)；完整部署步骤见 [部署指南](docs/部署指南.md)。新增模块配置与调用说明见 [模块部署指南](docs/optional-modules.md)，systemd/Caddy/Nginx 样例位于 `deploy/`。App管理员编辑器/评论UI尚未接入，不应把服务端接口测试理解为这些App功能已验收。
+
+管理面板源码位于 `admin-panel/`，使用 React + HeroUI。执行 `npm install && npm run build` 后，产物会写入 Spring Boot 的 `src/main/resources/static/`；重新打包 JAR 后访问服务器根路径即可打开管理面板。面板使用当前浏览器会话保存 bootstrap 管理令牌，不把令牌写入后端日志。
 
 ## 环境
 
@@ -31,6 +33,20 @@ Linux/macOS：
 输出 JAR：`build/libs/aichat-backend.jar`。
 
 ## 本地启动
+
+最简单的方式：
+
+```powershell
+.\scripts\start.ps1
+```
+
+Linux/macOS：
+
+```bash
+./scripts/start.sh
+```
+
+脚本会自动创建数据目录并启动服务。默认地址是 `http://127.0.0.1:8080`，按 `Ctrl+C` 停止。
 
 开发模式：
 

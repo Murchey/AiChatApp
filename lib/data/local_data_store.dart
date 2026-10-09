@@ -27,9 +27,14 @@ class LocalDataStore {
 
   /// 旧格式：`{ id: Character.toJson(), ... }`
   static Future<String?> loadCharactersJson() async {
+    final prefs = await SharedPreferences.getInstance();
+    final legacy = prefs.getString('characters_v1');
     try {
       final rows = await _characters.all();
-      if (rows.isNotEmpty) {
+      // A failed first-run migration can leave a partial SQLite import. Keep
+      // using the complete legacy payload until SQLite has caught up.
+      final legacyCount = _jsonCollectionCount(legacy);
+      if (rows.isNotEmpty && rows.length >= legacyCount) {
         final map = <String, dynamic>{};
         for (final row in rows) {
           try {
@@ -41,8 +46,7 @@ class LocalDataStore {
     } catch (e) {
       debugPrint('[LocalDataStore] 读角色 SQLite 失败，回退 prefs: $e');
     }
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('characters_v1');
+    return legacy;
   }
 
   static Future<void> saveCharactersJson(String encoded) async {
@@ -108,9 +112,11 @@ class LocalDataStore {
   // ── 会话 / 消息 ───────────────────────────────────────
 
   static Future<String?> loadConversationsJson() async {
+    final prefs = await SharedPreferences.getInstance();
+    final legacy = prefs.getString('chat_conversations_v1');
     try {
       final rows = await _conversations.pinnedFirst();
-      if (rows.isNotEmpty) {
+      if (rows.isNotEmpty && rows.length >= _jsonListCount(legacy)) {
         final list = rows.map((r) {
           try {
             return jsonDecode(r.json);
@@ -123,8 +129,7 @@ class LocalDataStore {
     } catch (e) {
       debugPrint('[LocalDataStore] 读会话 SQLite 失败，回退 prefs: $e');
     }
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('chat_conversations_v1');
+    return legacy;
   }
 
   static Future<void> saveConversationsJson(String encoded) async {
@@ -163,9 +168,11 @@ class LocalDataStore {
 
   /// 旧格式：`{ conversationId: [Message.toJson(), ...], ... }`
   static Future<String?> loadMessagesJson() async {
+    final prefs = await SharedPreferences.getInstance();
+    final legacy = prefs.getString('chat_messages_v1');
     try {
       final count = await _messages.count();
-      if (count > 0) {
+      if (count > 0 && count >= _jsonMessageCount(legacy)) {
         final result = <String, dynamic>{};
         final all = await _db.select(_db.messages).get();
         for (final row in all) {
@@ -181,8 +188,33 @@ class LocalDataStore {
     } catch (e) {
       debugPrint('[LocalDataStore] 读消息 SQLite 失败，回退 prefs: $e');
     }
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('chat_messages_v1');
+    return legacy;
+  }
+
+  static int _jsonCollectionCount(String? raw) {
+    if (raw == null || raw.isEmpty) return 0;
+    try {
+      final value = jsonDecode(raw);
+      return value is Map || value is List ? value.length : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static int _jsonListCount(String? raw) => _jsonCollectionCount(raw);
+
+  static int _jsonMessageCount(String? raw) {
+    if (raw == null || raw.isEmpty) return 0;
+    try {
+      final value = jsonDecode(raw);
+      if (value is! Map) return 0;
+      return value.values.fold<int>(
+        0,
+        (sum, messages) => sum + (messages is List ? messages.length : 0),
+      );
+    } catch (_) {
+      return 0;
+    }
   }
 
   static Future<void> saveMessagesJson(String encoded) async {
