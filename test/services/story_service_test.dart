@@ -22,6 +22,22 @@ void main() {
         'https://gitee.com/owner/repository/raw/master/index.json');
   });
 
+  test('complete blob URLs resolve to the raw file', () {
+    final github = StoryService.staticIndexUri(const StorySourceConfig(
+      type: StorySourceType.github,
+      repository:
+          'https://github.com/owner/repository/blob/dev/data/index.json',
+    ));
+    final gitee = StoryService.staticIndexUri(const StorySourceConfig(
+      type: StorySourceType.gitee,
+      indexUrl: 'https://gitee.com/owner/repository/blob/dev/data/index.json',
+    ));
+    expect(github.toString(),
+        'https://raw.githubusercontent.com/owner/repository/dev/data/index.json');
+    expect(gitee.toString(),
+        'https://gitee.com/owner/repository/raw/dev/data/index.json');
+  });
+
   test('COS / OSS index can be resolved from a public base URL', () {
     final uri = StoryService.staticIndexUri(const StorySourceConfig(
       type: StorySourceType.cos,
@@ -42,6 +58,21 @@ void main() {
   test('static JSON with a UTF-8 BOM is accepted', () {
     final decoded = StoryService.decodeJsonText(
       '\uFEFF{"schemaVersion":1,"stories":[]}',
+    ) as Map<String, dynamic>;
+    expect(decoded['schemaVersion'], 1);
+    expect(decoded['stories'], isEmpty);
+  });
+
+  test('static JSON wrapped in a Markdown fence is accepted', () {
+    final decoded = StoryService.decodeJsonText(
+      '```json\n{"schemaVersion":1,"stories":[]}\n```',
+    ) as Map<String, dynamic>;
+    expect(decoded['schemaVersion'], 1);
+  });
+
+  test('legacy story JSON without outer opening brace is accepted', () {
+    final decoded = StoryService.decodeJsonText(
+      '"schemaVersion":1,"stories":[]}',
     ) as Map<String, dynamic>;
     expect(decoded['schemaVersion'], 1);
     expect(decoded['stories'], isEmpty);

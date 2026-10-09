@@ -15,10 +15,12 @@ class StoryProvider extends ChangeNotifier {
   final BackendProvider backend;
   final bool _ownsBackend;
   final BackendHttpClient _staticClient;
+  final bool _usesDefaultStaticClient;
   StoryProvider({BackendProvider? backend, BackendHttpClient? staticClient})
       : backend = backend ?? BackendProvider(),
         _ownsBackend = backend == null,
-        _staticClient = staticClient ?? BackendHttpClient();
+        _staticClient = staticClient ?? BackendHttpClient(),
+        _usesDefaultStaticClient = staticClient == null;
 
   StorySourceConfig _config = const StorySourceConfig();
   StorySourceConfig? _staticFallback;
@@ -271,11 +273,10 @@ class StoryProvider extends ChangeNotifier {
     // the plain HTTP path: the backend client adds server request semantics
     // (abortable requests and API headers) that are not needed by raw hosts
     // and can make redirected raw URLs fail on desktop platforms.
-    return StoryService.getStaticJson(
-      config,
-      StoryService.staticIndexUri(config),
-      filePath: config.path,
-    );
+    final uri = StoryService.staticIndexUri(config);
+    return _usesDefaultStaticClient
+        ? StoryService.getStaticJson(config, uri, filePath: config.path)
+        : _staticClient.getJson(uri, scope: scope);
   }
 
   Future<void> loadMoreCatalog({String? query, String? tag}) =>
@@ -295,13 +296,14 @@ class StoryProvider extends ChangeNotifier {
       if (source.type == StorySourceType.server) {
         story = await backend.loadStoryPackage(entry, scope: operation);
       } else {
-        final decoded = await StoryService.getStaticJson(
-          source,
-          StoryService.resolveStaticFile(
-              StoryService.staticIndexUri(source), entry.file),
-          filePath: entry.file,
-          requestTimeout: const Duration(seconds: 20),
-        );
+        final uri = StoryService.resolveStaticFile(
+            StoryService.staticIndexUri(source), entry.file);
+        final decoded = _usesDefaultStaticClient
+            ? await StoryService.getStaticJson(source, uri,
+                filePath: entry.file,
+                requestTimeout: const Duration(seconds: 20))
+            : await _staticClient.getJson(uri,
+                scope: operation, requestTimeout: const Duration(seconds: 20));
         if (decoded is! Map) throw const FormatException('故事详情格式无效');
         story = StoryPackage.fromJson(decoded.cast<String, dynamic>());
       }
@@ -354,11 +356,11 @@ class StoryProvider extends ChangeNotifier {
             code: 'FEATURE_DISABLED', message: '服务器未开启故事服务');
       }
     } else {
-      _parseEntries(await StoryService.getStaticJson(
-        _config,
-        StoryService.staticIndexUri(_config),
-        filePath: _config.path,
-      ));
+      final uri = StoryService.staticIndexUri(_config);
+      _parseEntries(_usesDefaultStaticClient
+          ? await StoryService.getStaticJson(_config, uri,
+              filePath: _config.path)
+          : await _staticClient.getJson(uri));
     }
   }
 
@@ -410,19 +412,11 @@ class StoryProvider extends ChangeNotifier {
         'title': story.title,
         'author': story.author,
         'summary': story.summary,
+        'publishedAt': story.publishedAt,
+        'introduction': story.introduction,
         'tags': story.tags,
-        'chapters': [
-          for (final c in story.chapters)
-            {
-              'id': c.id,
-              'title': c.title,
-              'order': c.order,
-              'memories': [
-                for (final m in c.memories)
-                  {'id': m.id, 'order': m.order, 'content': m.content}
-              ]
-            }
-        ],
+        'memories': [for (final memory in story.memories) memory.content],
+        'images': story.images,
       };
   String readableError(Object error) {
     if (error is TimeoutException) return '故事来源请求超时，请检查地址、端口或网络';

@@ -159,19 +159,17 @@ class MemoryPointProvider extends ChangeNotifier {
             point.sourceType != 'story' || point.sourceId != story.storyId)
         .toList();
     final storyPoints = <MemoryPoint>[];
-    for (final chapter in story.chapters) {
-      for (final memory in chapter.memories) {
-        final content = memory.content.trim();
-        if (content.isEmpty) continue;
-        storyPoints.add(MemoryPoint(
-          content: content,
-          sourceType: 'story',
-          sourceId: story.storyId,
-          sourceVersion: story.version,
-          sourceTitle: story.title,
-          chapterId: chapter.id,
-        ));
-      }
+    for (var index = 0; index < story.memories.length; index++) {
+      final content = story.memories[index].content.trim();
+      if (content.isEmpty) continue;
+      storyPoints.add(MemoryPoint(
+        content: content,
+        sourceType: 'story',
+        sourceId: story.storyId,
+        sourceVersion: story.version,
+        sourceTitle: story.title,
+        chapterId: 'memory_${index + 1}',
+      ));
     }
     _pointsByCharacter[characterId] = [...storyPoints, ...retained];
     final installed = List<InstalledStory>.from(

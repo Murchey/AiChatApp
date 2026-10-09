@@ -2,6 +2,29 @@ import 'dart:convert';
 
 enum StorySourceType { server, cos, github, gitee }
 
+class StoryMemory {
+  final String id;
+  final int order;
+  final String content;
+
+  const StoryMemory(
+      {required this.id, required this.order, required this.content});
+}
+
+class StoryChapter {
+  final String id;
+  final String title;
+  final int order;
+  final List<StoryMemory> memories;
+
+  const StoryChapter({
+    required this.id,
+    required this.title,
+    required this.order,
+    required this.memories,
+  });
+}
+
 extension StorySourceTypeX on StorySourceType {
   String get displayName => switch (this) {
         StorySourceType.server => '自建服务器',
@@ -28,6 +51,11 @@ class StorySourceConfig {
   final String branch;
   final String path;
 
+  /// Object storage prefix, e.g. `stories`.
+  final String storagePath;
+  final String secretId;
+  final String secretKey;
+
   const StorySourceConfig({
     this.type = StorySourceType.server,
     this.baseUrl = '',
@@ -37,6 +65,9 @@ class StorySourceConfig {
     this.repository = '',
     this.branch = 'main',
     this.path = 'index.json',
+    this.storagePath = '',
+    this.secretId = '',
+    this.secretKey = '',
   });
 
   StorySourceConfig copyWith({
@@ -48,6 +79,9 @@ class StorySourceConfig {
     String? repository,
     String? branch,
     String? path,
+    String? storagePath,
+    String? secretId,
+    String? secretKey,
   }) {
     return StorySourceConfig(
       type: type ?? this.type,
@@ -58,6 +92,9 @@ class StorySourceConfig {
       repository: repository ?? this.repository,
       branch: branch ?? this.branch,
       path: path ?? this.path,
+      storagePath: storagePath ?? this.storagePath,
+      secretId: secretId ?? this.secretId,
+      secretKey: secretKey ?? this.secretKey,
     );
   }
 
@@ -70,6 +107,9 @@ class StorySourceConfig {
         'repository': repository,
         'branch': branch,
         'path': path,
+        'storage_path': storagePath,
+        'secret_id': secretId,
+        'secret_key': secretKey,
       };
 
   factory StorySourceConfig.fromJson(Map<String, dynamic> json) {
@@ -86,6 +126,9 @@ class StorySourceConfig {
       repository: json['repository'] as String? ?? '',
       branch: json['branch'] as String? ?? 'main',
       path: json['path'] as String? ?? 'index.json',
+      storagePath: json['storage_path'] as String? ?? '',
+      secretId: json['secret_id'] as String? ?? '',
+      secretKey: json['secret_key'] as String? ?? '',
     );
   }
 }
@@ -96,6 +139,7 @@ class StoryCatalogEntry {
   final String title;
   final String author;
   final String summary;
+  final String publishedAt;
   final List<String> tags;
   final String file;
   final int? downloadCount;
@@ -106,6 +150,7 @@ class StoryCatalogEntry {
     required this.title,
     required this.author,
     required this.summary,
+    this.publishedAt = '',
     required this.tags,
     required this.file,
     this.downloadCount,
@@ -118,6 +163,8 @@ class StoryCatalogEntry {
       title: (json['title'] ?? '').toString(),
       author: (json['author'] ?? '').toString(),
       summary: (json['summary'] ?? '').toString(),
+      publishedAt:
+          (json['publishedAt'] ?? json['published_at'] ?? '').toString(),
       tags: (json['tags'] as List<dynamic>? ?? const [])
           .map((value) => value.toString())
           .where((value) => value.isNotEmpty)
@@ -135,50 +182,11 @@ class StoryCatalogEntry {
         'title': title,
         'author': author,
         'summary': summary,
+        if (publishedAt.isNotEmpty) 'publishedAt': publishedAt,
         'tags': tags,
         'file': file,
         if (downloadCount != null) 'downloadCount': downloadCount,
       };
-}
-
-class StoryMemory {
-  final String id;
-  final int order;
-  final String content;
-
-  const StoryMemory(
-      {required this.id, required this.order, required this.content});
-
-  factory StoryMemory.fromJson(Map<String, dynamic> json) => StoryMemory(
-        id: (json['id'] ?? '').toString(),
-        order: int.tryParse('${json['order'] ?? 0}') ?? 0,
-        content: (json['content'] ?? '').toString().trim(),
-      );
-}
-
-class StoryChapter {
-  final String id;
-  final String title;
-  final int order;
-  final List<StoryMemory> memories;
-
-  const StoryChapter({
-    required this.id,
-    required this.title,
-    required this.order,
-    required this.memories,
-  });
-
-  factory StoryChapter.fromJson(Map<String, dynamic> json) => StoryChapter(
-        id: (json['id'] ?? '').toString(),
-        title: (json['title'] ?? '').toString(),
-        order: int.tryParse('${json['order'] ?? 0}') ?? 0,
-        memories: (json['memories'] as List<dynamic>? ?? const [])
-            .whereType<Map>()
-            .map((value) => StoryMemory.fromJson(value.cast<String, dynamic>()))
-            .where((value) => value.content.isNotEmpty)
-            .toList(growable: false),
-      );
 }
 
 class StoryPackage {
@@ -188,33 +196,50 @@ class StoryPackage {
   final String author;
   final String summary;
   final List<String> tags;
+  final String publishedAt;
+  final String introduction;
+  final List<StoryMemory> memories;
+  final List<String> images;
   final List<StoryChapter> chapters;
 
-  const StoryPackage({
+  StoryPackage({
     required this.storyId,
     required this.version,
     required this.title,
     required this.author,
     required this.summary,
     required this.tags,
-    required this.chapters,
-  });
+    this.publishedAt = '',
+    this.introduction = '',
+    List<StoryMemory>? memories,
+    List<StoryChapter> chapters = const [],
+    this.images = const [],
+  })  : memories = memories ??
+            chapters
+                .expand((chapter) => chapter.memories)
+                .toList(growable: false),
+        chapters = chapters;
 
   factory StoryPackage.fromJson(Map<String, dynamic> json) {
-    final chapters = (json['chapters'] as List<dynamic>? ?? const [])
-        .whereType<Map>()
-        .map((value) => StoryChapter.fromJson(value.cast<String, dynamic>()))
-        .toList()
-      ..sort((a, b) => a.order.compareTo(b.order));
-    if (chapters.isEmpty) {
-      throw const FormatException('故事包没有有效章节');
-    }
     final storyId =
         (json['storyId'] ?? json['story_id'] ?? '').toString().trim();
     final title = (json['title'] ?? '').toString().trim();
     if (storyId.isEmpty || title.isEmpty) {
       throw const FormatException('故事包缺少 storyId 或标题');
     }
+    final rawMemories = json['memories'];
+    final memoryTexts = rawMemories is List
+        ? rawMemories
+            .map((value) => value is Map
+                ? (value['content'] ?? '').toString().trim()
+                : value.toString().trim())
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false)
+        : _legacyMemories(json);
+    final memoryPoints = [
+      for (var i = 0; i < memoryTexts.length; i++)
+        StoryMemory(id: 'memory_${i + 1}', order: i, content: memoryTexts[i]),
+    ];
     return StoryPackage(
       storyId: storyId,
       version: int.tryParse('${json['version'] ?? 1}') ?? 1,
@@ -224,7 +249,14 @@ class StoryPackage {
       tags: (json['tags'] as List<dynamic>? ?? const [])
           .map((value) => value.toString())
           .toList(growable: false),
-      chapters: chapters,
+      publishedAt:
+          (json['publishedAt'] ?? json['published_at'] ?? '').toString(),
+      introduction: (json['introduction'] ?? '').toString().trim(),
+      memories: memoryPoints,
+      images: (json['images'] as List<dynamic>? ?? const [])
+          .map((value) => value.toString().trim())
+          .where((value) => value.isNotEmpty)
+          .toList(growable: false),
     );
   }
 
@@ -234,8 +266,19 @@ class StoryPackage {
     return StoryPackage.fromJson(decoded.cast<String, dynamic>());
   }
 
-  Iterable<StoryMemory> get memories =>
-      chapters.expand((chapter) => chapter.memories);
+  static List<String> _legacyMemories(Map<String, dynamic> json) {
+    final chapters = json['chapters'];
+    if (chapters is! List) return const [];
+    return [
+      for (final chapter in chapters.whereType<Map>())
+        for (final memory in (chapter['memories'] as List? ?? const []))
+          (memory is Map ? (memory['content'] ?? '') : memory)
+              .toString()
+              .trim(),
+    ].where((value) => value.isNotEmpty).toList(growable: false);
+  }
+
+  Iterable<StoryMemory> get allMemories => memories;
 }
 
 class InstalledStory {

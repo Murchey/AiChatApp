@@ -3,6 +3,16 @@ import 'package:ai_chat/models/memory_point.dart';
 import 'package:ai_chat/models/story_package.dart';
 
 void main() {
+  test('新帖子故事格式解析正文、记忆点和图片', () {
+    final story = StoryPackage.fromText('''
+      {"storyId":"post-1","title":"帖子","introduction":"正文",
+       "memories":["设定一","设定二"],"images":["images/cover.png"]}
+    ''');
+    expect(story.introduction, '正文');
+    expect(story.memories.map((value) => value.content), ['设定一', '设定二']);
+    expect(story.images, ['images/cover.png']);
+  });
+
   test('故事包解析章节和记忆点', () {
     final story = StoryPackage.fromText('''
       {

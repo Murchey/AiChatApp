@@ -31,6 +31,9 @@ class _StoryCommunitySettingsScreenState
   final _repositoryController = TextEditingController();
   final _branchController = TextEditingController();
   final _pathController = TextEditingController();
+  final _storagePathController = TextEditingController();
+  final _secretIdController = TextEditingController();
+  final _secretKeyController = TextEditingController();
   bool _ready = false;
   bool _busy = false;
   StoryProvider? _provider;
@@ -72,6 +75,9 @@ class _StoryCommunitySettingsScreenState
     _repositoryController.text = config.repository;
     _branchController.text = config.branch;
     _pathController.text = config.path;
+    _storagePathController.text = config.storagePath;
+    _secretIdController.text = config.secretId;
+    _secretKeyController.text = config.secretKey;
   }
 
   @override
@@ -87,6 +93,9 @@ class _StoryCommunitySettingsScreenState
       _repositoryController,
       _branchController,
       _pathController,
+      _storagePathController,
+      _secretIdController,
+      _secretKeyController,
     ]) {
       controller.dispose();
     }
@@ -109,6 +118,11 @@ class _StoryCommunitySettingsScreenState
       path: _pathController.text.trim().isEmpty
           ? 'index.json'
           : _pathController.text.trim(),
+      storagePath: _storagePathController.text.trim().isEmpty
+          ? 'stories'
+          : _storagePathController.text.trim(),
+      secretId: _secretIdController.text.trim(),
+      secretKey: _secretKeyController.text.trim(),
     ));
     if (current.type == StorySourceType.server) {
       await backend.configureEndpoint(
@@ -327,10 +341,14 @@ class _StoryCommunitySettingsScreenState
       return [
         _textRow('对象存储公共地址', _baseUrlController, 'https://bucket.example.com'),
         _textRow('索引地址（可选）', _indexController, 'https://.../index.json'),
+        _textRow('存储桶路径', _storagePathController, 'stories'),
         _textRow('索引路径', _pathController, 'index.json'),
+        _textRow('Secret ID（可选）', _secretIdController, '公共读可留空'),
+        _textRow('Secret Key（可选）', _secretKeyController, '私有读时填写',
+            secret: true),
         _connectionRow(
           title: '保存并测试来源',
-          subtitle: '使用公共只读地址，不在 App 内保存 AccessKey',
+          subtitle: '公共读可留空密钥；私有读使用 Secret ID / Secret Key 签名请求',
         ),
       ];
     }

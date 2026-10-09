@@ -11,6 +11,7 @@ import '../providers/character_provider.dart';
 import '../providers/memory_point_provider.dart';
 import '../providers/story_provider.dart';
 import '../services/backend_http_client.dart';
+import '../services/story_service.dart';
 import '../utils/app_toast.dart';
 import '../widgets/character_avatar.dart';
 import '../widgets/settings/settings_ui.dart';
@@ -559,6 +560,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
   String? _error;
   Character? _selectedCharacter;
   bool _loading = true;
+  bool _showMemories = false;
 
   @override
   void initState() {
@@ -658,6 +660,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                     [
                       if (story.author.isNotEmpty) story.author,
                       'v${story.version}',
+                      if (story.publishedAt.isNotEmpty) story.publishedAt,
                       ...story.tags
                     ].join(' · '),
                   ),
@@ -672,16 +675,23 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                 ),
               ],
             ),
+            _buildPost(context, story),
             SettingsSection(
-              title: '章节预览',
+              title: '故事记忆点',
               children: [
-                for (final chapter in story.chapters)
-                  SettingsRow(
-                    icon: CupertinoIcons.book,
-                    title:
-                        Text(chapter.title.isEmpty ? '未命名章节' : chapter.title),
-                    subtitle: Text('${chapter.memories.length} 条故事记忆'),
-                  ),
+                SettingsRow(
+                  icon: CupertinoIcons.book,
+                  title: Text(_showMemories ? '收起记忆点' : '展开记忆点'),
+                  subtitle: Text('${story.memories.length} 条记忆点，仅安装时写入角色'),
+                  showChevron: true,
+                  onTap: () => setState(() => _showMemories = !_showMemories),
+                ),
+                if (_showMemories)
+                  for (var i = 0; i < story.memories.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                      child: Text('${i + 1}. ${story.memories[i].content}'),
+                    ),
               ],
             ),
             SettingsSection(
@@ -724,6 +734,40 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildPost(BuildContext context, StoryPackage story) {
+    final provider = context.read<StoryProvider>();
+    Uri? detailUri;
+    if (provider.config.type != StorySourceType.server) {
+      final indexUri = StoryService.staticIndexUri(provider.config);
+      detailUri = StoryService.resolveStaticFile(indexUri, widget.entry.file);
+    }
+    return SettingsSection(
+      title: '帖子正文',
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: Text(
+            story.introduction.isEmpty ? story.summary : story.introduction,
+            style: const TextStyle(fontSize: 16, height: 1.55),
+          ),
+        ),
+        for (final image in story.images)
+          if (detailUri != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.network(
+                  detailUri.resolve(image).toString(),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+            ),
+      ],
     );
   }
 }
