@@ -310,11 +310,11 @@ class StoryService {
   }
 
   static Map<String, String> staticHeaders(StorySourceConfig config, Uri uri,
-      {String? contentType}) {
+      {String method = 'GET', String? contentType}) {
     final auth = _authFor(config);
     if (auth == null) return const {};
     return buildCosAuthHeaders(
-      method: 'GET',
+      method: method,
       uri: uri,
       accessKeyId: auth.accessKeyId,
       secretAccessKey: auth.secretAccessKey,
@@ -335,7 +335,7 @@ class StoryService {
       'Accept': 'application/json',
       'Content-Type': 'application/json; charset=utf-8',
       ...staticHeaders(config, uri,
-          contentType: 'application/json; charset=utf-8'),
+          method: 'PUT', contentType: 'application/json; charset=utf-8'),
     };
     final response = await http
         .put(uri, headers: headers, body: jsonEncode(value))
@@ -351,7 +351,7 @@ class StoryService {
     Duration? requestTimeout,
   }) async {
     final response = await http
-        .delete(uri, headers: staticHeaders(config, uri))
+        .delete(uri, headers: staticHeaders(config, uri, method: 'DELETE'))
         .timeout(requestTimeout ?? StoryService.requestTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException('对象存储临时对象删除失败（HTTP ${response.statusCode}）');

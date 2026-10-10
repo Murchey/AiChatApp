@@ -691,6 +691,8 @@ class BackupService {
     'secretaccesskey',
     'secretid',
     'secretkey',
+    'secret_id',
+    'secret_key',
     'password',
     'secret',
     'token',

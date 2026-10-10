@@ -1,153 +1,243 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../config/theme.dart';
 import '../models/story_package.dart';
 import '../providers/story_provider.dart';
-import '../services/story_service.dart';
+import '../services/story_editing_service.dart';
 import '../utils/app_toast.dart';
 import '../widgets/settings/settings_ui.dart';
 
 class StoryQuickEditScreen extends StatefulWidget {
-  const StoryQuickEditScreen({super.key});
+  final StoryEditingService service;
+  const StoryQuickEditScreen(
+      {super.key, this.service = const StoryEditingService()});
 
   @override
   State<StoryQuickEditScreen> createState() => _StoryQuickEditScreenState();
 }
 
 class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
+  final _search = TextEditingController();
+  final _id = TextEditingController();
+  final _title = TextEditingController();
+  final _author = TextEditingController();
+  final _tags = TextEditingController();
+  final _summary = TextEditingController();
+  final _introduction = TextEditingController();
+  final _memories = TextEditingController();
+  final _images = TextEditingController();
+  List<StoryCatalogEntry> _entries = [];
+  Map<String, dynamic>? _original;
+  StorySourceConfig? _config;
   StoryCatalogEntry? _entry;
-  StoryPackage? _story;
-  late final TextEditingController _title;
-  late final TextEditingController _summary;
-  late final TextEditingController _introduction;
-  late final TextEditingController _memories;
-  bool _checking = true;
-  bool _saving = false;
+  bool _checking = true,
+      _loadingDetail = false,
+      _saving = false,
+      _isNew = false;
+  bool _writable = false;
+  int _selection = 0;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _title = TextEditingController();
-    _summary = TextEditingController();
-    _introduction = TextEditingController();
-    _memories = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) => _prepare());
   }
 
   @override
   void dispose() {
-    _title.dispose();
-    _summary.dispose();
-    _introduction.dispose();
-    _memories.dispose();
+    for (final c in [
+      _search,
+      _id,
+      _title,
+      _author,
+      _tags,
+      _summary,
+      _introduction,
+      _memories,
+      _images
+    ]) {
+      c.dispose();
+    }
+    _selection++;
     super.dispose();
   }
 
   Future<void> _prepare() async {
     final provider = context.read<StoryProvider>();
-    try {
-      await provider.init();
-      await StoryService.probeStaticWrite(provider.config);
-      if (provider.entries.isEmpty) await provider.loadCatalog(force: true);
-      if (mounted) setState(() => _checking = false);
-    } catch (error) {
-      if (mounted)
-        setState(() {
-          _checking = false;
-          _error = '$error';
-        });
-    }
-  }
-
-  Future<void> _select(StoryCatalogEntry entry) async {
-    final provider = context.read<StoryProvider>();
     setState(() {
-      _entry = entry;
-      _story = null;
+      _checking = true;
+      _writable = false;
       _error = null;
     });
     try {
-      final story = await provider.loadPackage(entry);
+      await provider.init();
+      final config = provider.config;
+      await widget.service.checkWrite(config);
+      final index = await widget.service.loadIndex(config);
       if (!mounted) return;
-      _title.text = story.title;
-      _summary.text = story.summary;
-      _introduction.text = story.introduction;
-      _memories.text = story.memories.map((m) => m.content).join('\n');
-      setState(() => _story = story);
+      setState(() {
+        _config = config;
+        _entries = (index['stories'] as List)
+            .map((v) =>
+                StoryCatalogEntry.fromJson(Map<String, dynamic>.from(v as Map)))
+            .toList();
+        _writable = true;
+      });
     } catch (error) {
-      if (mounted) setState(() => _error = '$error');
+      if (mounted) setState(() => _error = provider.readableError(error));
+    } finally {
+      if (mounted) setState(() => _checking = false);
     }
   }
 
-  Future<void> _save() async {
-    final entry = _entry;
-    final story = _story;
-    final provider = context.read<StoryProvider>();
-    if (entry == null || story == null) return;
-    setState(() => _saving = true);
+  void _create() {
+    _selection++;
+    _id.text = 'story-${const Uuid().v4()}';
+    for (final c in [
+      _title,
+      _author,
+      _tags,
+      _summary,
+      _introduction,
+      _memories,
+      _images
+    ]) {
+      c.clear();
+    }
+    setState(() {
+      _original = {
+        'schemaVersion': 2,
+        'version': 1,
+        'publishedAt': DateTime.now().toUtc().toIso8601String()
+      };
+      _entry = null;
+      _isNew = true;
+      _loadingDetail = false;
+      _error = null;
+    });
+  }
+
+  Future<void> _select(StoryCatalogEntry entry) async {
+    final selection = ++_selection;
+    setState(() {
+      _entry = entry;
+      _original = null;
+      _isNew = false;
+      _loadingDetail = true;
+      _error = null;
+    });
     try {
-      final indexUri = StoryService.staticIndexUri(provider.config);
-      final detailUri = StoryService.resolveStaticFile(indexUri, entry.file);
-      final memories = _memories.text
-          .split('\n')
+      final detail = await widget.service.loadDetail(_config!, entry);
+      if (!mounted || selection != _selection) return;
+      final story = StoryPackage.fromJson(detail);
+      _id.text = story.storyId;
+      _title.text = story.title;
+      _author.text = story.author;
+      _tags.text = story.tags.join('，');
+      _summary.text = story.summary.isEmpty ? entry.summary : story.summary;
+      _introduction.text = story.introduction;
+      _memories.text = story.memories.map((m) => m.content).join('\n');
+      _images.text = story.images.join('\n');
+      setState(() => _original = detail);
+    } catch (error) {
+      if (mounted && selection == _selection) {
+        setState(() => _error = '详情加载失败：$error');
+      }
+    } finally {
+      if (mounted && selection == _selection) {
+        setState(() => _loadingDetail = false);
+      }
+    }
+  }
+
+  List<String> _lines(String value) => value
+      .split('\n')
+      .map((v) => v.trim())
+      .where((v) => v.isNotEmpty)
+      .toList();
+
+  Future<void> _save() async {
+    if (_original == null || _saving) return;
+    if (_title.text.trim().isEmpty || _introduction.text.trim().isEmpty) {
+      setState(() => _error = '请填写标题和帖子正文');
+      return;
+    }
+    final provider = context.read<StoryProvider>();
+    final file = _isNew ? 'assets/${_id.text.trim()}/1.json' : _entry!.file;
+    final detail = <String, dynamic>{
+      ..._original!,
+      'storyId': _id.text.trim(),
+      'title': _title.text.trim(),
+      'author': _author.text.trim(),
+      'summary': _summary.text.trim(),
+      'tags': _tags.text
+          .split(RegExp(r'[,，\n]'))
           .map((v) => v.trim())
           .where((v) => v.isNotEmpty)
-          .toList();
-      final detail = <String, dynamic>{
-        'schemaVersion': 2,
-        'storyId': story.storyId,
-        'version': story.version,
-        'title': _title.text.trim(),
-        'author': story.author,
-        'publishedAt': story.publishedAt,
-        'summary': _summary.text.trim(),
-        'tags': story.tags,
-        'introduction': _introduction.text,
-        'memories': memories,
-        'images': story.images,
-      };
-      await StoryService.putStaticJson(provider.config, detailUri, detail);
-      final updated = StoryCatalogEntry(
-          storyId: entry.storyId,
-          version: entry.version,
-          title: _title.text.trim(),
-          author: entry.author,
-          summary: _summary.text.trim(),
-          publishedAt: entry.publishedAt,
-          tags: entry.tags,
-          file: entry.file,
-          downloadCount: entry.downloadCount);
-      final decoded = await StoryService.getStaticJson(
-          provider.config, indexUri,
-          filePath: provider.config.path);
-      if (decoded is Map && decoded['stories'] is List) {
-        final index = decoded.cast<String, dynamic>();
-        index['stories'] = (decoded['stories'] as List).map((v) {
-          if (v is Map && v['storyId']?.toString() == entry.storyId)
-            return updated.toJson();
-          return v;
-        }).toList();
-        await StoryService.putStaticJson(provider.config, indexUri, index);
-      }
-      if (mounted) showAppToast('帖子已保存');
+          .toSet()
+          .toList(),
+      'introduction': _introduction.text.trim(),
+      'memories': _lines(_memories.text),
+      'images': _lines(_images.text),
+    };
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.service.publish(_config!, detail, file, isNew: _isNew);
+      if (!mounted) return;
+      final updated = StoryCatalogEntry.fromJson({...detail, 'file': file});
+      setState(() {
+        _entries.removeWhere((e) => e.storyId == updated.storyId);
+        _entries.insert(0, updated);
+        _entry = updated;
+        _original = detail;
+        _isNew = false;
+      });
+      showAppToast('帖子已发布');
+      if (provider.config == _config) await provider.loadCatalog(force: true);
     } catch (error) {
-      if (mounted) showAppToast('$error');
+      if (mounted) setState(() => _error = '$error');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
+  void _backToList() {
+    _selection++;
+    setState(() {
+      _original = null;
+      _entry = null;
+      _isNew = false;
+      _loadingDetail = false;
+      _error = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<StoryProvider>();
+    final editing = _original != null || _loadingDetail;
+    final query = _search.text.trim().toLowerCase();
+    final results = _entries
+        .where((e) =>
+            query.isEmpty ||
+            [e.title, e.storyId, e.author, e.summary, ...e.tags]
+                .join(' ')
+                .toLowerCase()
+                .contains(query))
+        .toList();
     return CupertinoPageScaffold(
       navigationBar: settingsNavigationBar(context, '帖子快捷编辑',
           trailing: CupertinoButton(
             padding: EdgeInsets.zero,
-            onPressed: _saving || _story == null ? null : _save,
-            child: const Text('保存'),
+            onPressed: _saving || _original == null ? null : _save,
+            child: _saving
+                ? const CupertinoActivityIndicator()
+                : Text(_isNew ? '发布' : '保存'),
           )),
       backgroundColor: context.scaffoldColor,
       child: ListView(
@@ -157,27 +247,64 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
             const Padding(
                 padding: EdgeInsets.all(36),
                 child: Center(child: CupertinoActivityIndicator()))
-          else if (_error != null)
-            Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text('写权限检测失败：$_error',
-                    style: TextStyle(color: context.textSecondaryColor)))
           else ...[
-            SettingsSection(title: '选择帖子', children: [
-              for (final entry in provider.entries)
+            if (_error != null)
+              Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(_error!,
+                      style: TextStyle(color: context.textPrimaryColor))),
+            if (!_writable)
+              CupertinoButton(onPressed: _prepare, child: const Text('重新检测'))
+            else if (editing) ...[
+              CupertinoButton(
+                  onPressed: _saving ? null : _backToList,
+                  child: const Text('返回帖子列表')),
+              if (_loadingDetail)
+                const Center(child: CupertinoActivityIndicator())
+              else
+                SettingsSection(title: _isNew ? '新建帖子' : '编辑帖子', children: [
+                  _field('故事编号', _id, readOnly: !_isNew),
+                  _field('标题（必填）', _title),
+                  _field('作者', _author),
+                  _field('标签（用逗号分隔）', _tags),
+                  _field('摘要', _summary, lines: 2),
+                  _field('帖子正文（必填）', _introduction, lines: 6),
+                  _field('记忆点（每行一条）', _memories, lines: 5),
+                  _field('图片相对路径（每行一条，可留空）', _images, lines: 2),
+                ]),
+            ] else ...[
+              SettingsSection(children: [
                 SettingsRow(
-                    title: Text(entry.title),
-                    subtitle: Text(entry.summary),
-                    showChevron: true,
-                    onTap: () => _select(entry)),
-            ]),
-            if (_story != null)
-              SettingsSection(title: '编辑内容', children: [
-                _field('标题', _title),
-                _field('摘要', _summary),
-                _field('帖子正文', _introduction, lines: 6),
-                _field('记忆点（每行一条）', _memories, lines: 5),
+                  icon: CupertinoIcons.add_circled,
+                  title: const Text('创建新帖子'),
+                  subtitle: const Text('编写正文、标签和首次导入的记忆点'),
+                  showChevron: true,
+                  onTap: _create,
+                )
               ]),
+              Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: CupertinoSearchTextField(
+                    key: const Key('story-editor-search'),
+                    controller: _search,
+                    placeholder: '搜索标题、编号、作者或标签',
+                    onChanged: (_) => setState(() {}),
+                  )),
+              SettingsSection(title: '帖子（${results.length}）', children: [
+                if (results.isEmpty)
+                  SettingsRow(
+                      title: Text(query.isEmpty ? '暂无帖子，创建第一篇吧' : '没有找到匹配的帖子')),
+                for (final entry in results)
+                  SettingsRow(
+                      title: Text(entry.title),
+                      subtitle: Text(
+                          '${entry.author} · ${entry.storyId}\n${entry.summary}'),
+                      showChevron: true,
+                      onTap: () => _select(entry)),
+              ]),
+              CupertinoButton(onPressed: _prepare, child: const Text('刷新帖子列表')),
+            ],
           ],
         ],
       ),
@@ -185,16 +312,20 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
   }
 
   Widget _field(String label, TextEditingController controller,
-          {int lines = 1}) =>
+          {int lines = 1, bool readOnly = false}) =>
       SettingsRow(
         title: Text(label),
         subtitle: CupertinoTextField(
-            controller: controller,
-            minLines: lines,
-            maxLines: lines,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-                color: context.fieldBgColor,
-                borderRadius: BorderRadius.circular(8))),
+          key: ValueKey(label),
+          controller: controller,
+          readOnly: readOnly || _saving,
+          minLines: lines,
+          maxLines: lines,
+          padding: const EdgeInsets.all(10),
+          style: TextStyle(color: context.textPrimaryColor),
+          decoration: BoxDecoration(
+              color: context.fieldBgColor,
+              borderRadius: BorderRadius.circular(8)),
+        ),
       );
 }

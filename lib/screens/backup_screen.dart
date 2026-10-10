@@ -670,6 +670,7 @@ class _BackupScreenState extends State<BackupScreen> {
       navigationBar: settingsNavigationBar(
         context,
         '数据备份',
+        compact: true,
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _onOpenCloudSettings,
@@ -681,7 +682,7 @@ class _BackupScreenState extends State<BackupScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
               child: CupertinoSegmentedControl<int>(
                 groupValue: _tab,
                 children: const {
@@ -723,7 +724,7 @@ class _BackupScreenState extends State<BackupScreen> {
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(
                         16,
-                        UiSpec.settingsPageTop,
+                        12,
                         16,
                         UiSpec.floatingContentBottomInset,
                       ),
@@ -952,4 +953,3 @@ class _BackupScreenState extends State<BackupScreen> {
   Widget _miniButton({required String label, required VoidCallback? onTap, bool destructive = false}) => BackupMiniButton(label: label, onTap: onTap, destructive: destructive);
 
 }
-

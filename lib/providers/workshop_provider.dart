@@ -1,3 +1,4 @@
+import '../services/secure_config_storage.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -46,7 +47,7 @@ class WorkshopProvider extends ChangeNotifier {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
+    final raw = await SecureConfigStorage.readJson(prefs, _storageKey);
     if (raw != null && raw.isNotEmpty) {
       try {
         _repositories = (jsonDecode(raw) as List<dynamic>)
@@ -124,7 +125,8 @@ class WorkshopProvider extends ChangeNotifier {
 
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
+    await SecureConfigStorage.writeJson(
+      prefs,
       _storageKey,
       jsonEncode(_repositories.map((r) => r.toJson()).toList()),
     );

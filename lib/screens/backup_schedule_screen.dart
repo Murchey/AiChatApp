@@ -1,3 +1,4 @@
+import '../widgets/secret_field.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../config/theme.dart';
@@ -175,19 +176,22 @@ class _BackupScheduleScreenState extends State<BackupScheduleScreen> {
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                  child: CupertinoTextField(
-                    controller: _password,
-                    placeholder: '预设加密密码',
-                    obscureText: true,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.fieldBgColor,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
+                  child: SecretField(
+                      controller: _password,
+                      enabled: true,
+                      builder: (revealed) => CupertinoTextField(
+                            controller: _password,
+                            placeholder: '预设加密密码',
+                            obscureText: true && !revealed,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: context.fieldBgColor,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          )),
                 ),
               ],
             ),

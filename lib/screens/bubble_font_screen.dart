@@ -73,7 +73,7 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text('删除字体'),
-        content: Text('删除「${font.name}」？已使用该字体的气泡会恢复系统默认字体。'),
+        content: Text('删除「${font.name}」？已使用该字体的界面和气泡会恢复系统默认字体。'),
         actions: [
           CupertinoDialogAction(
               onPressed: () => Navigator.pop(ctx, false),
@@ -99,7 +99,7 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
     return CupertinoPageScaffold(
       navigationBar: settingsNavigationBar(
         context,
-        '气泡字体',
+        '字体设置',
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _importing ? null : _importFonts,
@@ -119,13 +119,14 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
                   SettingsSection(
                     title: '显示设置',
                     children: [
+                      _fontTile('界面字体', settings.uiFontName, true, ui: true),
                       _fontTile('我方气泡字体', settings.selfBubbleFontName, true),
                       _fontTile('对方气泡字体', settings.otherBubbleFontName, false),
                     ],
                   ),
                   SettingsSection(
                     title: '已导入字体（${_fonts.length}）',
-                    footer: const Text('仅保存 TTF 字体文件。删除后会同步解除气泡字体引用。'),
+                    footer: const Text('仅保存 TTF 字体文件。删除后会同步解除界面和气泡字体引用。'),
                     children: _fonts.isEmpty
                         ? [
                             const SettingsRow(
@@ -157,7 +158,7 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
     );
   }
 
-  Widget _fontTile(String title, String name, bool isUser) {
+  Widget _fontTile(String title, String name, bool isUser, {bool ui = false}) {
     final settings = context.read<SettingsProvider>();
     return SettingsInlinePicker<String>(
       value: name.isEmpty ? '__system__' : name,
@@ -176,6 +177,10 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
       ],
       onChanged: (value) async {
         try {
+          if (ui) {
+            await settings.setUiFont(value == '__system__' ? '' : value);
+            return;
+          }
           await settings.setBubbleFont(
             isUser: isUser,
             name: value == '__system__' ? '' : value,
@@ -184,13 +189,15 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
           if (mounted) showAppToast('字体加载失败，请重新导入');
         }
       },
-      panelKey: isUser
-          ? 'bubble-font-self-picker'
-          : 'bubble-font-other-picker',
+      panelKey: ui
+          ? 'ui-font-picker'
+          : isUser
+              ? 'bubble-font-self-picker'
+              : 'bubble-font-other-picker',
       rowBuilder: (context, toggle) => SettingsRow(
         icon: CupertinoIcons.textformat,
         title: Text(title),
-        subtitle: const Text('聊天正文单独设置，不影响界面文字'),
+        subtitle: Text(ui ? '使用导入字体替换应用界面文字' : '聊天正文单独设置，不影响界面文字'),
         trailing: settingsValueText(
           context,
           name.isEmpty ? '系统默认' : name,

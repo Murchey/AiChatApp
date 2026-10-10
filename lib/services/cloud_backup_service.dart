@@ -1,3 +1,4 @@
+import 'secure_config_storage.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -129,8 +130,8 @@ class CloudBackupService {
   static Future<CloudBackupConfig> loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
     return CloudBackupConfig(
-      secretId: prefs.getString(_secretIdKey) ?? '',
-      secretKey: prefs.getString(_secretKeyKey) ?? '',
+      secretId: await SecureConfigStorage.readSecret(prefs, _secretIdKey),
+      secretKey: await SecureConfigStorage.readSecret(prefs, _secretKeyKey),
       bucketUrl: prefs.getString(_bucketUrlKey) ?? '',
       prefix: prefs.getString(_prefixKey) ?? 'backups/v1',
     );
@@ -142,16 +143,8 @@ class CloudBackupService {
     final key = config.secretKey.trim();
     final url = config.bucketUrl.trim();
     final prefix = config.normalizedPrefix;
-    if (id.isEmpty) {
-      await prefs.remove(_secretIdKey);
-    } else {
-      await prefs.setString(_secretIdKey, id);
-    }
-    if (key.isEmpty) {
-      await prefs.remove(_secretKeyKey);
-    } else {
-      await prefs.setString(_secretKeyKey, key);
-    }
+    await SecureConfigStorage.writeSecret(prefs, _secretIdKey, id);
+    await SecureConfigStorage.writeSecret(prefs, _secretKeyKey, key);
     if (url.isEmpty) {
       await prefs.remove(_bucketUrlKey);
     } else {
@@ -238,7 +231,8 @@ class CloudBackupService {
     String fileNamePrefix = 'aichat_backup',
     BackupProgressCallback? onProgress,
   }) async {
-    void report(double p, String stage) => onProgress?.call(p.clamp(0, 1), stage);
+    void report(double p, String stage) =>
+        onProgress?.call(p.clamp(0, 1), stage);
 
     if (!config.isConfigured) {
       throw StateError('请先配置对象储存（SecretId / SecretKey / 存储桶 URL）');
@@ -368,7 +362,8 @@ class CloudBackupService {
     }
     final uri = _objectUri(config, key);
     final resp = await http
-        .get(uri, headers: _authHeaders(config: config, method: 'GET', uri: uri))
+        .get(uri,
+            headers: _authHeaders(config: config, method: 'GET', uri: uri))
         .timeout(const Duration(minutes: 5));
     if (resp.statusCode != 200) {
       _throwStatus(
@@ -388,7 +383,8 @@ class CloudBackupService {
     String? password,
     BackupProgressCallback? onProgress,
   }) async {
-    void report(double p, String stage) => onProgress?.call(p.clamp(0, 1), stage);
+    void report(double p, String stage) =>
+        onProgress?.call(p.clamp(0, 1), stage);
 
     report(0.05, '下载云端备份');
     final raw = await downloadObject(config, key);
@@ -466,7 +462,8 @@ class CloudBackupService {
     }
     final uri = _objectUri(config, key);
     final resp = await http
-        .head(uri, headers: _authHeaders(config: config, method: 'HEAD', uri: uri))
+        .head(uri,
+            headers: _authHeaders(config: config, method: 'HEAD', uri: uri))
         .timeout(const Duration(seconds: 20));
     if (resp.statusCode == 200) return true;
     if (resp.statusCode == 404) return false;

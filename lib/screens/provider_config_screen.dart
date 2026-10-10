@@ -1,3 +1,4 @@
+import '../widgets/secret_field.dart';
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
@@ -248,25 +249,28 @@ class _ProviderConfigScreenState extends State<ProviderConfigScreen> {
             ),
           ),
           const SizedBox(height: 4),
-          CupertinoTextField(
-            controller: controller,
-            placeholder: placeholder,
-            obscureText: obscureText,
-            autocorrect: false,
-            style: TextStyle(
-              fontSize: 16,
-              color: context.textPrimaryColor,
-            ),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: context.separatorColor,
-                  width: 0.5,
-                ),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 8),
-          ),
+          SecretField(
+              controller: controller,
+              enabled: obscureText,
+              builder: (revealed) => CupertinoTextField(
+                    controller: controller,
+                    placeholder: placeholder,
+                    obscureText: obscureText && !revealed,
+                    autocorrect: false,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: context.textPrimaryColor,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: context.separatorColor,
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  )),
         ],
       ),
     );

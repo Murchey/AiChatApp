@@ -1,3 +1,4 @@
+import '../widgets/secret_field.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../config/theme.dart';
@@ -74,37 +75,44 @@ class _BackupPasswordScreenState extends State<BackupPasswordScreen> {
             const SizedBox(height: 24),
             _label('密码'),
             const SizedBox(height: 8),
-            CupertinoTextField(
-              controller: _password,
-              placeholder: '备份密码（可留空）',
-              obscureText: true,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                color: context.fieldBgColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              onChanged: (_) {
-                if (_error != null) setState(() => _error = null);
-              },
-            ),
+            SecretField(
+                controller: _password,
+                enabled: true,
+                builder: (revealed) => CupertinoTextField(
+                      controller: _password,
+                      placeholder: '备份密码（可留空）',
+                      obscureText: true && !revealed,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: context.fieldBgColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      onChanged: (_) {
+                        if (_error != null) setState(() => _error = null);
+                      },
+                    )),
             if (widget.requireConfirm) ...[
               const SizedBox(height: 16),
               _label('确认密码'),
               const SizedBox(height: 8),
-              CupertinoTextField(
-                controller: _confirm,
-                placeholder: '再次输入密码',
-                obscureText: true,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  color: context.fieldBgColor,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                onChanged: (_) {
-                  if (_error != null) setState(() => _error = null);
-                },
-              ),
+              SecretField(
+                  controller: _confirm,
+                  enabled: true,
+                  builder: (revealed) => CupertinoTextField(
+                        controller: _confirm,
+                        placeholder: '再次输入密码',
+                        obscureText: true && !revealed,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: context.fieldBgColor,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        onChanged: (_) {
+                          if (_error != null) setState(() => _error = null);
+                        },
+                      )),
             ],
             if (_error != null) ...[
               const SizedBox(height: 12),

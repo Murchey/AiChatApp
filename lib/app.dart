@@ -193,7 +193,8 @@ class _AiChatAppState extends State<AiChatApp> {
           theme: AppTheme.buildTheme(
             brightness: Brightness.light,
             accent: settings.accentColor,
-            fontFamily: PlatformSupport.isDesktop ? 'Segoe UI' : null,
+            fontFamily: settings.uiFontFamily ??
+                (PlatformSupport.isDesktop ? 'Segoe UI' : null),
           ),
           // 在此动态解析明暗模式并注入主题（支持跟随系统）
           builder: (context, child) {
@@ -204,11 +205,13 @@ class _AiChatAppState extends State<AiChatApp> {
               data: AppTheme.buildTheme(
                 brightness: brightness,
                 accent: settings.accentColor,
-                fontFamily: PlatformSupport.isDesktop ? 'Segoe UI' : null,
+                fontFamily: settings.uiFontFamily ??
+                    (PlatformSupport.isDesktop ? 'Segoe UI' : null),
               ),
               child: DefaultTextStyle.merge(
                 style: TextStyle(
-                  fontFamily: PlatformSupport.isDesktop ? 'Segoe UI' : null,
+                  fontFamily: settings.uiFontFamily ??
+                      (PlatformSupport.isDesktop ? 'Segoe UI' : null),
                   fontFamilyFallback:
                       PlatformSupport.isDesktop ? kDesktopFontFallback : null,
                 ),

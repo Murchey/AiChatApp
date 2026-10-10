@@ -1,3 +1,4 @@
+import '../widgets/secret_field.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../config/theme.dart';
@@ -87,6 +88,7 @@ class _BackupCloudSettingsScreenState extends State<BackupCloudSettingsScreen> {
                 _field(
                   controller: _secretId,
                   placeholder: 'SecretId / AccessKey ID',
+                  obscure: true,
                 ),
                 _divider(),
                 _field(
@@ -176,14 +178,17 @@ class _BackupCloudSettingsScreenState extends State<BackupCloudSettingsScreen> {
     bool obscure = false,
     TextInputType? keyboardType,
   }) {
-    return CupertinoTextField(
-      controller: controller,
-      placeholder: placeholder,
-      obscureText: obscure,
-      keyboardType: keyboardType,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(),
-    );
+    return SecretField(
+        controller: controller,
+        enabled: obscure,
+        builder: (revealed) => CupertinoTextField(
+              controller: controller,
+              placeholder: placeholder,
+              obscureText: obscure && !revealed,
+              keyboardType: keyboardType,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: const BoxDecoration(),
+            ));
   }
 
   Widget _divider() {

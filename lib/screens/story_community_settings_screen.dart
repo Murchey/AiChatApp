@@ -1,3 +1,4 @@
+import '../widgets/secret_field.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 
@@ -355,7 +356,7 @@ class _StoryCommunitySettingsScreenState
         _textRow('索引地址（可选）', _indexController, 'https://.../index.json'),
         _textRow('存储桶路径', _storagePathController, 'stories/'),
         _textRow('索引路径', _pathController, 'index.json'),
-        _textRow('Secret ID（可选）', _secretIdController, '公共读可留空'),
+        _textRow('Secret ID（可选）', _secretIdController, '公共读可留空', secret: true),
         _textRow('Secret Key（可选）', _secretKeyController, '私有读时填写',
             secret: true),
         if (workshopRepos.isNotEmpty)
@@ -380,9 +381,13 @@ class _StoryCommunitySettingsScreenState
           showChevron: true,
           onTap: _busy
               ? null
-              : () => Navigator.of(context).push(CupertinoPageRoute<void>(
-                    builder: (_) => const StoryQuickEditScreen(),
-                  )),
+              : () => _run(() async {
+                    await _saveConfig();
+                    if (!context.mounted) return;
+                    await Navigator.of(context).push(CupertinoPageRoute<void>(
+                      builder: (_) => const StoryQuickEditScreen(),
+                    ));
+                  }),
         ),
         _connectionRow(
           title: '保存并测试来源',
@@ -431,20 +436,23 @@ class _StoryCommunitySettingsScreenState
     return SettingsRow(
       icon: CupertinoIcons.pencil,
       title: Text(title),
-      subtitle: CupertinoTextField(
-        controller: controller,
-        placeholder: placeholder,
-        keyboardType: keyboardType,
-        obscureText: secret,
-        autocorrect: false,
-        enableSuggestions: !secret,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          color: context.fieldBgColor,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        onSubmitted: (_) => _run(_saveConfig),
-      ),
+      subtitle: SecretField(
+          controller: controller,
+          enabled: secret,
+          builder: (revealed) => CupertinoTextField(
+                controller: controller,
+                placeholder: placeholder,
+                keyboardType: keyboardType,
+                obscureText: secret && !revealed,
+                autocorrect: false,
+                enableSuggestions: !secret,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                decoration: BoxDecoration(
+                  color: context.fieldBgColor,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                onSubmitted: (_) => _run(_saveConfig),
+              )),
     );
   }
 }

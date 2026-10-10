@@ -191,8 +191,10 @@ class _StorageManageScreenState extends State<StorageManageScreen> {
         break;
       case 'fonts':
         final selfFont = settingsProvider.selfBubbleFontName;
+        final uiFont = settingsProvider.uiFontName;
         final otherFont = settingsProvider.otherBubbleFontName;
         await StorageManagerService.clearImportedFonts();
+        await settingsProvider.clearDeletedBubbleFont(uiFont);
         await settingsProvider.clearDeletedBubbleFont(selfFont);
         await settingsProvider.clearDeletedBubbleFont(otherFont);
         break;

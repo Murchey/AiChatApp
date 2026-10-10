@@ -1,3 +1,4 @@
+import '../widgets/secret_field.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -31,10 +32,13 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
         context: context,
         builder: (_) => CupertinoAlertDialog(
               title: const Text('导出同步密钥'),
-              content: CupertinoTextField(
+              content: SecretField(
                   controller: _keyPasswordController,
-                  obscureText: true,
-                  placeholder: '至少8位密码'),
+                  enabled: true,
+                  builder: (revealed) => CupertinoTextField(
+                      controller: _keyPasswordController,
+                      obscureText: true && !revealed,
+                      placeholder: '至少8位密码')),
               actions: [
                 CupertinoDialogAction(
                     onPressed: () => Navigator.pop(context, false),
@@ -66,10 +70,13 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
                     controller: _keyBundleController,
                     maxLines: 4,
                     placeholder: '粘贴加密密钥包'),
-                CupertinoTextField(
+                SecretField(
                     controller: _keyPasswordController,
-                    obscureText: true,
-                    placeholder: '导出密码')
+                    enabled: true,
+                    builder: (revealed) => CupertinoTextField(
+                        controller: _keyPasswordController,
+                        obscureText: true && !revealed,
+                        placeholder: '导出密码'))
               ]),
               actions: [
                 CupertinoDialogAction(

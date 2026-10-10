@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 
 import '../../config/motion.dart';
@@ -21,7 +22,22 @@ EdgeInsets settingsPageContentPadding(
 /// Shared navigation chrome for settings pages. It keeps normal
 /// Navigator.pop/back gesture semantics while using a quieter, centered
 /// Obsidian-style title treatment.
-CupertinoNavigationBar settingsNavigationBar(
+ObstructingPreferredSizeWidget settingsNavigationBar(
+  BuildContext context,
+  String title, {
+  String? previousPageTitle,
+  Widget? trailing,
+  bool legacy = false,
+  bool compact = false,
+}) {
+  if (legacy) {
+    return _legacySettingsNavigationBar(context, title,
+        previousPageTitle: previousPageTitle, trailing: trailing);
+  }
+  return _GlassSettingsHeader(title: title, trailing: trailing, compact: compact);
+}
+
+CupertinoNavigationBar _legacySettingsNavigationBar(
   BuildContext context,
   String title, {
   String? previousPageTitle,
@@ -66,6 +82,90 @@ CupertinoNavigationBar settingsNavigationBar(
     trailing: trailing,
     backgroundColor: context.navBarColor.withValues(alpha: 0.96),
   );
+}
+
+class _GlassSettingsHeader extends StatelessWidget
+    implements ObstructingPreferredSizeWidget {
+  final String title;
+  final Widget? trailing;
+  final bool compact;
+  const _GlassSettingsHeader({required this.title, this.trailing, this.compact = false});
+
+  @override
+  Size get preferredSize => Size.fromHeight(compact ? 56 : 96);
+  @override
+  bool shouldFullyObstruct(BuildContext context) => false;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: MediaQuery.paddingOf(context).top + preferredSize.height,
+      child: Stack(children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ClipRect(
+              child: ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (rect) => const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFFFFFFFF),
+                    Color(0xFFFFFFFF),
+                    Color(0x00FFFFFF)
+                  ],
+                  stops: [0, 0.25, 1],
+                ).createShader(rect),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: ColoredBox(
+                      color: context.navBarColor.withValues(alpha: 0.95)),
+                ),
+              ),
+            ),
+          ),
+        ),
+        SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(12, 4, 12, compact ? 4 : 28),
+              child: Row(children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  child: ClipOval(
+                      child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: context.fieldBgColor.withValues(alpha: 0.65),
+                        border: Border.all(
+                            color: context.textSecondaryColor
+                                .withValues(alpha: 0.25)),
+                      ),
+                      child: Icon(CupertinoIcons.chevron_left,
+                          size: 20, color: context.textPrimaryColor),
+                    ),
+                  )),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: UiSpec.fontTitle,
+                            fontWeight: FontWeight.w600,
+                            color: context.textPrimaryColor))),
+                if (trailing != null) trailing!,
+              ]),
+            )),
+      ]),
+    );
+  }
 }
 
 /// A grouped settings panel with a stable section header and low-contrast

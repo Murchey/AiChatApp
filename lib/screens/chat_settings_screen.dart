@@ -334,7 +334,7 @@ class ChatSettingsScreen extends StatelessWidget {
         : settings.contextCount.clamp(1, kMaxContextCount).toDouble();
 
     return CupertinoPageScaffold(
-      navigationBar: settingsNavigationBar(context, '聊天设置'),
+      navigationBar: settingsNavigationBar(context, '聊天设置', legacy: true),
       backgroundColor: context.scaffoldColor,
       child: ListView(
         children: [

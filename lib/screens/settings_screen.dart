@@ -250,9 +250,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 16),
             for (final isUser in [false, true])
               Align(
-                alignment: isUser
-                    ? Alignment.centerRight
-                    : Alignment.centerLeft,
+                alignment:
+                    isUser ? Alignment.centerRight : Alignment.centerLeft,
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
@@ -606,8 +605,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               SettingsRow(
                 icon: CupertinoIcons.textformat_alt,
-                title: const Text('气泡字体'),
-                subtitle: const Text('分别设置我方与对方聊天正文，可导入 TTF 文件'),
+                title: const Text('字体设置'),
+                subtitle: const Text('导入 TTF 字体，替换界面或双方聊天正文字体'),
                 showChevron: true,
                 onTap: () => Navigator.push(
                   context,

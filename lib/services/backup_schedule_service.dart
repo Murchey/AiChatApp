@@ -1,3 +1,4 @@
+import 'secure_config_storage.dart';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -133,13 +134,13 @@ class BackupScheduleService {
 
   static Future<BackupScheduleConfig> loadLocal() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_localKey);
+    final raw = await SecureConfigStorage.readJson(prefs, _localKey);
     return _decode(raw);
   }
 
   static Future<BackupScheduleConfig> loadCloud() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_cloudKey);
+    final raw = await SecureConfigStorage.readJson(prefs, _cloudKey);
     return _decode(raw);
   }
 
@@ -156,12 +157,14 @@ class BackupScheduleService {
 
   static Future<void> saveLocal(BackupScheduleConfig config) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_localKey, jsonEncode(config.toJson()));
+    await SecureConfigStorage.writeJson(
+        prefs, _localKey, jsonEncode(config.toJson()));
   }
 
   static Future<void> saveCloud(BackupScheduleConfig config) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_cloudKey, jsonEncode(config.toJson()));
+    await SecureConfigStorage.writeJson(
+        prefs, _cloudKey, jsonEncode(config.toJson()));
   }
 
   static Future<DateTime?> lastLocalRun() async {

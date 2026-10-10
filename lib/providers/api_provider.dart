@@ -1,3 +1,4 @@
+import '../services/secure_config_storage.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -141,7 +142,7 @@ class ApiProvider extends ChangeNotifier {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getString(_storageKey);
+    final stored = await SecureConfigStorage.readJson(prefs, _storageKey);
     if (stored != null) {
       try {
         final list = jsonDecode(stored) as List<dynamic>;
@@ -258,7 +259,8 @@ class ApiProvider extends ChangeNotifier {
 
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
+    await SecureConfigStorage.writeJson(
+      prefs,
       _storageKey,
       jsonEncode(_models.map((m) => m.toJson()).toList()),
     );

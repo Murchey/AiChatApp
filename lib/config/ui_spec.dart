@@ -66,7 +66,7 @@ class UiSpec {
 
   /// 设置页顶部与分组之间的留白。Cupertino 二级页的导航栏会占用
   /// 一行标题高度，额外留出约一行正文高度，避免首项贴入导航栏底部。
-  static const double settingsPageTop = 42;
+  static const double settingsPageTop = 56;
 
   /// 设置分组之间的垂直留白
   static const double settingsSectionGap = 24;

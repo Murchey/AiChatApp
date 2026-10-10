@@ -184,6 +184,11 @@ class SettingsProvider extends ChangeNotifier {
   // 自定义开屏图标本地持久化路径（未设置时为空字符串）
   String _splashIconPath = '';
   // 气泡字体分别绑定我方与对方；空串使用系统默认字体。
+  String _uiFontName = '';
+  String get uiFontName => _uiFontName;
+  String? get uiFontFamily =>
+      _uiFontName.isEmpty ? null : importedFontFamily(_uiFontName);
+
   String _selfBubbleFontName = '';
   String _otherBubbleFontName = '';
   double _bubbleFontSize = 16;
@@ -293,6 +298,11 @@ class SettingsProvider extends ChangeNotifier {
       orElse: () => HomeNavigationStyle.floating,
     );
     _splashIconPath = prefs.getString('splash_icon_path') ?? '';
+    _uiFontName = prefs.getString('ui_font_name') ?? '';
+    if (!await _loadBubbleFont(_uiFontName)) {
+      _uiFontName = '';
+      await prefs.remove('ui_font_name');
+    }
     _selfBubbleFontName = prefs.getString('bubble_font_self') ?? '';
     _otherBubbleFontName = prefs.getString('bubble_font_other') ?? '';
     _bubbleFontSize =
@@ -324,6 +334,16 @@ class SettingsProvider extends ChangeNotifier {
     return true;
   }
 
+  Future<void> setUiFont(String name) async {
+    if (name.isNotEmpty && !await _loadBubbleFont(name)) {
+      throw StateError('字体文件不存在或无法加载');
+    }
+    _uiFontName = name;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('ui_font_name', name);
+    notifyListeners();
+  }
+
   /// 设置我方或对方气泡的字体；空名称恢复系统默认字体。
   Future<void> setBubbleFont(
       {required bool isUser, required String name}) async {
@@ -352,6 +372,10 @@ class SettingsProvider extends ChangeNotifier {
   /// 删除字体后清除引用，防止下次启动时保留失效选择。
   Future<void> clearDeletedBubbleFont(String name) async {
     var changed = false;
+    if (_uiFontName == name) {
+      _uiFontName = '';
+      changed = true;
+    }
     if (_selfBubbleFontName == name) {
       _selfBubbleFontName = '';
       changed = true;
@@ -362,6 +386,7 @@ class SettingsProvider extends ChangeNotifier {
     }
     if (!changed) return;
     final prefs = await SharedPreferences.getInstance();
+    if (_uiFontName.isEmpty) await prefs.remove('ui_font_name');
     if (_selfBubbleFontName.isEmpty) await prefs.remove('bubble_font_self');
     if (_otherBubbleFontName.isEmpty) await prefs.remove('bubble_font_other');
     notifyListeners();

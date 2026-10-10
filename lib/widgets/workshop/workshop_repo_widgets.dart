@@ -1,3 +1,4 @@
+import '../secret_field.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../../config/theme.dart';
@@ -348,33 +349,38 @@ class AddRepoDialogState extends State<AddRepoDialog> {
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
-                    child: CupertinoTextField(
+                    child: SecretField(
                       controller: _akController,
-                      placeholder: 'AccessKey ID',
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+                      builder: (revealed) => CupertinoTextField(
+                        controller: _akController,
+                        placeholder: 'AccessKey ID',
+                        obscureText: !revealed,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        onChanged: (_) {
+                          if (_hint != null) setState(() => _hint = null);
+                        },
                       ),
-                      onChanged: (_) {
-                        if (_hint != null) setState(() => _hint = null);
-                      },
                     ),
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
-                    child: CupertinoTextField(
-                      controller: _skController,
-                      placeholder: 'SecretAccessKey',
-                      obscureText: true,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      onChanged: (_) {
-                        if (_hint != null) setState(() => _hint = null);
-                      },
-                    ),
+                    child: SecretField(
+                        controller: _skController,
+                        enabled: true,
+                        builder: (revealed) => CupertinoTextField(
+                              controller: _skController,
+                              placeholder: 'SecretAccessKey',
+                              obscureText: true && !revealed,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              onChanged: (_) {
+                                if (_hint != null) setState(() => _hint = null);
+                              },
+                            )),
                   ),
                 ],
                 const SizedBox(height: 10),

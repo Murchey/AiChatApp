@@ -1,3 +1,4 @@
+import '../services/secure_config_storage.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -67,7 +68,7 @@ class StoryProvider extends ChangeNotifier {
   Future<void> _loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
     try {
-      final raw = prefs.getString(_configKey);
+      final raw = await SecureConfigStorage.readJson(prefs, _configKey);
       if (raw != null) {
         _config = StorySourceConfig.fromJson(
             (jsonDecode(raw) as Map).cast<String, dynamic>());
@@ -76,14 +77,15 @@ class StoryProvider extends ChangeNotifier {
       if (fetched != null) {
         _catalogFetchedAt = DateTime.fromMillisecondsSinceEpoch(fetched);
       }
-      final fallback = prefs.getString(_fallbackKey);
+      final fallback = await SecureConfigStorage.readJson(prefs, _fallbackKey);
       if (fallback != null) {
         _staticFallback = StorySourceConfig.fromJson(
                 (jsonDecode(fallback) as Map).cast<String, dynamic>())
             .copyWith(token: '');
         _savedSources[_staticFallback!.type] = _staticFallback!;
       }
-      final sources = prefs.getString('story_community_sources_v1');
+      final sources = await SecureConfigStorage.readJson(
+          prefs, 'story_community_sources_v1');
       if (sources != null) {
         final values = jsonDecode(sources) as Map;
         for (final value in values.values) {
@@ -92,7 +94,7 @@ class StoryProvider extends ChangeNotifier {
           _savedSources[saved.type] = saved.copyWith(token: '');
         }
       }
-    } catch (_) {
+    } on FormatException {
       _config = const StorySourceConfig();
     }
     await backend.init();
@@ -109,16 +111,18 @@ class StoryProvider extends ChangeNotifier {
     // Move legacy manually entered tokens into the backend secure session.
     _config = _config.copyWith(token: '');
     _savedSources[_config.type] = _config;
-    await prefs.setString(_configKey, jsonEncode(_config.toJson()));
-    await prefs.setString(
+    await SecureConfigStorage.writeJson(
+        prefs, _configKey, jsonEncode(_config.toJson()));
+    await SecureConfigStorage.writeJson(
+        prefs,
         'story_community_sources_v1',
         jsonEncode({
           for (final entry in _savedSources.entries)
             entry.key.name: entry.value.toJson(),
         }));
     if (_staticFallback != null) {
-      await prefs.setString(
-          _fallbackKey, jsonEncode(_staticFallback!.toJson()));
+      await SecureConfigStorage.writeJson(
+          prefs, _fallbackKey, jsonEncode(_staticFallback!.toJson()));
     }
     await _restoreCache(prefs);
     _notify();
@@ -145,9 +149,11 @@ class StoryProvider extends ChangeNotifier {
     _error = null;
     _usingCache = false;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_configKey, jsonEncode(sanitized.toJson()));
+    await SecureConfigStorage.writeJson(
+        prefs, _configKey, jsonEncode(sanitized.toJson()));
     _savedSources[sanitized.type] = sanitized;
-    await prefs.setString(
+    await SecureConfigStorage.writeJson(
+        prefs,
         'story_community_sources_v1',
         jsonEncode({
           for (final entry in _savedSources.entries)
@@ -155,7 +161,8 @@ class StoryProvider extends ChangeNotifier {
         }));
     if (config.type != StorySourceType.server && isConfigured) {
       _staticFallback = sanitized;
-      await prefs.setString(_fallbackKey, jsonEncode(sanitized.toJson()));
+      await SecureConfigStorage.writeJson(
+          prefs, _fallbackKey, jsonEncode(sanitized.toJson()));
     }
     await _restoreCache(prefs);
     _notify();
