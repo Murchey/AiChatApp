@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -6,13 +9,16 @@ import '../config/theme.dart';
 import '../models/story_package.dart';
 import '../providers/story_provider.dart';
 import '../services/story_editing_service.dart';
+import '../services/story_service.dart';
+import '../utils/file_picker_helper.dart';
 import '../utils/app_toast.dart';
 import '../widgets/settings/settings_ui.dart';
 
 class StoryQuickEditScreen extends StatefulWidget {
   final StoryEditingService service;
+  final Future<Uint8List?> Function()? pickImage;
   const StoryQuickEditScreen(
-      {super.key, this.service = const StoryEditingService()});
+      {super.key, this.service = const StoryEditingService(), this.pickImage});
 
   @override
   State<StoryQuickEditScreen> createState() => _StoryQuickEditScreenState();
@@ -39,6 +45,13 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
   bool _writable = false;
   int _selection = 0;
   String? _error;
+  bool _mediaBusy = false,
+      _showMetadata = false,
+      _showMemories = false,
+      _showPaths = false;
+  final Map<String, Uint8List> _previews = {};
+  bool get _busy => _saving || _mediaBusy;
+  String get _file => _isNew ? 'assets/${_id.text.trim()}.json' : _entry!.file;
 
   @override
   void initState() {
@@ -117,6 +130,10 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
       _isNew = true;
       _loadingDetail = false;
       _error = null;
+      _showMetadata = false;
+      _showMemories = false;
+      _showPaths = false;
+      _previews.clear();
     });
   }
 
@@ -139,7 +156,7 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
       _tags.text = story.tags.join('，');
       _summary.text = story.summary.isEmpty ? entry.summary : story.summary;
       _introduction.text = story.introduction;
-      _memories.text = story.memories.map((m) => m.content).join('\n');
+      _memories.text = story.memories.map((m) => m.content).join('\n\n');
       _images.text = story.images.join('\n');
       setState(() => _original = detail);
     } catch (error) {
@@ -160,13 +177,13 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
       .toList();
 
   Future<void> _save() async {
-    if (_original == null || _saving) return;
+    if (_original == null || _busy) return;
     if (_title.text.trim().isEmpty || _introduction.text.trim().isEmpty) {
       setState(() => _error = '请填写标题和帖子正文');
       return;
     }
     final provider = context.read<StoryProvider>();
-    final file = _isNew ? 'assets/${_id.text.trim()}/1.json' : _entry!.file;
+    final file = _file;
     final detail = <String, dynamic>{
       ..._original!,
       'storyId': _id.text.trim(),
@@ -208,6 +225,7 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
   }
 
   void _backToList() {
+    if (_busy) return;
     _selection++;
     setState(() {
       _original = null;
@@ -216,6 +234,61 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
       _loadingDetail = false;
       _error = null;
     });
+  }
+
+  Future<void> _uploadImage() async {
+    if (_busy) return;
+    setState(() {
+      _mediaBusy = true;
+      _error = null;
+    });
+    try {
+      Uint8List? bytes;
+      if (widget.pickImage != null) {
+        bytes = await widget.pickImage!();
+      } else {
+        final picked = await FilePickerHelper.pickFile();
+        if (picked != null) bytes = await File(picked.path).readAsBytes();
+      }
+      if (bytes == null || !mounted) return;
+      final codec = await ui.instantiateImageCodec(bytes);
+      codec.dispose();
+      final path = await widget.service.uploadImage(_config!, _file, bytes);
+      if (!mounted) return;
+      setState(() {
+        _images.text = [..._lines(_images.text), path].join('\n');
+        _previews[path] = bytes!;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = '图片上传失败：$error');
+    } finally {
+      if (mounted) setState(() => _mediaBusy = false);
+    }
+  }
+
+  Future<void> _deleteImage(String path) async {
+    if (_busy) return;
+    setState(() {
+      _mediaBusy = true;
+      _error = null;
+    });
+    try {
+      await widget.service
+          .deleteImage(_config!, _file, path, entry: _isNew ? null : _entry);
+      if (!mounted) return;
+      setState(() {
+        _images.text = _lines(_images.text).where((p) => p != path).join('\n');
+        _previews.remove(path);
+      });
+      final provider = context.read<StoryProvider>();
+      if (!_isNew && provider.config == _config) {
+        await provider.loadCatalog(force: true);
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = '图片删除失败：$error');
+    } finally {
+      if (mounted) setState(() => _mediaBusy = false);
+    }
   }
 
   @override
@@ -231,14 +304,19 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
                 .contains(query))
         .toList();
     return CupertinoPageScaffold(
-      navigationBar: settingsNavigationBar(context, '帖子快捷编辑',
-          trailing: CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: _saving || _original == null ? null : _save,
-            child: _saving
-                ? const CupertinoActivityIndicator()
-                : Text(_isNew ? '发布' : '保存'),
-          )),
+      navigationBar: settingsNavigationBar(
+          context, editing ? (_isNew ? '创建帖子' : '编辑帖子') : '帖子快捷编辑',
+          compact: true,
+          onBack: editing ? _backToList : (_busy ? () {} : null),
+          trailing: !editing
+              ? null
+              : CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _busy || _original == null ? null : _save,
+                  child: _saving
+                      ? const CupertinoActivityIndicator()
+                      : Text(_isNew ? '发布' : '保存'),
+                )),
       backgroundColor: context.scaffoldColor,
       child: ListView(
         padding: settingsPageContentPadding(context),
@@ -256,22 +334,10 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
             if (!_writable)
               CupertinoButton(onPressed: _prepare, child: const Text('重新检测'))
             else if (editing) ...[
-              CupertinoButton(
-                  onPressed: _saving ? null : _backToList,
-                  child: const Text('返回帖子列表')),
               if (_loadingDetail)
                 const Center(child: CupertinoActivityIndicator())
               else
-                SettingsSection(title: _isNew ? '新建帖子' : '编辑帖子', children: [
-                  _field('故事编号', _id, readOnly: !_isNew),
-                  _field('标题（必填）', _title),
-                  _field('作者', _author),
-                  _field('标签（用逗号分隔）', _tags),
-                  _field('摘要', _summary, lines: 2),
-                  _field('帖子正文（必填）', _introduction, lines: 6),
-                  _field('记忆点（每行一条）', _memories, lines: 5),
-                  _field('图片相对路径（每行一条，可留空）', _images, lines: 2),
-                ]),
+                _composer(),
             ] else ...[
               SettingsSection(children: [
                 SettingsRow(
@@ -311,21 +377,173 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
     );
   }
 
+  Widget _composer() => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                    color: context.fieldBgColor, shape: BoxShape.circle),
+                child: Icon(CupertinoIcons.person_fill,
+                    color: context.textSecondaryColor)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: Text(
+                    _author.text.trim().isEmpty ? '分享你的故事' : _author.text,
+                    style: TextStyle(
+                        color: context.textPrimaryColor,
+                        fontWeight: FontWeight.w600))),
+          ]),
+          const SizedBox(height: 16),
+          _input('标题（必填）', _title, placeholder: '为故事起一个标题', title: true),
+          const SizedBox(height: 12),
+          _input('帖子正文（必填）', _introduction,
+              placeholder: '有什么故事想分享？', lines: 6, maxLines: null),
+          const SizedBox(height: 12),
+          if (_lines(_images.text).isNotEmpty)
+            Wrap(spacing: 10, runSpacing: 10, children: [
+              for (final path in _lines(_images.text)) _imagePreview(path),
+            ]),
+          Row(children: [
+            CupertinoButton(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                onPressed: _busy ? null : _uploadImage,
+                child: const Row(children: [
+                  Icon(CupertinoIcons.photo, size: 22),
+                  SizedBox(width: 6),
+                  Text('添加图片')
+                ])),
+            const Spacer(),
+            if (_mediaBusy) const CupertinoActivityIndicator(),
+          ]),
+          Container(height: 0.5, color: context.settingsDividerColor),
+          _disclosure('标签与发布信息', _showMetadata,
+              () => setState(() => _showMetadata = !_showMetadata)),
+          if (_showMetadata) ...[
+            _field('标签（用逗号分隔）', _tags),
+            _field('作者', _author),
+            _field('摘要', _summary, lines: 2),
+            _field('故事编号', _id, readOnly: !_isNew),
+          ],
+          _disclosure('故事记忆点（可选）', _showMemories,
+              () => setState(() => _showMemories = !_showMemories)),
+          if (_showMemories) ...[
+            Text('每个非空行作为一条记忆点；可用空行分隔段落，空行不会导入。',
+                style:
+                    TextStyle(fontSize: 12, color: context.textSecondaryColor)),
+            const SizedBox(height: 8),
+            _input('记忆点（每行一条）', _memories,
+                placeholder: '输入首次导入的记忆点', lines: 4, maxLines: null),
+          ],
+          _disclosure('图片路径（可选）', _showPaths,
+              () => setState(() => _showPaths = !_showPaths)),
+          if (_showPaths)
+            _input('图片相对路径（每行一条，可留空）', _images,
+                placeholder: 'img/图片文件名.png',
+                lines: 2,
+                maxLines: null,
+                onChanged: (_) => setState(() {})),
+        ]),
+      );
+
+  Widget _disclosure(String label, bool open, VoidCallback onTap) =>
+      CupertinoButton(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        onPressed: _busy ? null : onTap,
+        child: Row(children: [
+          Expanded(
+              child: Text(label,
+                  style: TextStyle(
+                      fontSize: 14, color: context.textSecondaryColor))),
+          Icon(open ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
+              size: 14),
+        ]),
+      );
+
+  Widget _imagePreview(String path) {
+    Widget image;
+    try {
+      final bytes = _previews[path];
+      final uri = widget.service.imageUri(_config!, _file, path);
+      Widget failure(BuildContext context, Object error, StackTrace? stack) =>
+          Center(
+              child: Text('图片无法预览',
+                  style: TextStyle(color: context.textSecondaryColor)));
+      image = bytes != null
+          ? Image.memory(bytes,
+              fit: BoxFit.cover, width: 144, height: 144, errorBuilder: failure)
+          : Image.network(uri.toString(),
+              headers: StoryService.staticHeaders(_config!, uri),
+              fit: BoxFit.cover,
+              width: 144,
+              height: 144,
+              errorBuilder: failure);
+    } catch (_) {
+      image = const Center(child: Text('图片路径无效'));
+    }
+    return SizedBox(
+        width: 144,
+        height: 144,
+        child: Stack(children: [
+          Positioned.fill(
+              child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14), child: image)),
+          Positioned(
+              right: 2,
+              top: 2,
+              child: CupertinoButton(
+                  key: ValueKey('delete-image:$path'),
+                  padding: const EdgeInsets.all(6),
+                  minimumSize: const Size(32, 32),
+                  onPressed: _busy ? null : () => _deleteImage(path),
+                  child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: const BoxDecoration(
+                          color: Color(0xCC000000), shape: BoxShape.circle),
+                      child: const Icon(CupertinoIcons.xmark,
+                          color: CupertinoColors.white, size: 14)))),
+        ]));
+  }
+
+  Widget _input(String label, TextEditingController controller,
+          {int lines = 1,
+          int? maxLines = 1,
+          bool readOnly = false,
+          bool title = false,
+          String? placeholder,
+          ValueChanged<String>? onChanged}) =>
+      CupertinoTextField(
+        key: ValueKey(label),
+        controller: controller,
+        readOnly: readOnly || _busy,
+        minLines: lines,
+        maxLines: maxLines,
+        placeholder: placeholder,
+        placeholderStyle: TextStyle(
+            color: context.textSecondaryColor, fontSize: title ? 20 : 16),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        style: TextStyle(
+            color: context.textPrimaryColor,
+            fontSize: title ? 20 : 16,
+            fontWeight: title ? FontWeight.w600 : FontWeight.normal,
+            height: 1.5),
+        decoration: null,
+        onChanged: onChanged,
+      );
+
   Widget _field(String label, TextEditingController controller,
           {int lines = 1, bool readOnly = false}) =>
-      SettingsRow(
-        title: Text(label),
-        subtitle: CupertinoTextField(
-          key: ValueKey(label),
-          controller: controller,
-          readOnly: readOnly || _saving,
-          minLines: lines,
-          maxLines: lines,
-          padding: const EdgeInsets.all(10),
-          style: TextStyle(color: context.textPrimaryColor),
-          decoration: BoxDecoration(
-              color: context.fieldBgColor,
-              borderRadius: BorderRadius.circular(8)),
-        ),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label,
+              style:
+                  TextStyle(fontSize: 12, color: context.textSecondaryColor)),
+          _input(label, controller,
+              lines: lines, maxLines: lines, readOnly: readOnly),
+        ]),
       );
 }

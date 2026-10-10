@@ -454,7 +454,9 @@ class _StoryFeedCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          '故事设定 · v${entry.version}',
+                          entry.hasVersion
+                              ? '故事设定 · v${entry.version}'
+                              : '故事设定',
                           style: TextStyle(
                             fontSize: 12,
                             color: context.textSecondaryColor,

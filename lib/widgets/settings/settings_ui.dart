@@ -29,12 +29,14 @@ ObstructingPreferredSizeWidget settingsNavigationBar(
   Widget? trailing,
   bool legacy = false,
   bool compact = false,
+  VoidCallback? onBack,
 }) {
   if (legacy) {
     return _legacySettingsNavigationBar(context, title,
         previousPageTitle: previousPageTitle, trailing: trailing);
   }
-  return _GlassSettingsHeader(title: title, trailing: trailing, compact: compact);
+  return _GlassSettingsHeader(
+      title: title, trailing: trailing, compact: compact, onBack: onBack);
 }
 
 CupertinoNavigationBar _legacySettingsNavigationBar(
@@ -89,7 +91,9 @@ class _GlassSettingsHeader extends StatelessWidget
   final String title;
   final Widget? trailing;
   final bool compact;
-  const _GlassSettingsHeader({required this.title, this.trailing, this.compact = false});
+  final VoidCallback? onBack;
+  const _GlassSettingsHeader(
+      {required this.title, this.trailing, this.compact = false, this.onBack});
 
   @override
   Size get preferredSize => Size.fromHeight(compact ? 56 : 96);
@@ -132,7 +136,7 @@ class _GlassSettingsHeader extends StatelessWidget
               child: Row(children: [
                 CupertinoButton(
                   padding: EdgeInsets.zero,
-                  onPressed: () => Navigator.of(context).maybePop(),
+                  onPressed: onBack ?? () => Navigator.of(context).maybePop(),
                   child: ClipOval(
                       child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),

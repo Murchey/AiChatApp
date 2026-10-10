@@ -136,6 +136,7 @@ class StorySourceConfig {
 class StoryCatalogEntry {
   final String storyId;
   final int version;
+  final bool hasVersion;
   final String title;
   final String author;
   final String summary;
@@ -147,6 +148,7 @@ class StoryCatalogEntry {
   const StoryCatalogEntry({
     required this.storyId,
     required this.version,
+    this.hasVersion = true,
     required this.title,
     required this.author,
     required this.summary,
@@ -160,6 +162,7 @@ class StoryCatalogEntry {
     return StoryCatalogEntry(
       storyId: (json['storyId'] ?? json['story_id'] ?? '').toString(),
       version: int.tryParse('${json['version'] ?? 1}') ?? 1,
+      hasVersion: json['version'] != null,
       title: (json['title'] ?? '').toString(),
       author: (json['author'] ?? '').toString(),
       summary: (json['summary'] ?? '').toString(),
@@ -178,7 +181,7 @@ class StoryCatalogEntry {
 
   Map<String, dynamic> toJson() => {
         'storyId': storyId,
-        'version': version,
+        if (hasVersion) 'version': version,
         'title': title,
         'author': author,
         'summary': summary,

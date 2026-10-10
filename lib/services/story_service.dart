@@ -353,8 +353,8 @@ class StoryService {
     final response = await http
         .delete(uri, headers: staticHeaders(config, uri, method: 'DELETE'))
         .timeout(requestTimeout ?? StoryService.requestTimeout);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('对象存储临时对象删除失败（HTTP ${response.statusCode}）');
+    if (response.statusCode != 404 && (response.statusCode < 200 || response.statusCode >= 300)) {
+      throw HttpException('对象存储对象删除失败（HTTP ${response.statusCode}）');
     }
   }
 

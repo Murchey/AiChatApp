@@ -334,7 +334,8 @@ class StoryProvider extends ChangeNotifier {
     final operation = scope ?? BackendRequestScope();
     final generation = _generation;
     final source = _config;
-    final cacheKey = '${_cacheKey}_package_${entry.storyId}_${entry.version}';
+    final cacheKey =
+        '${_cacheKey}_package_${entry.storyId}_${entry.version}_${Uri.encodeComponent(entry.file)}';
     _packageScopes.add(operation);
     try {
       final StoryPackage story;
@@ -354,7 +355,8 @@ class StoryProvider extends ChangeNotifier {
       }
       operation.check();
       if (generation != _generation) throw const RequestCancelled();
-      if (story.storyId != entry.storyId || story.version != entry.version) {
+      if (story.storyId != entry.storyId ||
+          (entry.hasVersion && story.version != entry.version)) {
         throw const FormatException('故事 ID 或版本与目录不一致，请刷新目录');
       }
       final prefs = await SharedPreferences.getInstance();
