@@ -29,6 +29,63 @@ void main() {
       };
 
   test(
+      'deletion preserves unrelated posts and retries a partially completed deletion',
+      () async {
+    final entry = StoryCatalogEntry.fromJson(existing);
+    Map? saved;
+    var failIndex = true;
+    var deletes = 0;
+    final client = MockClient((request) async {
+      if (request.method == 'GET') {
+        return http.Response(
+            jsonEncode({
+              'custom': 'keep',
+              'stories': [
+                existing,
+                {...existing, 'storyId': 'other', 'file': 'assets/other.json'}
+              ]
+            }),
+            200);
+      }
+      if (request.method == 'DELETE') {
+        deletes++;
+        return http.Response('', deletes == 1 ? 200 : 404);
+      }
+      saved = jsonDecode(request.body) as Map;
+      return http.Response('', failIndex ? 403 : 200);
+    });
+    await http.runWithClient(() async {
+      await expectLater(
+          service.deletePost(config, entry), throwsA(isA<StateError>()));
+      failIndex = false;
+      await service.deletePost(config, entry);
+    }, () => client);
+    expect(deletes, 2);
+    expect(saved!['custom'], 'keep');
+    expect((saved!['stories'] as List).single['storyId'], 'other');
+  });
+
+  test('refuses stale post deletion without deleting any object', () async {
+    var deletes = 0;
+    final client = MockClient((request) async {
+      if (request.method == 'DELETE') deletes++;
+      return http.Response(
+          jsonEncode({
+            'stories': [
+              {...existing, 'file': 'assets/updated.json'}
+            ]
+          }),
+          200);
+    });
+    await http.runWithClient(() async {
+      await expectLater(
+          service.deletePost(config, StoryCatalogEntry.fromJson(existing)),
+          throwsFormatException);
+    }, () => client);
+    expect(deletes, 0);
+  });
+
+  test(
       'uploads images into shared img directory with flat and legacy relative paths',
       () async {
     final bytes = Uint8List.fromList([137, 80, 78, 71, 13, 10, 26, 10]);

@@ -208,4 +208,41 @@ class StoryEditingService {
       throw StateError('详情已上传，但索引更新失败。请保留当前内容并再次保存');
     }
   }
+
+  Future<void> deletePost(
+      StorySourceConfig config, StoryCatalogEntry entry) async {
+    if (config.type != StorySourceType.cos) {
+      throw StateError('只有 COS / OSS 来源支持删除帖子');
+    }
+    final uri = _detailUri(config, entry.file);
+    final index = await loadIndex(config);
+    final rows = (index['stories'] as List)
+        .map((v) => Map<String, dynamic>.from(v as Map))
+        .toList();
+    final matching = rows
+        .where((v) => StoryCatalogEntry.fromJson(v).storyId == entry.storyId)
+        .toList();
+    if (matching.isEmpty) return;
+    if (matching.any((v) =>
+        v['file'] != entry.file ||
+        (v['version'] != null &&
+            StoryCatalogEntry.fromJson(v).version != entry.version))) {
+      throw const FormatException('帖子已更新，请刷新列表后重新删除');
+    }
+    if (rows.any((v) =>
+        v['file'] == entry.file &&
+        StoryCatalogEntry.fromJson(v).storyId != entry.storyId)) {
+      throw const FormatException('其他帖子也引用了此详情文件，请先修正索引');
+    }
+    await StoryService.deleteStaticObject(config, uri);
+    rows.removeWhere(
+        (v) => StoryCatalogEntry.fromJson(v).storyId == entry.storyId);
+    index['stories'] = rows;
+    try {
+      await StoryService.putStaticJson(
+          config, StoryService.staticIndexUri(config), index);
+    } catch (_) {
+      throw StateError('详情已删除，但索引更新失败，请再次长按删除以重试');
+    }
+  }
 }

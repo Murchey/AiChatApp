@@ -79,6 +79,7 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
   }
 
   Future<void> _prepare() async {
+    if (_busy || !mounted) return;
     final provider = context.read<StoryProvider>();
     setState(() {
       _checking = true;
@@ -107,6 +108,7 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
   }
 
   void _create() {
+    if (_busy) return;
     _selection++;
     _id.text = 'story-${const Uuid().v4()}';
     for (final c in [
@@ -138,6 +140,7 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
   }
 
   Future<void> _select(StoryCatalogEntry entry) async {
+    if (_busy) return;
     final selection = ++_selection;
     setState(() {
       _entry = entry;
@@ -236,6 +239,42 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
     });
   }
 
+  Future<void> _deletePost(StoryCatalogEntry entry) async {
+    if (_busy) return;
+    final confirmed = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (context) => CupertinoAlertDialog(
+              title: const Text('删除帖子？'),
+              content: Text('将从社区删除「${entry.title}」及其详情文件。此操作无法撤销。'),
+              actions: [
+                CupertinoDialogAction(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('取消')),
+                CupertinoDialogAction(
+                    isDestructiveAction: true,
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('删除')),
+              ],
+            ));
+    if (confirmed != true || !mounted || _busy) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.service.deletePost(_config!, entry);
+      if (!mounted) return;
+      setState(() => _entries.removeWhere((v) => v.storyId == entry.storyId));
+      showAppToast('帖子已删除');
+      final provider = context.read<StoryProvider>();
+      if (provider.config == _config) await provider.loadCatalog(force: true);
+    } catch (error) {
+      if (mounted) setState(() => _error = '删除失败：$error');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _uploadImage() async {
     if (_busy) return;
     setState(() {
@@ -318,60 +357,87 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
                       : Text(_isNew ? '发布' : '保存'),
                 )),
       backgroundColor: context.scaffoldColor,
-      child: ListView(
-        padding: settingsPageContentPadding(context),
-        children: [
-          if (_checking)
-            const Padding(
-                padding: EdgeInsets.all(36),
-                child: Center(child: CupertinoActivityIndicator()))
-          else ...[
-            if (_error != null)
-              Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(_error!,
-                      style: TextStyle(color: context.textPrimaryColor))),
-            if (!_writable)
-              CupertinoButton(onPressed: _prepare, child: const Text('重新检测'))
-            else if (editing) ...[
-              if (_loadingDetail)
-                const Center(child: CupertinoActivityIndicator())
-              else
-                _composer(),
-            ] else ...[
-              SettingsSection(children: [
-                SettingsRow(
-                  icon: CupertinoIcons.add_circled,
-                  title: const Text('创建新帖子'),
-                  subtitle: const Text('编写正文、标签和首次导入的记忆点'),
-                  showChevron: true,
-                  onTap: _create,
-                )
-              ]),
-              Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: CupertinoSearchTextField(
-                    key: const Key('story-editor-search'),
-                    controller: _search,
-                    placeholder: '搜索标题、编号、作者或标签',
-                    onChanged: (_) => setState(() {}),
-                  )),
-              SettingsSection(title: '帖子（${results.length}）', children: [
-                if (results.isEmpty)
-                  SettingsRow(
-                      title: Text(query.isEmpty ? '暂无帖子，创建第一篇吧' : '没有找到匹配的帖子')),
-                for (final entry in results)
-                  SettingsRow(
-                      title: Text(entry.title),
-                      subtitle: Text(
-                          '${entry.author} · ${entry.storyId}\n${entry.summary}'),
-                      showChevron: true,
-                      onTap: () => _select(entry)),
-              ]),
-              CupertinoButton(onPressed: _prepare, child: const Text('刷新帖子列表')),
-            ],
-          ],
+      child: CustomScrollView(
+        physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          if (!editing) CupertinoSliverRefreshControl(onRefresh: _prepare),
+          SliverPadding(
+              padding: settingsPageContentPadding(context),
+              sliver: SliverList.list(children: [
+                if (_checking)
+                  const Padding(
+                      padding: EdgeInsets.all(36),
+                      child: Center(child: CupertinoActivityIndicator()))
+                else ...[
+                  if (_error != null)
+                    Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(_error!,
+                            style: TextStyle(color: context.textPrimaryColor))),
+                  if (!_writable)
+                    CupertinoButton(
+                        onPressed: _prepare, child: const Text('重新检测'))
+                  else if (editing) ...[
+                    if (_loadingDetail)
+                      const Center(child: CupertinoActivityIndicator())
+                    else
+                      _composer(),
+                  ] else ...[
+                    SettingsSection(children: [
+                      SettingsRow(
+                        icon: CupertinoIcons.add_circled,
+                        title: const Text('创建新帖子'),
+                        subtitle: const Text('编写正文、标签和首次导入的记忆点'),
+                        showChevron: true,
+                        onTap: _create,
+                      )
+                    ]),
+                    Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        child: CupertinoSearchTextField(
+                          key: const Key('story-editor-search'),
+                          controller: _search,
+                          placeholder: '搜索标题、编号、作者或标签',
+                          onChanged: (_) => setState(() {}),
+                        )),
+                    SettingsSection(title: '帖子（${results.length}）', children: [
+                      if (results.isEmpty)
+                        SettingsRow(
+                            title: Text(
+                                query.isEmpty ? '暂无帖子，创建第一篇吧' : '没有找到匹配的帖子')),
+                      for (final entry in results)
+                        GestureDetector(
+                            onLongPress:
+                                _busy ? null : () => _deletePost(entry),
+                            child: SettingsRow(
+                                leading: CupertinoButton(
+                                  key: ValueKey('delete-post:${entry.storyId}'),
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(28, 40),
+                                  onPressed:
+                                      _busy ? null : () => _deletePost(entry),
+                                  child: const Icon(CupertinoIcons.trash,
+                                      size: 20,
+                                      color: CupertinoColors.destructiveRed),
+                                ),
+                                title: Text(entry.title),
+                                subtitle: Text(
+                                    '${entry.author} · ${entry.storyId}\n${entry.summary}'),
+                                showChevron: true,
+                                onTap: _busy ? null : () => _select(entry))),
+                    ]),
+                    Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 8),
+                        child: Text(_saving ? '正在删除…' : '下拉刷新 · 长按帖子删除',
+                            style: TextStyle(
+                                color: context.textSecondaryColor,
+                                fontSize: 12))),
+                  ],
+                ],
+              ])),
         ],
       ),
     );

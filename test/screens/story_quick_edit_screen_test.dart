@@ -27,6 +27,13 @@ class _Service extends StoryEditingService {
   Map<String, dynamic>? published;
   String? file;
   String? deletedImage;
+  String? deletedPost;
+  @override
+  Future<void> deletePost(
+      StorySourceConfig config, StoryCatalogEntry entry) async {
+    deletedPost = entry.storyId;
+  }
+
   @override
   Future<Map<String, dynamic>> loadDetail(
           StorySourceConfig config, StoryCatalogEntry entry) async =>
@@ -136,6 +143,30 @@ void main() {
     expect(find.text('晨光'), findsOneWidget);
     expect(find.text('月光'), findsOneWidget);
     expect(service.indexReads, 1);
+  });
+
+  testWidgets('long press confirms deletion and pull down refreshes the list',
+      (tester) async {
+    final service = await open(tester);
+    expect(find.text('刷新帖子列表'), findsNothing);
+    expect(find.byType(CupertinoSliverRefreshControl, skipOffstage: false),
+        findsOneWidget);
+    await tester.longPress(find.text('晨光'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(service.deletedPost, isNull);
+    await tester.tap(find.byKey(const ValueKey('delete-post:first')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    expect(service.deletedPost, 'first');
+    expect(find.text('晨光'), findsNothing);
+    expect(find.text('月光'), findsOneWidget);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 400));
+    await tester.pumpAndSettle();
+    expect(service.indexReads, 2);
+    expect(find.text('晨光'), findsOneWidget);
   });
 
   testWidgets(
