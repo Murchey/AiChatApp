@@ -309,7 +309,8 @@ class StoryService {
         secretAccessKey: config.secretKey);
   }
 
-  static Map<String, String> staticHeaders(StorySourceConfig config, Uri uri) {
+  static Map<String, String> staticHeaders(StorySourceConfig config, Uri uri,
+      {String? contentType}) {
     final auth = _authFor(config);
     if (auth == null) return const {};
     return buildCosAuthHeaders(
@@ -317,7 +318,62 @@ class StoryService {
       uri: uri,
       accessKeyId: auth.accessKeyId,
       secretAccessKey: auth.secretAccessKey,
+      contentType: contentType,
     );
+  }
+
+  static Future<void> putStaticJson(
+    StorySourceConfig config,
+    Uri uri,
+    Map<String, dynamic> value, {
+    Duration? requestTimeout,
+  }) async {
+    if (config.type != StorySourceType.cos) {
+      throw StateError('只有 COS / OSS 来源支持快捷编辑');
+    }
+    final headers = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
+      ...staticHeaders(config, uri,
+          contentType: 'application/json; charset=utf-8'),
+    };
+    final response = await http
+        .put(uri, headers: headers, body: jsonEncode(value))
+        .timeout(requestTimeout ?? StoryService.requestTimeout);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw HttpException('对象存储写入失败（HTTP ${response.statusCode}）');
+    }
+  }
+
+  static Future<void> deleteStaticObject(
+    StorySourceConfig config,
+    Uri uri, {
+    Duration? requestTimeout,
+  }) async {
+    final response = await http
+        .delete(uri, headers: staticHeaders(config, uri))
+        .timeout(requestTimeout ?? StoryService.requestTimeout);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw HttpException('对象存储临时对象删除失败（HTTP ${response.statusCode}）');
+    }
+  }
+
+  static Future<void> probeStaticWrite(StorySourceConfig config) async {
+    if (config.type != StorySourceType.cos ||
+        config.secretId.trim().isEmpty ||
+        config.secretKey.trim().isEmpty) {
+      throw StateError('请先配置 COS / OSS 的 Secret ID 和 Secret Key');
+    }
+    final index = staticIndexUri(config);
+    final probe = index.resolve(
+        '.aichat-write-test-${DateTime.now().microsecondsSinceEpoch}.json');
+    await putStaticJson(config, probe, const {'ok': true});
+    try {
+      await deleteStaticObject(config, probe);
+    } catch (_) {
+      // A successful PUT already proves write permission. Keep the object if
+      // the provider does not grant delete permission and report success.
+    }
   }
 
   static String _cosPath(StorySourceConfig config, String fallback,

@@ -11,6 +11,7 @@ import '../providers/workshop_provider.dart';
 import '../utils/app_toast.dart';
 import '../widgets/settings/settings_ui.dart';
 import 'sync_settings_screen.dart';
+import 'story_quick_edit_screen.dart';
 
 /// Story source configuration is kept separate from the feed so the main
 /// page can stay focused on browsing stories.
@@ -372,6 +373,17 @@ class _StoryCommunitySettingsScreenState
               setState(() {});
             },
           ),
+        SettingsRow(
+          icon: CupertinoIcons.pencil,
+          title: const Text('帖子快捷编辑'),
+          subtitle: const Text('检测 COS / OSS 写权限后编辑已发布帖子'),
+          showChevron: true,
+          onTap: _busy
+              ? null
+              : () => Navigator.of(context).push(CupertinoPageRoute<void>(
+                    builder: (_) => const StoryQuickEditScreen(),
+                  )),
+        ),
         _connectionRow(
           title: '保存并测试来源',
           subtitle: '公共读可留空密钥；私有读使用 Secret ID / Secret Key 签名请求',
