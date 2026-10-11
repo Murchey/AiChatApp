@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'imported_font_storage.dart';
@@ -57,15 +58,18 @@ class OtherCleanupPlan {
 /// 并提供各分类的清理能力。
 ///
 /// 覆盖所有 path_provider 目录 + SharedPreferences 全部键：
+/// - Android 安装包（APK / split APK，通过原生通道读取，系统占用但不可删）；
 /// - 文档目录（getApplicationDocumentsDirectory）：workshop（下载缓存）、
 ///   user_moments / moment_import_*（角色朋友圈图片）、chat_import_*
 ///   （聊天导入文件）、chat_backgrounds（聊天背景图）及其他未分类文件；
 /// - 支持目录（getApplicationSupportDirectory）：角色包/其他数据文件；
 /// - 内部缓存（getTemporaryDirectory，即系统「缓存」口径之一）：临时文件；
-/// - 外部存储（getExternalStorageDirectory）：updates/ 下的 APK 更新包；
+/// - 外部存储（getExternalStorageDirectory）：updates/ 下的 APK 更新包及其他应用专属文件；
 /// - 外部缓存（getExternalCacheDirectories）：外部临时文件；
 /// - SharedPreferences：聊天/角色/通知/用户资料/设置等全部用户数据。
 class StorageManagerService {
+  static const MethodChannel _filesChannel =
+      MethodChannel('com.aichat.ai_chat/files');
   // 聊天记录相关存储键
   static const _chatKeys = [
     'chat_conversations_v1',
@@ -122,6 +126,7 @@ class StorageManagerService {
     final prefs = await _scanPrefs();
     _debugDumpDirs(prefs);
     return [
+      await _applicationPackageItem(),
       await _chatItem(prefs),
       await _stickerItem(),
       await _characterItem(prefs),
@@ -134,6 +139,25 @@ class StorageManagerService {
       _settingsItem(prefs),
       await _otherItem(),
     ];
+  }
+
+  /// Android 系统“应用占用”包含 APK/拆分 APK；这些文件不在
+  /// path_provider 的用户数据目录中，因此需要通过原生层读取。
+  static Future<StorageItem> _applicationPackageItem() async {
+    var bytes = 0;
+    try {
+      bytes = (await _filesChannel.invokeMethod<num>('getAppPackageSize'))
+              ?.toInt() ??
+          0;
+    } catch (_) {}
+    return StorageItem(
+      id: 'application_package',
+      title: '应用安装文件',
+      subtitle: 'APK 与拆分安装包，系统占用的一部分，不支持删除',
+      isUserData: false,
+      sizeBytes: bytes,
+      deletable: false,
+    );
   }
 
   /// 聊天记录：聊天会话/消息存储键 + 导入聊天时提取的图片与文件目录
@@ -294,6 +318,7 @@ class StorageManagerService {
       final support = await getApplicationSupportDirectory();
       bytes += _dirSize(Directory(support.path));
     } catch (_) {}
+    bytes += await _externalFilesBytes();
     return StorageItem(
       id: 'other',
       title: '其他应用文件',
@@ -302,6 +327,25 @@ class StorageManagerService {
       sizeBytes: bytes,
       deletable: bytes > 0,
     );
+  }
+
+  /// 应用专属外部文件中除 updates/外的内容。更新 APK 已单独计入
+  /// “下载缓存”，这里避免重复计算。
+  static Future<int> _externalFilesBytes() async {
+    try {
+      final root = await getExternalStorageDirectory();
+      if (root == null || !root.existsSync()) return 0;
+      var total = 0;
+      for (final entity in root.listSync()) {
+        if (_basename(entity.path) == 'updates') continue;
+        total += entity is File
+            ? entity.lengthSync()
+            : _dirSize(entity as Directory);
+      }
+      return total;
+    } catch (_) {
+      return 0;
+    }
   }
 
   // ─── 文件清理（返回释放的字节数）────────────────────────────

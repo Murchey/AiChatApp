@@ -79,6 +79,12 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "getAppPackageSize" -> {
+                        val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                        var size = File(appInfo.sourceDir).length()
+                        appInfo.splitSourceDirs?.forEach { size += File(it).length() }
+                        result.success(size)
+                    }
                     "pickFile" -> {
                         pendingResult = result
                         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
