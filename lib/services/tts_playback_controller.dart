@@ -273,11 +273,40 @@ class TtsPlaybackController extends ChangeNotifier {
     }
   }
 
+  Future<void> _trimPersistedAudioCache() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final files = dir
+          .listSync()
+          .whereType<File>()
+          .where((file) => _basename(file.path).startsWith('aichat_tts_'))
+          .toList()
+        ..sort(
+            (a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+      final keep = files.take(4).toSet();
+      for (final file in files.skip(4)) {
+        try {
+          await file.delete();
+        } catch (_) {}
+      }
+      _audioCache
+        ..clear()
+        ..addAll(keep.toList().reversed.map((file) => file.path));
+    } catch (_) {}
+  }
+
+  String _basename(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final index = normalized.lastIndexOf('/');
+    return index < 0 ? normalized : normalized.substring(index + 1);
+  }
+
   Future<void> _playBytes(Uint8List data, {required String extension}) async {
     if (data.isEmpty) {
       throw const TtsException('语音模型返回了空音频');
     }
     final dir = await getTemporaryDirectory();
+    await _trimPersistedAudioCache();
     final file = File(
       '${dir.path}/aichat_tts_${DateTime.now().microsecondsSinceEpoch}.$extension',
     );

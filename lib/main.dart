@@ -27,6 +27,7 @@ Future<void> main() async {
   // （成功后打标跳过；旧数据保留）。失败不阻塞启动。
   try {
     await StorageMigrationService.init();
+    await StorageMigrationService.cleanupLegacyInvalidData();
   } catch (e) {
     debugPrint('[main] StorageMigrationService.init 失败: $e');
   }

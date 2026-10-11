@@ -23,6 +23,7 @@ class StorageMigrationService {
   StorageMigrationService._();
 
   static const migrationName = 'prefs_to_sqlite_v1';
+  static const legacyCleanupKey = 'legacy_invalid_data_cleanup_v1';
 
   /// 首批迁移的源 key
   static const sourceKeys = [
@@ -114,6 +115,56 @@ class StorageMigrationService {
       return;
     }
     await runOnce();
+  }
+
+  /// Remove files that were only upgrade/runtime residue from older builds.
+  /// This is deliberately separate from user-data migration: it never touches
+  /// characters, chats, backups, imported media, fonts, or settings.
+  static Future<void> cleanupLegacyInvalidData() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(legacyCleanupKey) == true) return;
+    if (!await isMigrationDone()) return;
+
+    // The migration snapshot is only needed until the SQLite import has been
+    // verified. Keeping timestamped snapshots after a successful upgrade can
+    // consume the full size of the old chat/character JSON repeatedly.
+    final docs = await getApplicationDocumentsDirectory();
+    final migrationBackup = Directory('${docs.path}/db_migration_backup');
+    if (await migrationBackup.exists()) {
+      await migrationBackup.delete(recursive: true);
+    }
+
+    // Temporary/cache directories are safe to clear at startup. Do not touch
+    // the documents directory because it contains user data.
+    await _clearDirectoryContents(await getTemporaryDirectory());
+    try {
+      final external = await getExternalCacheDirectories();
+      for (final directory in external ?? const <Directory>[]) {
+        await _clearDirectoryContents(directory);
+      }
+    } catch (_) {}
+
+    // Interrupted workshop downloads are invalid and can never be imported.
+    final workshop = Directory('${docs.path}/workshop');
+    if (await workshop.exists()) {
+      await for (final entity in workshop.list(recursive: true)) {
+        if (entity is File && entity.path.toLowerCase().endsWith('.part')) {
+          try {
+            await entity.delete();
+          } catch (_) {}
+        }
+      }
+    }
+    await prefs.setBool(legacyCleanupKey, true);
+  }
+
+  static Future<void> _clearDirectoryContents(Directory directory) async {
+    if (!await directory.exists()) return;
+    await for (final entity in directory.list()) {
+      try {
+        await entity.delete(recursive: entity is Directory);
+      } catch (_) {}
+    }
   }
 
   /// 是否需要修复：已迁移，但某块「prefs 有、SQLite 无」。
@@ -383,6 +434,17 @@ class StorageMigrationService {
       final doc = await getApplicationDocumentsDirectory();
       final dir = Directory('${doc.path}/db_migration_backup');
       if (!await dir.exists()) await dir.create(recursive: true);
+      // Migration can be retried after a partial failure. Keep one recovery
+      // snapshot instead of creating a timestamped file on every launch.
+      await for (final entity in dir.list()) {
+        if (entity is File &&
+            _basename(entity.path).startsWith('prefs_migration_') &&
+            _basename(entity.path).endsWith('.json')) {
+          try {
+            await entity.delete();
+          } catch (_) {}
+        }
+      }
       final payload = <String, dynamic>{
         'exported_at': DateTime.now().toIso8601String(),
         'keys': {
@@ -390,13 +452,17 @@ class StorageMigrationService {
             if (prefs.containsKey(key)) key: prefs.get(key),
         },
       };
-      final file = File(
-        '${dir.path}/prefs_migration_${DateTime.now().millisecondsSinceEpoch}.json',
-      );
+      final file = File('${dir.path}/prefs_migration_latest.json');
       await file.writeAsString(jsonEncode(payload), flush: true);
       debugPrint('[StorageMigration] 已备份旧数据 → ${file.path}');
     } catch (e) {
       debugPrint('[StorageMigration] 备份旧数据失败（继续迁移）: $e');
     }
+  }
+
+  static String _basename(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final index = normalized.lastIndexOf('/');
+    return index < 0 ? normalized : normalized.substring(index + 1);
   }
 }

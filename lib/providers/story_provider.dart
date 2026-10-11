@@ -269,6 +269,7 @@ class StoryProvider extends ChangeNotifier {
               _catalogFetchedAtKey, _catalogFetchedAt!.millisecondsSinceEpoch);
           await prefs.setString(_cacheKey,
               jsonEncode(_entries.take(500).map((v) => v.toJson()).toList()));
+          await _pruneCatalogCaches(prefs);
         }
       }
     }).catchError((Object error) {
@@ -293,6 +294,27 @@ class StoryProvider extends ChangeNotifier {
     });
     _catalogFuture = future;
     await future;
+  }
+
+  /// Keep a small number of source-specific catalog snapshots. Source URLs
+  /// and paths are part of the cache key, so changing them repeatedly would
+  /// otherwise leave one full index in SharedPreferences for every old config.
+  Future<void> _pruneCatalogCaches(SharedPreferences prefs) async {
+    final keys = prefs
+        .getKeys()
+        .where((key) =>
+            key.startsWith('story_catalog_cache_v1_') &&
+            !key.contains('_package_'))
+        .toList()
+      ..sort();
+    final keep = <String>{_cacheKey};
+    for (final key in keys.reversed) {
+      if (keep.length >= 5) break;
+      keep.add(key);
+    }
+    for (final key in keys) {
+      if (!keep.contains(key)) await prefs.remove(key);
+    }
   }
 
   Future<dynamic> _fetchCatalog(StorySourceConfig config, String q, String t,
