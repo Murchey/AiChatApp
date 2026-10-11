@@ -128,11 +128,16 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
         ),
       ),
       backgroundColor: context.scaffoldColor,
-      child: SafeArea(
-        bottom: false,
-        child: CustomScrollView(
+      child: Builder(
+        builder: (context) => CustomScrollView(
           key: const PageStorageKey<String>('story-community-feed-list'),
           slivers: [
+            // Reserve the scaffold's navigation inset only at the beginning.
+            // The viewport stays full-height so content passes behind the
+            // translucent header and its backdrop blur while scrolling.
+            SliverToBoxAdapter(
+              child: SizedBox(height: MediaQuery.paddingOf(context).top),
+            ),
             SliverToBoxAdapter(child: _buildFeedHeader(context, provider)),
             if (tags.isNotEmpty)
               SliverToBoxAdapter(child: _buildTagBar(context, tags)),

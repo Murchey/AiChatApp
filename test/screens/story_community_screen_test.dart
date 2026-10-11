@@ -61,6 +61,9 @@ void main() {
     final tags = find.widgetWithText(CupertinoButton, '全部');
     final searchTop = tester.getTopLeft(search).dy;
     final tagsTop = tester.getTopLeft(tags).dy;
+    final feed =
+        find.byKey(const PageStorageKey<String>('story-community-feed-list'));
+    expect(tester.getTopLeft(feed).dy, 0);
     expect(searchTop, greaterThanOrEqualTo(120));
     expect(tagsTop, greaterThan(tester.getBottomLeft(search).dy));
     await tester.drag(
