@@ -128,30 +128,21 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
         ),
       ),
       backgroundColor: context.scaffoldColor,
-      child: CustomScrollView(
-        key: const PageStorageKey<String>('story-community-feed-list'),
-        slivers: [
-          SliverToBoxAdapter(
-            child:
-                _buildFeedHeader(context, provider, tags, includeTags: false),
-          ),
-          if (tags.isNotEmpty)
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _StoryTagBarDelegate(
-                backgroundColor: context.scaffoldColor,
-                child: _buildTagBar(context, tags),
-              ),
-            ),
-          SliverPadding(
-            padding: settingsPageContentPadding(
-              context,
-              bottom: UiSpec.floatingContentBottomInset +
-                  MediaQuery.viewPaddingOf(context).bottom,
-            ),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _buildFeedHeader(context, provider),
+            if (tags.isNotEmpty) _buildTagBar(context, tags),
+            Expanded(
+              child: ListView.builder(
+                key: const PageStorageKey<String>('story-community-feed-list'),
+                padding: EdgeInsets.only(
+                  bottom: UiSpec.floatingContentBottomInset +
+                      MediaQuery.viewPaddingOf(context).bottom,
+                ),
+                itemCount: feedCount,
+                itemBuilder: (context, index) {
                   if (hasStateItem) {
                     return _buildFeedState(context, provider);
                   }
@@ -170,11 +161,10 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
                     ),
                   );
                 },
-                childCount: feedCount,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -195,9 +185,7 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
   Widget _buildFeedHeader(
     BuildContext context,
     StoryProvider provider,
-    List<String> tags, {
-    bool includeTags = true,
-  }) {
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -271,7 +259,6 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
               ),
             ),
           ),
-        if (includeTags && tags.isNotEmpty) _buildTagBar(context, tags),
         const SizedBox(height: 4),
       ],
     );
@@ -637,29 +624,6 @@ class _StoryCharacterPickerScreenState
       ),
     );
   }
-}
-
-class _StoryTagBarDelegate extends SliverPersistentHeaderDelegate {
-  final Color backgroundColor;
-  final Widget child;
-
-  _StoryTagBarDelegate({required this.backgroundColor, required this.child});
-
-  @override
-  double get minExtent => 46;
-
-  @override
-  double get maxExtent => 46;
-
-  @override
-  Widget build(
-          BuildContext context, double shrinkOffset, bool overlapsContent) =>
-      ColoredBox(color: backgroundColor, child: child);
-
-  @override
-  bool shouldRebuild(covariant _StoryTagBarDelegate oldDelegate) =>
-      oldDelegate.backgroundColor != backgroundColor ||
-      oldDelegate.child != child;
 }
 
 class StoryDetailScreen extends StatefulWidget {
