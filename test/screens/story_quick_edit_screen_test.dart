@@ -85,7 +85,7 @@ class _Service extends StoryEditingService {
   @override
   Future<void> publish(
       StorySourceConfig config, Map<String, dynamic> detail, String file,
-      {required bool isNew}) async {
+      {required bool isNew, StoryCatalogEntry? previousEntry}) async {
     published = detail;
     this.file = file;
   }

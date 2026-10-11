@@ -34,7 +34,7 @@ class NotificationService {
     }
     try {
       const initSettings = InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings('@drawable/ic_launcher_chat'),
       );
       await _plugin.initialize(settings: initSettings);
       final android = _plugin.resolvePlatformSpecificImplementation<

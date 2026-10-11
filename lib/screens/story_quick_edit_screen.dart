@@ -51,7 +51,18 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
       _showPaths = false;
   final Map<String, Uint8List> _previews = {};
   bool get _busy => _saving || _mediaBusy;
-  String get _file => _isNew ? 'assets/${_id.text.trim()}.json' : _entry!.file;
+  String get _file {
+    final id = _id.text.trim();
+    if (_isNew) return 'assets/$id.json';
+    final current = _entry!.file;
+    if (id == _entry!.storyId) return current;
+    // Keep an edited post in the same directory while making the detail file
+    // follow its new id.  This is important for the flat repository layout:
+    // changing the id must not leave the index pointing at the old filename.
+    final slash = current.lastIndexOf('/');
+    final directory = slash < 0 ? '' : current.substring(0, slash + 1);
+    return '$directory$id.json';
+  }
 
   @override
   void initState() {
@@ -208,10 +219,15 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
       _error = null;
     });
     try {
-      await widget.service.publish(_config!, detail, file, isNew: _isNew);
+      final previousEntry = _isNew ? null : _entry;
+      await widget.service.publish(_config!, detail, file,
+          isNew: _isNew, previousEntry: previousEntry);
       if (!mounted) return;
       final updated = StoryCatalogEntry.fromJson({...detail, 'file': file});
       setState(() {
+        if (previousEntry != null) {
+          _entries.removeWhere((e) => e.storyId == previousEntry.storyId);
+        }
         _entries.removeWhere((e) => e.storyId == updated.storyId);
         _entries.insert(0, updated);
         _entry = updated;
@@ -491,7 +507,7 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
             _field('标签（用逗号分隔）', _tags),
             _field('作者', _author),
             _field('摘要', _summary, lines: 2),
-            _field('故事编号', _id, readOnly: !_isNew),
+            _field('故事编号', _id),
           ],
           _disclosure('故事记忆点（可选）', _showMemories,
               () => setState(() => _showMemories = !_showMemories)),

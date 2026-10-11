@@ -102,8 +102,8 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
     final hasStateItem = !_ready || provider.entries.isEmpty;
     final hasFooter = !hasStateItem &&
         (provider.hasMore || provider.loadingMore || provider.error != null);
-    final itemCount =
-        1 + (hasStateItem ? 1 : provider.entries.length + (hasFooter ? 1 : 0));
+    final feedCount =
+        hasStateItem ? 1 : provider.entries.length + (hasFooter ? 1 : 0);
 
     return CupertinoPageScaffold(
       navigationBar: settingsNavigationBar(
@@ -128,36 +128,53 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
         ),
       ),
       backgroundColor: context.scaffoldColor,
-      child: ListView.builder(
+      child: CustomScrollView(
         key: const PageStorageKey<String>('story-community-feed-list'),
-        padding: settingsPageContentPadding(
-          context,
-          bottom: UiSpec.floatingContentBottomInset +
-              MediaQuery.viewPaddingOf(context).bottom,
-        ),
-        itemCount: itemCount,
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return _buildFeedHeader(context, provider, tags);
-          }
-          if (hasStateItem) {
-            return _buildFeedState(context, provider);
-          }
-          if (index - 1 == provider.entries.length) {
-            return _buildFeedFooter(context, provider);
-          }
-          final entry = provider.entries[index - 1];
-          return _StoryFeedCard(
-            entry: entry,
-            showDownloadCount: provider.supportsServerStats,
-            onTap: () => Navigator.push(
-              context,
-              CupertinoPageRoute(
-                builder: (_) => StoryDetailScreen(entry: entry),
+        slivers: [
+          SliverToBoxAdapter(
+            child:
+                _buildFeedHeader(context, provider, tags, includeTags: false),
+          ),
+          if (tags.isNotEmpty)
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _StoryTagBarDelegate(
+                backgroundColor: context.scaffoldColor,
+                child: _buildTagBar(context, tags),
               ),
             ),
-          );
-        },
+          SliverPadding(
+            padding: settingsPageContentPadding(
+              context,
+              bottom: UiSpec.floatingContentBottomInset +
+                  MediaQuery.viewPaddingOf(context).bottom,
+            ),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  if (hasStateItem) {
+                    return _buildFeedState(context, provider);
+                  }
+                  if (index == provider.entries.length) {
+                    return _buildFeedFooter(context, provider);
+                  }
+                  final entry = provider.entries[index];
+                  return _StoryFeedCard(
+                    entry: entry,
+                    showDownloadCount: provider.supportsServerStats,
+                    onTap: () => Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (_) => StoryDetailScreen(entry: entry),
+                      ),
+                    ),
+                  );
+                },
+                childCount: feedCount,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -178,8 +195,9 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
   Widget _buildFeedHeader(
     BuildContext context,
     StoryProvider provider,
-    List<String> tags,
-  ) {
+    List<String> tags, {
+    bool includeTags = true,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -253,45 +271,45 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
               ),
             ),
           ),
-        if (tags.isNotEmpty)
-          SizedBox(
-            height: 42,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              scrollDirection: Axis.horizontal,
-              itemCount: tags.length + 1,
-              separatorBuilder: (_, __) => const SizedBox(width: 6),
-              itemBuilder: (context, index) {
-                final tag = index == 0 ? null : tags[index - 1];
-                final selected = _selectedTag == tag;
-                return CupertinoButton(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  minimumSize: Size.zero,
-                  color: selected
-                      ? context.accentColor.withValues(alpha: 0.14)
-                      : context.fieldBgColor,
-                  onPressed: () async {
-                    setState(() => _selectedTag = tag);
-                    await _search();
-                  },
-                  child: Text(
-                    tag ?? '全部',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: selected
-                          ? context.accentColor
-                          : context.textSecondaryColor,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+        if (includeTags && tags.isNotEmpty) _buildTagBar(context, tags),
         const SizedBox(height: 4),
       ],
     );
   }
+
+  Widget _buildTagBar(BuildContext context, List<String> tags) => SizedBox(
+        height: 46,
+        child: ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          scrollDirection: Axis.horizontal,
+          itemCount: tags.length + 1,
+          separatorBuilder: (_, __) => const SizedBox(width: 6),
+          itemBuilder: (context, index) {
+            final tag = index == 0 ? null : tags[index - 1];
+            final selected = _selectedTag == tag;
+            return CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: Size.zero,
+              color: selected
+                  ? context.accentColor.withValues(alpha: 0.14)
+                  : context.fieldBgColor,
+              onPressed: () async {
+                setState(() => _selectedTag = tag);
+                await _search();
+              },
+              child: Text(
+                tag ?? '全部',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: selected
+                      ? context.accentColor
+                      : context.textSecondaryColor,
+                ),
+              ),
+            );
+          },
+        ),
+      );
 
   Widget _buildFeedState(BuildContext context, StoryProvider provider) {
     if (!_ready || provider.loading) {
@@ -619,6 +637,29 @@ class _StoryCharacterPickerScreenState
       ),
     );
   }
+}
+
+class _StoryTagBarDelegate extends SliverPersistentHeaderDelegate {
+  final Color backgroundColor;
+  final Widget child;
+
+  _StoryTagBarDelegate({required this.backgroundColor, required this.child});
+
+  @override
+  double get minExtent => 46;
+
+  @override
+  double get maxExtent => 46;
+
+  @override
+  Widget build(
+          BuildContext context, double shrinkOffset, bool overlapsContent) =>
+      ColoredBox(color: backgroundColor, child: child);
+
+  @override
+  bool shouldRebuild(covariant _StoryTagBarDelegate oldDelegate) =>
+      oldDelegate.backgroundColor != backgroundColor ||
+      oldDelegate.child != child;
 }
 
 class StoryDetailScreen extends StatefulWidget {

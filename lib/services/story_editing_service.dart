@@ -154,7 +154,7 @@ class StoryEditingService {
 
   Future<void> publish(
       StorySourceConfig config, Map<String, dynamic> detail, String file,
-      {required bool isNew}) async {
+      {required bool isNew, StoryCatalogEntry? previousEntry}) async {
     final story = StoryPackage.fromJson(detail);
     if (story.introduction.isEmpty) throw const FormatException('请填写帖子正文');
     if (!RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9_-]*$').hasMatch(story.storyId)) {
@@ -166,18 +166,32 @@ class StoryEditingService {
     final rows = (index['stories'] as List)
         .map((v) => Map<String, dynamic>.from(v as Map))
         .toList();
+    final previousPosition = previousEntry == null
+        ? -1
+        : rows.indexWhere((v) =>
+            StoryCatalogEntry.fromJson(v).storyId == previousEntry.storyId);
     final position = rows.indexWhere(
         (v) => StoryCatalogEntry.fromJson(v).storyId == story.storyId);
     if (isNew && position >= 0) {
       throw const FormatException('故事编号已存在，请使用另一个编号');
     }
-    if (!isNew && position < 0) {
+    if (!isNew && previousEntry != null && previousPosition < 0) {
+      throw const FormatException('该帖子已从索引移除，请刷新后重试');
+    }
+    if (!isNew && previousEntry == null && position < 0) {
       throw const FormatException('该帖子已从索引移除，请刷新后重试');
     }
     if (!isNew &&
-        (rows[position]['file'] != file ||
-            (rows[position]['version'] != null &&
-                StoryCatalogEntry.fromJson(rows[position]).version !=
+        previousEntry != null &&
+        position >= 0 &&
+        position != previousPosition) {
+      throw const FormatException('故事编号已存在，请使用另一个编号');
+    }
+    final editPosition = previousPosition >= 0 ? previousPosition : position;
+    if (!isNew &&
+        (rows[editPosition]['file'] != (previousEntry?.file ?? file) ||
+            (rows[editPosition]['version'] != null &&
+                StoryCatalogEntry.fromJson(rows[editPosition]).version !=
                     story.version))) {
       throw const FormatException('帖子版本已更新，请刷新后重新编辑');
     }
@@ -195,8 +209,8 @@ class StoryEditingService {
     if (isNew) {
       rows.insert(0, metadata);
     } else {
-      rows[position] = {...rows[position], ...metadata};
-      rows[position].remove('version');
+      rows[editPosition] = {...rows[editPosition], ...metadata};
+      rows[editPosition].remove('version');
     }
     await StoryService.putStaticJson(config, _detailUri(config, file), detail);
     index['stories'] = rows;
@@ -206,6 +220,14 @@ class StoryEditingService {
           config, StoryService.staticIndexUri(config), index);
     } catch (_) {
       throw StateError('详情已上传，但索引更新失败。请保留当前内容并再次保存');
+    }
+    if (!isNew && previousEntry != null && previousEntry.file != file) {
+      try {
+        await StoryService.deleteStaticObject(
+            config, _detailUri(config, previousEntry.file));
+      } catch (_) {
+        // The index points to the new file. An orphaned old object is harmless.
+      }
     }
   }
 
