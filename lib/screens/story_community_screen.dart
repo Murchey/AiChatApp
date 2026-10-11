@@ -130,37 +130,40 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
       backgroundColor: context.scaffoldColor,
       child: SafeArea(
         bottom: false,
-        child: Column(
-          children: [
-            _buildFeedHeader(context, provider),
-            if (tags.isNotEmpty) _buildTagBar(context, tags),
-            Expanded(
-              child: ListView.builder(
-                key: const PageStorageKey<String>('story-community-feed-list'),
-                padding: EdgeInsets.only(
-                  bottom: UiSpec.floatingContentBottomInset +
-                      MediaQuery.viewPaddingOf(context).bottom,
-                ),
-                itemCount: feedCount,
-                itemBuilder: (context, index) {
-                  if (hasStateItem) {
-                    return _buildFeedState(context, provider);
-                  }
-                  if (index == provider.entries.length) {
-                    return _buildFeedFooter(context, provider);
-                  }
-                  final entry = provider.entries[index];
-                  return _StoryFeedCard(
-                    entry: entry,
-                    showDownloadCount: provider.supportsServerStats,
-                    onTap: () => Navigator.push(
-                      context,
-                      CupertinoPageRoute(
-                        builder: (_) => StoryDetailScreen(entry: entry),
+        child: CustomScrollView(
+          key: const PageStorageKey<String>('story-community-feed-list'),
+          slivers: [
+            SliverToBoxAdapter(child: _buildFeedHeader(context, provider)),
+            if (tags.isNotEmpty)
+              SliverToBoxAdapter(child: _buildTagBar(context, tags)),
+            SliverPadding(
+              padding: EdgeInsets.only(
+                bottom: UiSpec.floatingContentBottomInset +
+                    MediaQuery.viewPaddingOf(context).bottom,
+              ),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    if (hasStateItem) {
+                      return _buildFeedState(context, provider);
+                    }
+                    if (index == provider.entries.length) {
+                      return _buildFeedFooter(context, provider);
+                    }
+                    final entry = provider.entries[index];
+                    return _StoryFeedCard(
+                      entry: entry,
+                      showDownloadCount: provider.supportsServerStats,
+                      onTap: () => Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => StoryDetailScreen(entry: entry),
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                  childCount: feedCount,
+                ),
               ),
             ),
           ],

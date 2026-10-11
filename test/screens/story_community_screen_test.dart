@@ -39,8 +39,7 @@ void main() {
     );
   }
 
-  testWidgets(
-      'feed controls clear navigation and remain fixed during scrolling',
+  testWidgets('feed controls clear navigation and scroll together with posts',
       (tester) async {
     final provider = _FeedProvider();
     addTearDown(provider.dispose);
@@ -66,11 +65,11 @@ void main() {
     expect(tagsTop, greaterThan(tester.getBottomLeft(search).dy));
     await tester.drag(
       find.byKey(const PageStorageKey<String>('story-community-feed-list')),
-      const Offset(0, -450),
+      const Offset(0, -60),
     );
     await tester.pumpAndSettle();
-    expect(tester.getTopLeft(search).dy, searchTop);
-    expect(tester.getTopLeft(tags).dy, tagsTop);
+    expect(tester.getTopLeft(search).dy, lessThan(searchTop));
+    expect(tester.getTopLeft(tags).dy, lessThan(tagsTop));
     expect(tester.takeException(), isNull);
   });
 
