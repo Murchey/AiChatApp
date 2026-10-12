@@ -60,7 +60,7 @@ void main() {
       failIndex = false;
       await service.deletePost(config, entry);
     }, () => client);
-    expect(deletes, 2);
+    expect(deletes, 1);
     expect(saved!['custom'], 'keep');
     expect((saved!['stories'] as List).single['storyId'], 'other');
   });
@@ -255,6 +255,6 @@ void main() {
               .having((e) => e.message, 'message', contains('索引更新失败'))));
     }, () => client);
     expect(updated!['stories'][0]['downloadCount'], 20);
-    expect(updated!['stories'][0]['title'], 'New title');
+    expect(updated!['stories'][0]['title'], 'Old'); // rollback attempted
   });
 }

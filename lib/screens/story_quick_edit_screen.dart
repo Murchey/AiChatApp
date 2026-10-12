@@ -7,6 +7,8 @@ import 'package:uuid/uuid.dart';
 
 import '../config/theme.dart';
 import '../models/story_package.dart';
+import '../models/story_index.dart';
+import '../widgets/story_index_selector.dart';
 import '../providers/story_provider.dart';
 import '../services/story_editing_service.dart';
 import '../services/story_service.dart';
@@ -35,6 +37,8 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
   final _memories = TextEditingController();
   final _images = TextEditingController();
   List<StoryCatalogEntry> _entries = [];
+  List<StoryIndexReference> _indexes = [];
+  String? _indexFile;
   Map<String, dynamic>? _original;
   StorySourceConfig? _config;
   StoryCatalogEntry? _entry;
@@ -105,6 +109,9 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
       if (!mounted) return;
       setState(() {
         _config = config;
+        _indexes = StoryIndexReference.parse(
+            index, widget.service.rootIndexFile(config));
+        _indexFile = widget.service.rootIndexFile(config);
         _entries = (index['stories'] as List)
             .map((v) =>
                 StoryCatalogEntry.fromJson(Map<String, dynamic>.from(v as Map)))
@@ -113,6 +120,27 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
       });
     } catch (error) {
       if (mounted) setState(() => _error = provider.readableError(error));
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  Future<void> _selectIndex(String file) async {
+    if (_busy || _checking) return;
+    setState(() {
+      _checking = true;
+      _error = null;
+    });
+    try {
+      final page = await widget.service.loadIndexPage(_config!, file);
+      if (!mounted) return;
+      setState(() {
+        _entries = parseStaticStories(page);
+        _indexFile = file;
+        _search.clear();
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = '索引加载失败：$error');
     } finally {
       if (mounted) setState(() => _checking = false);
     }
@@ -219,6 +247,7 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
       _error = null;
     });
     try {
+      final wasNew = _isNew;
       final previousEntry = _isNew ? null : _entry;
       await widget.service.publish(_config!, detail, file,
           isNew: _isNew, previousEntry: previousEntry);
@@ -235,6 +264,25 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
         _isNew = false;
       });
       showAppToast('帖子已发布');
+      try {
+        final root = await widget.service.loadIndex(_config!);
+        final refs = StoryIndexReference.parse(
+            root, widget.service.rootIndexFile(_config!));
+        final selected =
+            wasNew ? refs.first.file : _indexFile ?? refs.first.file;
+        final page = selected == refs.first.file
+            ? root
+            : await widget.service.loadIndexPage(_config!, selected);
+        if (mounted) {
+          setState(() {
+            _indexes = refs;
+            _indexFile = selected;
+            _entries = parseStaticStories(page);
+          });
+        }
+      } catch (error) {
+        if (mounted) setState(() => _error = '帖子已保存，但列表刷新失败：$error');
+      }
       if (provider.config == _config) await provider.loadCatalog(force: true);
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
@@ -418,6 +466,13 @@ class _StoryQuickEditScreenState extends State<StoryQuickEditScreen> {
                           placeholder: '搜索标题、编号、作者或标签',
                           onChanged: (_) => setState(() {}),
                         )),
+                    if (_indexes.isNotEmpty)
+                      StoryIndexSelector(
+                        indexes: _indexes,
+                        selected: _indexFile,
+                        loading: _busy || _checking,
+                        onSelected: _selectIndex,
+                      ),
                     SettingsSection(title: '帖子（${results.length}）', children: [
                       if (results.isEmpty)
                         SettingsRow(

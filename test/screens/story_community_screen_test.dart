@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:ai_chat/services/backend_http_client.dart';
 import 'package:ai_chat/config/theme.dart';
 import 'package:ai_chat/models/story_package.dart';
 import 'package:ai_chat/providers/story_provider.dart';
@@ -13,17 +17,26 @@ class _FeedProvider extends StoryProvider {
   @override
   Future<void> init() async {}
 
+  bool _busy = false;
   @override
-  List<StoryCatalogEntry> get entries => List.generate(
-        20,
-        (i) => StoryCatalogEntry.fromJson({
-          'storyId': 'post-$i',
-          'title': 'Post $i',
-          'summary': 'Story preview',
-          'tags': ['Romance'],
-          'file': 'assets/post-$i.json',
-        }),
-      );
+  bool get loading => _busy;
+  void setBusy(bool value) {
+    _busy = value;
+    notifyListeners();
+  }
+
+  @override
+  List<StoryCatalogEntry> get entries => _items;
+  final List<StoryCatalogEntry> _items = List.generate(
+    20,
+    (i) => StoryCatalogEntry.fromJson({
+      'storyId': 'post-$i',
+      'title': 'Post $i',
+      'summary': 'Story preview',
+      'tags': ['Romance'],
+      'file': 'assets/post-$i.json',
+    }),
+  );
 }
 
 void main() {
@@ -73,6 +86,97 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(search).dy, lessThan(searchTop));
     expect(tester.getTopLeft(tags).dy, lessThan(tagsTop));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('loading notifications reuse visible post widgets',
+      (tester) async {
+    final provider = _FeedProvider();
+    addTearDown(provider.dispose);
+    await tester.pumpWidget(ChangeNotifierProvider<StoryProvider>.value(
+        value: provider, child: themed(const StoryCommunityScreen())));
+    await tester.pumpAndSettle();
+    final card = find.byKey(const ValueKey('story-feed:post-0'));
+    final before = tester.widget(card);
+    final rendered = find.byWidgetPredicate((widget) =>
+        widget.key is ValueKey<String> &&
+        (widget.key as ValueKey<String>).value.startsWith('story-feed:'));
+    expect(rendered.evaluate().length, lessThan(provider.entries.length));
+    provider.setBusy(true);
+    await tester.pump();
+    expect(identical(tester.widget(card), before), isTrue);
+    provider.setBusy(false);
+    await tester.pumpAndSettle();
+    expect(identical(tester.widget(card), before), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'empty local search can load more and index switching replaces the feed',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    var calls = 0;
+    final provider = StoryProvider(
+        staticClient: BackendHttpClient(client: MockClient((request) async {
+      calls++;
+      final second = request.url.path.endsWith('index-2.json');
+      return http.Response(
+          jsonEncode({
+            if (!second)
+              'indexes': [
+                {'file': 'index.json', 'title': 'Latest'},
+                {'file': 'index-2.json', 'title': 'Archive'},
+              ],
+            'stories': [
+              {
+                'storyId': second ? 'second' : 'first',
+                'title': second ? 'Second post' : 'First post',
+                'file': second ? 'assets/second.json' : 'assets/first.json',
+                'tags': ['romance'],
+              }
+            ],
+          }),
+          200);
+    })));
+    addTearDown(provider.dispose);
+    await provider.saveConfig(const StorySourceConfig(
+        type: StorySourceType.cos, baseUrl: 'https://example.com'));
+    await tester.pumpWidget(ChangeNotifierProvider<StoryProvider>.value(
+        value: provider, child: themed(const StoryCommunityScreen())));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+    await tester.enterText(find.byType(CupertinoSearchTextField), 'Second');
+    await tester.tap(find.text('搜索'));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+    expect(find.text('First post'), findsNothing);
+    await tester.ensureVisible(find.text('加载更多故事'));
+    await tester.tap(find.text('加载更多故事'));
+    await tester.pumpAndSettle();
+    expect(calls, 2);
+    expect(find.text('Second post'), findsOneWidget);
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('story-index-selector')));
+    await tester.tap(find.byKey(const ValueKey('story-index-selector')));
+    await tester.pumpAndSettle();
+    final panel = find.byKey(const ValueKey('story-index-panel'));
+    expect(tester.getSize(panel).height,
+        tester.view.physicalSize.height / tester.view.devicePixelRatio * 0.5);
+    expect(
+        find.byKey(const ValueKey('story-index-panel-list')), findsOneWidget);
+    await tester.tap(find.text('Archive'));
+    await tester.pumpAndSettle();
+    expect(calls, 2);
+    expect(provider.loadedIndexes, ['index-2.json']);
+    expect(find.text('First post'), findsNothing);
+    expect(find.text('Second post'), findsOneWidget);
+    expect(
+        tester
+            .widget<CupertinoSearchTextField>(
+                find.byType(CupertinoSearchTextField))
+            .controller!
+            .text,
+        isEmpty);
     expect(tester.takeException(), isNull);
   });
 

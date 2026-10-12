@@ -14,6 +14,7 @@ import '../services/backend_http_client.dart';
 import '../services/story_service.dart';
 import '../utils/app_toast.dart';
 import '../widgets/character_avatar.dart';
+import '../widgets/story_index_selector.dart';
 import '../widgets/settings/settings_ui.dart';
 import 'story_community_settings_screen.dart';
 
@@ -26,9 +27,13 @@ class StoryCommunityScreen extends StatefulWidget {
 
 class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
   final _queryController = TextEditingController();
+  final _feedScroll = ScrollController();
   bool _ready = false;
   String? _selectedTag;
   StoryProvider? _provider;
+  List<StoryCatalogEntry>? _tagEntries;
+  List<String> _tags = const [];
+  final Map<String, _StoryFeedCard> _cardCache = {};
 
   @override
   void initState() {
@@ -43,11 +48,6 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
       if (provider.isConfigured) {
         await provider.loadCatalog();
       }
-      if (mounted) {
-        setState(() {
-          _ready = true;
-        });
-      }
     });
   }
 
@@ -57,6 +57,7 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
     // leaves the navigator; this also prevents late status notifications.
     _provider?.cancelRequests();
     _queryController.dispose();
+    _feedScroll.dispose();
     super.dispose();
   }
 
@@ -97,13 +98,18 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<StoryProvider>();
-    final tags = provider.entries.expand((entry) => entry.tags).toSet().toList()
-      ..sort();
-    final hasStateItem = !_ready || provider.entries.isEmpty;
-    final hasFooter = !hasStateItem &&
-        (provider.hasMore || provider.loadingMore || provider.error != null);
-    final feedCount =
-        hasStateItem ? 1 : provider.entries.length + (hasFooter ? 1 : 0);
+    final entries = provider.entries;
+    final unfiltered = provider.unfilteredEntries;
+    if (!identical(_tagEntries, unfiltered)) {
+      _tagEntries = unfiltered;
+      _tags = unfiltered.expand((entry) => entry.tags).toSet().toList()..sort();
+    }
+    final tags = _tags;
+    final hasStateItem = !_ready || entries.isEmpty;
+    final hasFooter = provider.hasMore ||
+        provider.loadingMore ||
+        (!hasStateItem && provider.error != null);
+    final feedCount = (hasStateItem ? 1 : entries.length) + (hasFooter ? 1 : 0);
 
     return CupertinoPageScaffold(
       navigationBar: settingsNavigationBar(
@@ -131,6 +137,7 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
       child: Builder(
         builder: (context) => CustomScrollView(
           key: const PageStorageKey<String>('story-community-feed-list'),
+          controller: _feedScroll,
           slivers: [
             // Reserve the scaffold's navigation inset only at the beginning.
             // The viewport stays full-height so content passes behind the
@@ -149,25 +156,41 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    if (hasStateItem) {
+                    if (hasStateItem && index == 0) {
                       return _buildFeedState(context, provider);
                     }
-                    if (index == provider.entries.length) {
+                    if (index == (hasStateItem ? 1 : entries.length)) {
                       return _buildFeedFooter(context, provider);
                     }
-                    final entry = provider.entries[index];
-                    return _StoryFeedCard(
-                      entry: entry,
-                      showDownloadCount: provider.supportsServerStats,
-                      onTap: () => Navigator.push(
-                        context,
-                        CupertinoPageRoute(
-                          builder: (_) => StoryDetailScreen(entry: entry),
-                        ),
-                      ),
-                    );
+                    final entry = entries[index];
+                    final previous = _cardCache.remove(entry.storyId);
+                    final card = previous != null &&
+                            identical(previous.entry, entry) &&
+                            previous.showDownloadCount ==
+                                provider.supportsServerStats
+                        ? previous
+                        : _StoryFeedCard(
+                            key: ValueKey('story-feed:${entry.storyId}'),
+                            entry: entry,
+                            showDownloadCount: provider.supportsServerStats,
+                            onTap: () => Navigator.push(
+                              this.context,
+                              CupertinoPageRoute(
+                                  builder: (_) =>
+                                      StoryDetailScreen(entry: entry)),
+                            ),
+                          );
+                    _cardCache[entry.storyId] = card;
+                    // Bound cached widgets to a small working set, not the
+                    // number of posts fetched over the whole session.
+                    if (_cardCache.length > 40) {
+                      _cardCache.remove(_cardCache.keys.first);
+                    }
+                    return card;
                   },
                   childCount: feedCount,
+                  addRepaintBoundaries:
+                      false, // Cards already isolate their painting.
                 ),
               ),
             ),
@@ -256,6 +279,27 @@ class _StoryCommunityScreenState extends State<StoryCommunityScreen> {
             ],
           ),
         ),
+        if (provider.config.type != StorySourceType.server &&
+            provider.indexes.isNotEmpty) ...[
+          StoryIndexSelector(
+            indexes: provider.indexes,
+            selected: provider.currentIndex,
+            loading: provider.loading,
+            onSelected: (file) async {
+              _queryController.clear();
+              setState(() => _selectedTag = null);
+              await provider.selectIndex(file);
+              if (mounted && _feedScroll.hasClients) _feedScroll.jumpTo(0);
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Text(
+                '搜索范围：已加载的 ${provider.loadedIndexes.length} 份索引；加载更多可扩大范围',
+                style:
+                    TextStyle(fontSize: 12, color: context.textSecondaryColor)),
+          ),
+        ],
         if (provider.usingCache)
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
@@ -416,6 +460,7 @@ class _StoryFeedCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const _StoryFeedCard({
+    super.key,
     required this.entry,
     required this.showDownloadCount,
     required this.onTap,
@@ -705,7 +750,8 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final characters = context.watch<CharacterProvider>().manageableCharacters;
+    final hasCharacters = context.select<CharacterProvider, bool>(
+        (provider) => provider.manageableCharacters.isNotEmpty);
     final story = _story;
     return CupertinoPageScaffold(
       navigationBar: settingsNavigationBar(context, widget.entry.title),
@@ -818,7 +864,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                   title: const Text('下载并安装'),
                   subtitle: const Text('仅首次导入故事记忆点，之后不会主动覆盖角色记录'),
                   trailing: const Icon(CupertinoIcons.arrow_right, size: 18),
-                  onTap: characters.isEmpty ? null : _install,
+                  onTap: hasCharacters ? _install : null,
                 ),
               ],
             ),
@@ -854,6 +900,10 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                 borderRadius: BorderRadius.circular(10),
                 child: Image.network(
                   detailUri.resolve(image).toString(),
+                  cacheWidth: (MediaQuery.sizeOf(context).width *
+                          MediaQuery.devicePixelRatioOf(context))
+                      .ceil()
+                      .clamp(1, 2048),
                   headers: StoryService.staticHeaders(
                       provider.config, detailUri.resolve(image)),
                   fit: BoxFit.cover,

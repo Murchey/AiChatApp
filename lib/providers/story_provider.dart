@@ -1,11 +1,13 @@
 import '../services/secure_config_storage.dart';
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/story_package.dart';
+import '../models/story_index.dart';
 import '../services/backend_http_client.dart';
 import '../services/story_service.dart';
 import 'backend_provider.dart';
@@ -43,7 +45,16 @@ class StoryProvider extends ChangeNotifier {
   bool _failedAppend = false;
   final _packageScopes = <BackendRequestScope>{};
   StorySourceConfig get config => _config;
-  List<StoryCatalogEntry> get entries => List.unmodifiable(_entries);
+  List<StoryCatalogEntry>? _entriesBacking, _unfilteredBacking;
+  List<StoryCatalogEntry> _entriesView = const [], _unfilteredView = const [];
+  List<StoryCatalogEntry> get entries {
+    if (!identical(_entriesBacking, _entries)) {
+      _entriesBacking = _entries;
+      _entriesView = UnmodifiableListView(_entries);
+    }
+    return _entriesView;
+  }
+
   bool get loading => _loading;
   bool get loadingMore => _loadingMore;
   bool get hasMore => _hasMore;
@@ -60,6 +71,277 @@ class StoryProvider extends ChangeNotifier {
         _ => _config.indexUrl.trim().isNotEmpty ||
             _config.repository.trim().isNotEmpty,
       };
+  List<StoryIndexReference> _indexes = [];
+  final Map<String, Map<String, dynamic>> _indexPages = {};
+  final Map<String, int> _indexTimes = {};
+  final List<String> _loadedIndexes = [];
+  String? _currentIndex;
+  Future<void>? _staticFuture;
+  String? _staticRequestKey;
+  String? _failedIndexSelection;
+  List<StoryIndexReference> get indexes => List.unmodifiable(_indexes);
+  String? get currentIndex => _currentIndex;
+  List<String> get loadedIndexes => List.unmodifiable(_loadedIndexes);
+  List<StoryCatalogEntry> get unfilteredEntries {
+    if (config.type == StorySourceType.server) return entries;
+    if (!identical(_unfilteredBacking, _cachedEntries)) {
+      _unfilteredBacking = _cachedEntries;
+      _unfilteredView = UnmodifiableListView(_cachedEntries);
+    }
+    return _unfilteredView;
+  }
+
+  final Map<String, Map<String, dynamic>> _parsedPageData = {};
+  final Map<String, List<StoryCatalogEntry>> _parsedPages = {};
+  List<StoryCatalogEntry> _parseIndexPage(
+      String file, Map<String, dynamic> data) {
+    if (!identical(_parsedPageData[file], data)) {
+      _parsedPages[file] = parseStaticStories(data);
+      _parsedPageData[file] = data;
+    }
+    return _parsedPages[file]!;
+  }
+
+  String get _rootIndex =>
+      StoryService.staticIndexUri(_config).pathSegments.last;
+  String get _pageCacheKey => _cacheKey.replaceFirst(
+      'story_catalog_cache_v1_', 'story_catalog_pages_v2_');
+
+  void _resetIndexes() {
+    _indexes = [];
+    _indexPages.clear();
+    _parsedPages.clear();
+    _parsedPageData.clear();
+    _indexTimes.clear();
+    _loadedIndexes.clear();
+    _currentIndex = null;
+    _failedIndexSelection = null;
+  }
+
+  void _applyStaticFilter(String query, String tag,
+      {bool rebuildCatalog = false}) {
+    _query = query;
+    _tag = tag;
+    if (rebuildCatalog) {
+      final all = <String, StoryCatalogEntry>{};
+      for (final file in _loadedIndexes) {
+        for (final entry in _parseIndexPage(file, _indexPages[file]!)) {
+          all.putIfAbsent(entry.storyId, () => entry);
+        }
+      }
+      _cachedEntries = all.values.toList(growable: false);
+    }
+    _entries = _filter(_cachedEntries, query, tag);
+    final last = _loadedIndexes.isEmpty
+        ? -1
+        : _indexes.indexWhere((v) => v.file == _loadedIndexes.last);
+    _hasMore = last >= 0 && last < _indexes.length - 1;
+  }
+
+  Future<void> _restoreIndexPages(SharedPreferences prefs) async {
+    final raw = prefs.getString(_pageCacheKey);
+    if (raw == null) return;
+    try {
+      final snapshot = jsonDecode(raw) as Map;
+      final pages = snapshot['pages'] as Map;
+      for (final item in pages.entries) {
+        final page = item.value as Map;
+        final data = Map<String, dynamic>.from(page['data'] as Map);
+        _parseIndexPage(item.key as String, data);
+        _indexPages[item.key as String] = data;
+        _indexTimes[item.key as String] = page['time'] as int;
+      }
+      final root = _indexPages[_rootIndex];
+      if (root == null) return;
+      _indexes = StoryIndexReference.parse(root, _rootIndex);
+      _loadedIndexes.add(_rootIndex);
+      _currentIndex = _rootIndex;
+      _applyStaticFilter('', '', rebuildCatalog: true);
+      _usingCache = true;
+    } catch (_) {
+      _resetIndexes();
+    }
+  }
+
+  Future<void> _saveIndexPages() async {
+    final cacheKey = _pageCacheKey;
+    final legacyKey = _cacheKey;
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final snapshot = {
+      'access': now,
+      'pages': {
+        for (final item in _indexPages.entries)
+          item.key: {
+            'data': item.value,
+            'time': _indexTimes[item.key] ?? 0,
+          }
+      },
+    };
+    await prefs.setString(cacheKey, jsonEncode(snapshot));
+    // Remove legacy static catalog snapshots after migrating to page caches.
+    await prefs.remove(legacyKey);
+    final records = <({String key, int time, int bytes})>[];
+    for (final key in prefs
+        .getKeys()
+        .where((v) => v.startsWith('story_catalog_pages_v2_'))) {
+      final raw = prefs.getString(key) ?? '';
+      var access = 0;
+      try {
+        access = (jsonDecode(raw) as Map)['access'] as int;
+      } catch (_) {}
+      records.add((key: key, time: access, bytes: utf8.encode(raw).length));
+    }
+    records.sort((a, b) => b.time.compareTo(a.time));
+    var bytes = 0;
+    for (var i = 0; i < records.length; i++) {
+      final item = records[i];
+      if (i >= 5 || bytes + item.bytes > 5 * 1024 * 1024) {
+        await prefs.remove(item.key);
+      } else {
+        bytes += item.bytes;
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> _readIndexPage(
+      String file, BackendRequestScope scope,
+      {required bool force}) async {
+    final cached = _indexPages[file];
+    final time = _indexTimes[file] ?? 0;
+    if (!force &&
+        cached != null &&
+        DateTime.now().millisecondsSinceEpoch - time < 5 * 60 * 1000) {
+      return cached;
+    }
+    final root = StoryService.staticIndexUri(_config);
+    final uri = root.resolve(file);
+    final value = _usesDefaultStaticClient
+        ? await StoryService.getStaticJson(_config, uri,
+            filePath: StoryService.staticFilePath(_config, uri))
+        : await _staticClient.getJson(uri, scope: scope);
+    scope.check();
+    final data = value is List
+        ? <String, dynamic>{'stories': value}
+        : value is Map
+            ? Map<String, dynamic>.from(value)
+            : throw const FormatException('索引格式无效');
+    _parseIndexPage(file, data);
+    if (file == _rootIndex) StoryIndexReference.parse(data, _rootIndex);
+    return data;
+  }
+
+  Future<void> selectIndex(String file) async {
+    await init();
+    if (!_indexes.any((v) => v.file == file)) return;
+    await _staticCatalog('', '', selected: file);
+  }
+
+  Future<void> _staticCatalog(String q, String t,
+      {bool append = false, bool force = false, String? selected}) {
+    final key = '$q/$t/$append/$force/$selected/$_currentIndex';
+    if (_loading && _staticRequestKey == key && _staticFuture != null) {
+      return _staticFuture!;
+    }
+    _staticRequestKey = key;
+    final future = _loadStaticCatalog(q, t,
+        append: append, force: force, selected: selected);
+    _staticFuture = future;
+    return future;
+  }
+
+  Future<void> _loadStaticCatalog(String q, String t,
+      {bool append = false, bool force = false, String? selected}) async {
+    if (append && !_hasMore) return;
+    cancelCatalog();
+    final generation = _generation;
+    final scope = BackendRequestScope();
+    _catalogScope = scope;
+    _loading = true;
+    _loadingMore = append;
+    _failedAppend = append;
+    _failedIndexSelection = selected;
+    _error = null;
+    _notify();
+    try {
+      final staged = <String, Map<String, dynamic>>{};
+      var directory = _indexes;
+      String target;
+      if (force) {
+        staged[_rootIndex] =
+            await _readIndexPage(_rootIndex, scope, force: true);
+        directory = StoryIndexReference.parse(staged[_rootIndex], _rootIndex);
+        final refresh = _loadedIndexes
+            .where((v) => directory.any((p) => p.file == v))
+            .toList();
+        if (refresh.isEmpty) refresh.add(_rootIndex);
+        for (final file in refresh) {
+          if (file != _rootIndex) {
+            staged[file] = await _readIndexPage(file, scope, force: true);
+          }
+        }
+        target = refresh.first;
+      } else if (selected != null) {
+        target = selected;
+        staged[target] = await _readIndexPage(target, scope, force: false);
+        if (target == _rootIndex) {
+          directory = StoryIndexReference.parse(staged[target], _rootIndex);
+        }
+      } else if (append) {
+        final last = directory.indexWhere((v) => v.file == _loadedIndexes.last);
+        target = directory[last + 1].file;
+        staged[target] = await _readIndexPage(target, scope, force: false);
+      } else {
+        target = _rootIndex;
+        staged[target] = await _readIndexPage(target, scope, force: false);
+        directory = StoryIndexReference.parse(staged[target], _rootIndex);
+      }
+      scope.check();
+      if (generation != _generation) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final item in staged.entries) {
+        if (!identical(_indexPages[item.key], item.value)) {
+          _indexTimes[item.key] = now;
+        }
+        _indexPages[item.key] = item.value;
+      }
+      _indexes = directory;
+      final allowed = directory.map((v) => v.file).toSet();
+      _indexPages.removeWhere((k, v) => !allowed.contains(k));
+      _indexTimes.removeWhere((k, v) => !allowed.contains(k));
+      _parsedPages.removeWhere((k, v) => !allowed.contains(k));
+      _parsedPageData.removeWhere((k, v) => !allowed.contains(k));
+      if (force) {
+        _loadedIndexes.removeWhere((v) => !allowed.contains(v));
+        if (_loadedIndexes.isEmpty) _loadedIndexes.add(target);
+      } else if (append) {
+        if (!_loadedIndexes.contains(target)) _loadedIndexes.add(target);
+      } else {
+        _loadedIndexes
+          ..clear()
+          ..add(target);
+      }
+      _currentIndex = _loadedIndexes.first;
+      _failedIndexSelection = null;
+      _usingCache = !force &&
+          staged.entries.every((v) => (_indexTimes[v.key] ?? 0) < now);
+      _applyStaticFilter(q, t, rebuildCatalog: true);
+      await _saveIndexPages();
+    } catch (error) {
+      if (generation == _generation && error is! RequestCancelled) {
+        _error = readableError(error);
+        _usingCache = _indexPages.isNotEmpty || _cachedEntries.isNotEmpty;
+      }
+    } finally {
+      if (generation == _generation && !_disposed) {
+        _loading = false;
+        _loadingMore = false;
+        _catalogScope = null;
+        _notify();
+      }
+    }
+  }
+
   void _notify() {
     if (!_disposed) notifyListeners();
   }
@@ -140,6 +422,7 @@ class StoryProvider extends ChangeNotifier {
     if (jsonEncode(sanitized.toJson()) == jsonEncode(_config.toJson())) return;
     cancelRequests();
     _config = sanitized;
+    _resetIndexes();
     _entries = const [];
     _cachedEntries = const [];
     _query = '';
@@ -184,6 +467,10 @@ class StoryProvider extends ChangeNotifier {
   String get _cacheKey =>
       'story_catalog_cache_v1_${sha256.convert(utf8.encode(jsonEncode(_config.toJson())))}';
   Future<void> _restoreCache(SharedPreferences prefs) async {
+    if (_config.type != StorySourceType.server && isConfigured) {
+      await _restoreIndexPages(prefs);
+      if (_indexPages.isNotEmpty) return;
+    }
     try {
       final raw = prefs.getString(_cacheKey);
       if (raw == null) return;
@@ -202,6 +489,30 @@ class StoryProvider extends ChangeNotifier {
     if (_disposed) return;
     if (!isConfigured) return;
     final q = query?.trim() ?? '', t = tag?.trim() ?? '';
+    if (_config.type != StorySourceType.server) {
+      if (!append && !force && (query != null || tag != null)) {
+        // Search never starts a download, even during the initial page load.
+        // Reuse that in-flight result rather than requesting the root again.
+        final generation = _generation;
+        if (_loading && _loadedIndexes.isEmpty) {
+          await _staticFuture;
+          if (_disposed || generation != _generation) return;
+        }
+        cancelCatalog();
+        _error = null;
+        if (_loadedIndexes.isEmpty) {
+          _query = q;
+          _tag = t;
+          _entries = _filter(_cachedEntries, q, t);
+        } else {
+          _applyStaticFilter(q, t);
+        }
+        _notify();
+        return;
+      }
+      return _staticCatalog(q, t, append: append, force: force);
+    }
+
     if (!force &&
         !append &&
         q.isEmpty &&
@@ -338,6 +649,13 @@ class StoryProvider extends ChangeNotifier {
 
   /// Return to the unfiltered cached feed without touching the network.
   void restoreCachedCatalog() {
+    if (_config.type != StorySourceType.server && _loadedIndexes.isNotEmpty) {
+      cancelCatalog();
+      _applyStaticFilter('', '');
+      _error = null;
+      _notify();
+      return;
+    }
     if (_cachedEntries.isEmpty) return;
     cancelCatalog();
     _entries = _cachedEntries;
@@ -348,8 +666,14 @@ class StoryProvider extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> retryCatalog({String? query, String? tag}) =>
-      loadCatalog(query: query, tag: tag, append: _failedAppend);
+  Future<void> retryCatalog({String? query, String? tag}) {
+    if (_config.type != StorySourceType.server) {
+      return _staticCatalog(query?.trim() ?? '', tag?.trim() ?? '',
+          append: _failedAppend, selected: _failedIndexSelection);
+    }
+    return loadCatalog(query: query, tag: tag, append: _failedAppend);
+  }
+
   Future<StoryPackage> loadPackage(StoryCatalogEntry entry,
       {BackendRequestScope? scope}) async {
     await init();
@@ -368,7 +692,7 @@ class StoryProvider extends ChangeNotifier {
             StoryService.staticIndexUri(source), entry.file);
         final decoded = _usesDefaultStaticClient
             ? await StoryService.getStaticJson(source, uri,
-                filePath: entry.file,
+                filePath: StoryService.staticFilePath(source, uri),
                 requestTimeout: const Duration(seconds: 20))
             : await _staticClient.getJson(uri,
                 scope: operation, requestTimeout: const Duration(seconds: 20));
@@ -456,6 +780,7 @@ class StoryProvider extends ChangeNotifier {
   List<StoryCatalogEntry> _filter(
       List<StoryCatalogEntry> values, String query, String tag) {
     final q = query.toLowerCase(), t = tag.toLowerCase();
+    if (q.isEmpty && t.isEmpty) return values;
     return values
         .where((entry) =>
             (q.isEmpty ||

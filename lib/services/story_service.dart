@@ -290,6 +290,18 @@ class StoryService {
     );
   }
 
+  static String staticFilePath(StorySourceConfig config, Uri uri) {
+    if (uri.host == 'raw.githubusercontent.com') {
+      return uri.pathSegments.skip(3).join('/');
+    }
+    if (uri.host == 'gitee.com' &&
+        uri.pathSegments.length > 4 &&
+        uri.pathSegments[2] == 'raw') {
+      return uri.pathSegments.skip(4).join('/');
+    }
+    return uri.path.replaceFirst(RegExp(r'^/+'), '');
+  }
+
   static Uri resolveStaticFile(Uri indexUri, String file) {
     if (file.trim().isEmpty) throw const FormatException('故事条目缺少文件地址');
     final direct = Uri.tryParse(file.trim());
@@ -353,7 +365,8 @@ class StoryService {
     final response = await http
         .delete(uri, headers: staticHeaders(config, uri, method: 'DELETE'))
         .timeout(requestTimeout ?? StoryService.requestTimeout);
-    if (response.statusCode != 404 && (response.statusCode < 200 || response.statusCode >= 300)) {
+    if (response.statusCode != 404 &&
+        (response.statusCode < 200 || response.statusCode >= 300)) {
       throw HttpException('对象存储对象删除失败（HTTP ${response.statusCode}）');
     }
   }

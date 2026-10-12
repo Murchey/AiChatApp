@@ -62,7 +62,7 @@ void main() {
     backend.dispose();
   });
   test(
-      'identical concurrent refreshes are coalesced, a new query cancels old query',
+      'identical refreshes coalesce and initial search uses the pending download',
       () async {
     final first = Completer<http.Response>(), entered = Completer<void>();
     var calls = 0;
@@ -84,12 +84,15 @@ void main() {
     final duplicate = stories.loadCatalog();
     await Future<void>.delayed(Duration.zero);
     expect(calls, 1);
-    final newQuery = stories.loadCatalog(query: 'new');
-    await Future.wait([load, duplicate, newQuery]);
+    final newQuery = stories.loadCatalog(query: 'old');
+    await Future<void>.delayed(Duration.zero);
+    expect(calls, 1);
     first.complete(jsonResponse({
       'stories': [catalogEntry('old')]
     }));
-    expect(stories.entries.single.storyId, 'new');
+    await Future.wait([load, duplicate, newQuery]);
+    expect(stories.entries.single.storyId, 'old');
+    expect(calls, 1);
     stories.dispose();
   });
   test('changing source cancels response and does not mix old data', () async {
