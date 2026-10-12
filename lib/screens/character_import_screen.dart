@@ -53,6 +53,7 @@ class CharacterImportScreen extends StatefulWidget {
 
 class _CharacterImportScreenState extends State<CharacterImportScreen> {
   late final Set<String> _selected;
+  bool _importing = false;
 
   @override
   void initState() {
@@ -65,6 +66,8 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
   }
 
   Future<void> _import() async {
+    if (_importing) return;
+
     final provider = context.read<CharacterProvider>();
     // 记忆点写入器：循环中多次 await，提前取引用避免 async gap
     final memoryProvider = context.read<MemoryPointProvider>();
@@ -79,98 +82,150 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
     final selectedEntries = widget.entries
         .where((e) => _selected.contains(e.folderName) && e.error == null)
         .toList();
-    final conflictNames = selectedEntries
-        .map((e) => e.character.name.trim())
-        .where((n) => n.isNotEmpty && usedNames.contains(n))
-        .toList();
+    if (selectedEntries.isEmpty) return;
 
-    // 多角色包里同名较多时：一次确认批量覆盖，避免逐个点覆盖
-    _BatchConflictAction batch = _BatchConflictAction.askEach;
-    if (conflictNames.isNotEmpty) {
-      if (!mounted) return;
-      final choice = await _promptBatchConflict(conflictNames);
-      if (choice == null || !mounted) return; // 取消整次导入
-      batch = choice;
-    }
-
-    var batchOverwrite = batch == _BatchConflictAction.overwriteAll;
-    var batchSkip = batch == _BatchConflictAction.skipDuplicates;
-
-    for (final entry in selectedEntries) {
-      var name = entry.character.name.trim();
-      if (name.isEmpty) continue;
-
-      // 与已有角色重名
-      if (usedNames.contains(name)) {
-        if (batchOverwrite) {
-          // 批量覆盖：不再弹窗
-        } else if (batchSkip) {
-          continue;
-        } else {
-          if (!mounted) return;
-          final decision = await _promptDuplicate(context, name, usedNames);
-          if (!mounted) return;
-          if (decision == null) continue;
-          if (decision.overwrite) {
-            await _overwriteExisting(
-              provider: provider,
-              memoryProvider: memoryProvider,
-              name: name,
-              entry: entry,
-            );
-            count++;
-            continue;
-          }
-          name = decision.newName ?? name;
-        }
-
-        if (batchOverwrite) {
-          await _overwriteExisting(
-            provider: provider,
-            memoryProvider: memoryProvider,
-            name: name,
-            entry: entry,
-          );
-          count++;
-          continue;
-        }
-      }
-
-      usedNames.add(name);
-
-      // 重新生成 id，避免与已导入角色冲突；重名角色写入修改后的名称
-      final json = entry.character.toJson()
-        ..['id'] = uuid.v4()
-        ..['name'] = name;
-      final character = Character.fromJson(json);
-      await provider.addCharacter(character);
-      // 写入随角色包带来的持久化记忆点（新角色无旧记忆，等价于追加）
-      if (entry.memoryPoints.isNotEmpty) {
-        await memoryProvider.replacePoints(character.id, entry.memoryPoints);
-      }
-      // 角色删除后重新导入：把指向旧角色的孤儿会话重新关联到新角色
-      if (!mounted) return;
-      relinkOrphanedConversations(context: context, character: character);
-      count++;
-    }
-    if (!mounted) return;
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('导入成功'),
-        content: Text('已导入 $count 个角色，可在通讯录中查看'),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pop(context);
-            },
-            child: const Text('确定'),
-          ),
-        ],
-      ),
+    setState(() => _importing = true);
+    final progress = _CharacterImportProgress(
+      completed: 0,
+      total: selectedEntries.length,
+      status: '正在准备导入...',
     );
+    BuildContext? progressContext;
+    final progressFuture = showCupertinoDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        progressContext = dialogContext;
+        return _CharacterImportProgressDialog(progress: progress);
+      },
+    );
+    void closeProgress() {
+      final dialogContext = progressContext;
+      progressContext = null;
+      if (dialogContext != null && dialogContext.mounted) {
+        Navigator.of(dialogContext).pop();
+      }
+    }
+
+    // 等待进度弹窗完成入场，再显示可能存在的同名处理弹窗。
+    await Future<void>.delayed(Duration.zero);
+
+    try {
+      final conflictNames = selectedEntries
+          .map((e) => e.character.name.trim())
+          .where((n) => n.isNotEmpty && usedNames.contains(n))
+          .toList();
+
+      // 多角色包里同名较多时：一次确认批量覆盖，避免逐个点覆盖
+      _BatchConflictAction batch = _BatchConflictAction.askEach;
+      if (conflictNames.isNotEmpty) {
+        progress.status = '请处理同名角色';
+        progress.notify();
+        final choice = await _promptBatchConflict(conflictNames);
+        if (choice == null || !mounted) return;
+        batch = choice;
+      }
+
+      var batchOverwrite = batch == _BatchConflictAction.overwriteAll;
+      var batchSkip = batch == _BatchConflictAction.skipDuplicates;
+
+      for (var index = 0; index < selectedEntries.length; index++) {
+        final entry = selectedEntries[index];
+        progress.status = '正在导入 ${index + 1}/${selectedEntries.length}';
+        progress.completed = index;
+        progress.notify();
+
+        try {
+          var name = entry.character.name.trim();
+          if (name.isEmpty) continue;
+
+          // 与已有角色重名
+          if (usedNames.contains(name)) {
+            if (batchOverwrite) {
+              // 批量覆盖：不再弹窗
+            } else if (batchSkip) {
+              continue;
+            } else {
+              if (!mounted) return;
+              final decision = await _promptDuplicate(context, name, usedNames);
+              if (!mounted) return;
+              if (decision == null) continue;
+              if (decision.overwrite) {
+                await _overwriteExisting(
+                  provider: provider,
+                  memoryProvider: memoryProvider,
+                  name: name,
+                  entry: entry,
+                );
+                count++;
+                continue;
+              }
+              name = decision.newName ?? name;
+            }
+
+            if (batchOverwrite) {
+              await _overwriteExisting(
+                provider: provider,
+                memoryProvider: memoryProvider,
+                name: name,
+                entry: entry,
+              );
+              count++;
+              continue;
+            }
+          }
+
+          usedNames.add(name);
+
+          // 重新生成 id，避免与已导入角色冲突；重名角色写入修改后的名称
+          final json = entry.character.toJson()
+            ..['id'] = uuid.v4()
+            ..['name'] = name;
+          final character = Character.fromJson(json);
+          await provider.addCharacter(character);
+          // 写入随角色包带来的持久化记忆点（新角色无旧记忆，等价于追加）
+          if (entry.memoryPoints.isNotEmpty) {
+            await memoryProvider.replacePoints(
+                character.id, entry.memoryPoints);
+          }
+          // 角色删除后重新导入：把指向旧角色的孤儿会话重新关联到新角色
+          if (!mounted) return;
+          relinkOrphanedConversations(context: context, character: character);
+          count++;
+        } finally {
+          progress.completed = index + 1;
+          progress.notify();
+        }
+      }
+
+      if (!mounted) return;
+      progress.status = '导入完成';
+      progress.completed = progress.total;
+      progress.notify();
+      closeProgress();
+
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('导入成功'),
+          content: Text('已导入 $count 个角色，可在通讯录中查看'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.pop(context);
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      closeProgress();
+      await progressFuture;
+      if (mounted) setState(() => _importing = false);
+    }
   }
 
   /// 覆盖已有同名角色：保留原 id 与聊天记录，替换资料/提示词，合并朋友圈与记忆点
@@ -226,8 +281,7 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
             child: const Text('取消导入'),
           ),
           CupertinoDialogAction(
-            onPressed: () =>
-                Navigator.pop(ctx, _BatchConflictAction.askEach),
+            onPressed: () => Navigator.pop(ctx, _BatchConflictAction.askEach),
             child: const Text('逐个处理'),
           ),
           CupertinoDialogAction(
@@ -379,7 +433,7 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: CupertinoButton.filled(
-                onPressed: selectedCount == 0 ? null : _import,
+                onPressed: selectedCount == 0 || _importing ? null : _import,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 16,
@@ -387,7 +441,11 @@ class _CharacterImportScreenState extends State<CharacterImportScreen> {
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
-                    selectedCount == 0 ? '请选择要导入的角色' : '确定导入 ($selectedCount)',
+                    _importing
+                        ? '正在导入...'
+                        : selectedCount == 0
+                            ? '请选择要导入的角色'
+                            : '确定导入 ($selectedCount)',
                     maxLines: 1,
                     style: const TextStyle(
                       fontSize: 15,
@@ -591,6 +649,94 @@ class _DuplicateCharacterDialogState extends State<_DuplicateCharacterDialog> {
           child: Text(_overwrite ? '覆盖导入' : '确定'),
         ),
       ],
+    );
+  }
+}
+
+/// 导入进度状态。弹窗在整个导入期间保持显示，同时允许同名确认弹窗叠加。
+class _CharacterImportProgress extends ChangeNotifier {
+  int completed;
+  int total;
+  String status;
+
+  _CharacterImportProgress({
+    required this.completed,
+    required this.total,
+    required this.status,
+  });
+
+  double get fraction => total == 0 ? 1 : (completed / total).clamp(0, 1);
+
+  void notify() => notifyListeners();
+}
+
+class _CharacterImportProgressDialog extends StatelessWidget {
+  const _CharacterImportProgressDialog({required this.progress});
+
+  final _CharacterImportProgress progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoAlertDialog(
+      key: const ValueKey('character-import-progress-dialog'),
+      title: const Text('正在导入角色'),
+      content: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: ListenableBuilder(
+          listenable: progress,
+          builder: (context, _) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  progress.status,
+                  key: const ValueKey('character-import-progress-text'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  height: 6,
+                  width: double.infinity,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.systemGrey5.resolveFrom(context),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FractionallySizedBox(
+                        widthFactor: progress.fraction,
+                        child: DecoratedBox(
+                          key: const ValueKey(
+                            'character-import-progress-bar',
+                          ),
+                          decoration: BoxDecoration(
+                            color: context.accentColor,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${progress.completed}/${progress.total}',
+                  key: const ValueKey('character-import-progress-count'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 }
