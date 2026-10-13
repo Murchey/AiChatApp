@@ -51,6 +51,8 @@ class BackendProvider extends ChangeNotifier {
   String? get error => _error;
   bool get isConfigured => _config.hasEndpoint;
   bool get isAuthenticated => _config.hasSession;
+  bool get isAccountLoggedIn =>
+      isAuthenticated && _config.accountUserId.isNotEmpty;
   bool get storiesEnabled => _capabilities?.storiesEnabled ?? false;
   void _notify() {
     if (!_disposed) notifyListeners();
@@ -94,7 +96,7 @@ class BackendProvider extends ChangeNotifier {
         }
       }
     } catch (_) {
-      storageNotice = '安全存储不可用，仅保留本次启动的短期令牌，重启后需要重新绑定';
+      storageNotice = '安全存储不可用，仅保留本次启动的短期令牌，重启后需要重新登录或绑定';
     }
     _status = isConfigured
         ? BackendConnectionStatus.idle
@@ -136,6 +138,8 @@ class BackendProvider extends ChangeNotifier {
     _checkedAt = null;
     _retryAt = null;
     _config = candidate.copyWith(
+        accountUserId: '',
+        accountUsername: changed ? '' : candidate.accountUsername,
         accessToken: manualAccessToken?.trim() ?? '',
         refreshToken: '',
         clearAccessExpiry: true,
@@ -161,7 +165,7 @@ class BackendProvider extends ChangeNotifier {
       final pair = await _auth.exchangeInvite(_config, inviteCode,
           label: label, scope: scope);
       _guard(epoch);
-      _config = _applyTokens(pair);
+      _config = _applyTokens(pair).copyWith(accountUserId: '');
       await _persist();
       _guard(epoch);
       _status = BackendConnectionStatus.connected;
@@ -181,9 +185,12 @@ class BackendProvider extends ChangeNotifier {
     if (_refreshFuture != null) return _refreshFuture!;
     final future = _refreshInternal();
     _refreshFuture = future;
-    future.whenComplete(() {
+    void cleanup() {
       if (identical(_refreshFuture, future)) _refreshFuture = null;
-    });
+    }
+
+    future.then<void>((_) => cleanup(),
+        onError: (Object _, StackTrace __) => cleanup());
     return future;
   }
 
@@ -193,7 +200,7 @@ class BackendProvider extends ChangeNotifier {
     if (_config.refreshToken.isEmpty) {
       await clearSession(cancelRequests: false);
       _status = BackendConnectionStatus.unauthorized;
-      _error = '服务器登录已失效，请重新绑定设备';
+      _error = '服务器登录已失效，请重新登录或绑定设备';
       _notify();
       return null;
     }
@@ -209,6 +216,12 @@ class BackendProvider extends ChangeNotifier {
     } catch (error) {
       if (epoch != _epoch || _disposed || error is RequestCancelled) {
         return null;
+      }
+      if (error is! BackendException || !error.isUnauthorized) {
+        _status = BackendConnectionStatus.error;
+        _error = errorMessage(error);
+        _notify();
+        rethrow;
       }
       await clearSession(cancelRequests: false);
       _status = BackendConnectionStatus.unauthorized;
@@ -442,7 +455,7 @@ class BackendProvider extends ChangeNotifier {
     if (error.isUnauthorized && !_disposed) {
       await clearSession(cancelRequests: false);
       _status = BackendConnectionStatus.unauthorized;
-      _error = '服务器登录已失效，请重新绑定设备';
+      _error = '服务器登录已失效，请重新登录或绑定设备';
       _notify();
     }
   }
@@ -452,6 +465,7 @@ class BackendProvider extends ChangeNotifier {
     if (cancelRequests) _client.cancelAll();
     _refreshFuture = null;
     _config = _config.copyWith(
+        accountUserId: '',
         accessToken: '',
         refreshToken: '',
         clearAccessExpiry: true,
@@ -473,12 +487,40 @@ class BackendProvider extends ChangeNotifier {
   }
 
   BackendConfig _applyTokens(DeviceTokenPair pair) => _config.copyWith(
+      deviceId: pair.deviceId,
+      accountUserId: pair.userId,
+      accountUsername: pair.username,
       accessToken: pair.accessToken,
       refreshToken: pair.refreshToken,
       accessExpiresAt: pair.accessExpiresAt,
       refreshExpiresAt: pair.refreshExpiresAt,
       clearAccessExpiry: pair.accessExpiresAt == null,
       clearRefreshExpiry: pair.refreshExpiresAt == null);
+
+  Future<void> authenticateAccount(String username, String password,
+      {bool register = false}) async {
+    await init();
+    await refreshStatus();
+    if (_capabilities?.features['accountAuth'] != true) {
+      throw const BackendException(
+          code: 'FEATURE_DISABLED', message: '此服务器不支持账号认证，请使用高级认证或升级服务器');
+    }
+    final epoch = _epoch;
+    final pair = await _auth.authenticateAccount(_config, username, password,
+        register: register);
+    _guard(epoch);
+    _epoch++;
+    _client.cancelAll();
+    _refreshFuture = null;
+    _config = _applyTokens(pair);
+    final sessionEpoch = _epoch;
+    await _persist();
+    _guard(sessionEpoch);
+    _status = BackendConnectionStatus.connected;
+    _error = null;
+    _notify();
+  }
+
   Future<void> _persist() {
     // Writes are ordered so a late write cannot restore a revoked session.
     final snapshot = _config;
@@ -499,7 +541,7 @@ class BackendProvider extends ChangeNotifier {
               .write(jsonEncode(snapshot.toJson(includeSecrets: true)));
         }
       } catch (_) {
-        storageNotice = '安全存储不可用，仅保留本次启动的短期令牌，重启后需要重新绑定';
+        storageNotice = '安全存储不可用，仅保留本次启动的短期令牌，重启后需要重新登录或绑定';
         // Never keep long-lived credentials when secure storage is unavailable.
         _config = _config.copyWith(refreshToken: '', clearRefreshExpiry: true);
       }

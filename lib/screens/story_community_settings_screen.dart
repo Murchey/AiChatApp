@@ -31,6 +31,9 @@ class _StoryCommunitySettingsScreenState
   final _tokenController = TextEditingController();
   final _deviceIdController = TextEditingController();
   final _inviteController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _advancedAuth = false;
   final _indexController = TextEditingController();
   final _repositoryController = TextEditingController();
   final _branchController = TextEditingController();
@@ -69,6 +72,7 @@ class _StoryCommunitySettingsScreenState
       await workshop?.init();
       if (!mounted) return;
       _loadControllers(provider.config);
+      _usernameController.text = backend.config.accountUsername;
       if (backend.config.deviceId.isNotEmpty) {
         _deviceIdController.text = backend.config.deviceId;
       }
@@ -98,6 +102,8 @@ class _StoryCommunitySettingsScreenState
       _tokenController,
       _deviceIdController,
       _inviteController,
+      _usernameController,
+      _passwordController,
       _indexController,
       _repositoryController,
       _branchController,
@@ -159,6 +165,23 @@ class _StoryCommunitySettingsScreenState
     }
   }
 
+  Future<void> _accountAuth(bool register) async {
+    final backend = context.read<StoryProvider>().backend;
+    final password = _passwordController.text;
+    try {
+      await _saveConfig();
+      await backend.authenticateAccount(_usernameController.text, password,
+          register: register);
+      if (!mounted) return;
+      _deviceIdController.text = backend.config.deviceId;
+      _usernameController.text = backend.config.accountUsername;
+      _tokenController.clear();
+      showAppToast(register ? '注册并登录成功' : '服务器登录成功');
+    } finally {
+      if (mounted) _passwordController.clear();
+    }
+  }
+
   Future<void> _testConnection() async {
     final provider = context.read<StoryProvider>();
     try {
@@ -172,6 +195,7 @@ class _StoryCommunitySettingsScreenState
 
   @override
   Widget build(BuildContext context) {
+    context.watch<BackendProvider>();
     final provider = context.watch<StoryProvider>();
     final config = provider.config;
     return CupertinoPageScaffold(
@@ -276,11 +300,14 @@ class _StoryCommunitySettingsScreenState
                           BackendConnectionStatus.unconfigured => '尚未配置',
                           BackendConnectionStatus.idle => '等待连接',
                           BackendConnectionStatus.checking => '正在检查连接',
-                          BackendConnectionStatus.connected =>
-                            backend.isAuthenticated
-                                ? '已连接 · 设备已绑定'
-                                : '已连接 · 公共浏览',
-                          BackendConnectionStatus.unauthorized => '登录已失效，请重新绑定',
+                          BackendConnectionStatus.connected => backend
+                                  .isAccountLoggedIn
+                              ? '已连接 · 账号 ${backend.config.accountUsername} 已登录'
+                              : backend.isAuthenticated
+                                  ? '已连接 · 设备已绑定'
+                                  : '已连接 · 公共浏览',
+                          BackendConnectionStatus.unauthorized =>
+                            '登录已失效，请重新登录或绑定',
                           BackendConnectionStatus.error => '连接失败',
                         };
                         return SettingsRow(
@@ -315,17 +342,69 @@ class _StoryCommunitySettingsScreenState
           '8080',
           keyboardType: TextInputType.number,
         ),
-        _textRow('设备令牌（可选）', _tokenController, '仅在更换手动令牌时填写', secret: true),
-        _textRow('设备 ID', _deviceIdController, '自动生成，可跨设备撤销'),
-        _textRow('邀请码（首次绑定）', _inviteController, 'AIC-...', secret: true),
+        if (_provider!.backend.capabilities == null ||
+            _provider!.backend.capabilities!.features['accountAuth'] ==
+                true) ...[
+          _textRow('服务器账户名', _usernameController, '3–32位字母、数字或下划线'),
+          _textRow('服务器密码', _passwordController, '至少8个字符，不保存密码', secret: true),
+          SettingsRow(
+            icon: CupertinoIcons.person_add,
+            title: const Text('注册并登录'),
+            subtitle: const Text('开放注册，无需邀请码'),
+            onTap: _busy ? null : () => _run(() => _accountAuth(true)),
+          ),
+          SettingsRow(
+            icon: CupertinoIcons.person,
+            title: const Text('登录服务器账号'),
+            onTap: _busy ? null : () => _run(() => _accountAuth(false)),
+          ),
+        ] else
+          const SettingsRow(
+              icon: CupertinoIcons.info,
+              title: Text('此服务器不支持账号认证'),
+              subtitle: Text('请升级服务器或使用高级认证')),
+        if (_provider!.backend.isAccountLoggedIn) ...[
+          SettingsRow(
+            icon: CupertinoIcons.person_crop_circle,
+            title: Text('当前账号：${_provider!.backend.config.accountUsername}'),
+          ),
+          SettingsRow(
+            icon: CupertinoIcons.square_arrow_right,
+            title: const Text('退出服务器登录'),
+            subtitle: const Text('退出仅清除服务器会话，保留本地数据'),
+            onTap: _busy
+                ? null
+                : () => _run(() async {
+                      await _provider!.backend.revokeDevice();
+                      if (mounted) showAppToast('已退出服务器登录');
+                    }),
+          ),
+        ],
         SettingsRow(
-          icon: CupertinoIcons.person_add,
-          iconColor: context.accentColor,
-          title: const Text('绑定设备并刷新令牌'),
-          subtitle: const Text('使用邀请码获取短期访问令牌，过期后自动轮换'),
-          trailing: const Icon(CupertinoIcons.arrow_right, size: 18),
-          onTap: _busy ? null : () => _run(_bindServer),
+          icon: CupertinoIcons.lock,
+          title: const Text('高级认证'),
+          trailing: Icon(
+              _advancedAuth
+                  ? CupertinoIcons.chevron_up
+                  : CupertinoIcons.chevron_down,
+              size: 16),
+          onTap: _busy
+              ? null
+              : () => setState(() => _advancedAuth = !_advancedAuth),
         ),
+        if (_advancedAuth) ...[
+          _textRow('设备令牌（可选）', _tokenController, '仅在更换手动令牌时填写', secret: true),
+          _textRow('设备 ID', _deviceIdController, '自动生成，可跨设备撤销'),
+          _textRow('邀请码（首次绑定）', _inviteController, 'AIC-...', secret: true),
+          SettingsRow(
+            icon: CupertinoIcons.person_add,
+            iconColor: context.accentColor,
+            title: const Text('绑定设备并刷新令牌'),
+            subtitle: const Text('使用邀请码获取短期访问令牌，过期后自动轮换'),
+            trailing: const Icon(CupertinoIcons.arrow_right, size: 18),
+            onTap: _busy ? null : () => _run(_bindServer),
+          ),
+        ],
         _connectionRow(
           title: '测试服务器连接',
           subtitle: '请求 /api/health 检查服务是否可用',
@@ -338,32 +417,34 @@ class _StoryCommunitySettingsScreenState
           onTap: () => Navigator.of(context).push(CupertinoPageRoute<void>(
               builder: (_) => const SyncSettingsScreen())),
         ),
-        SettingsRow(
-            icon: CupertinoIcons.lock,
-            title: const Text('清除本机登录'),
-            subtitle: const Text('删除安全存储中的访问和刷新令牌'),
-            onTap: _busy
-                ? null
-                : () => _run(() async {
-                      await context
-                          .read<StoryProvider>()
-                          .backend
-                          .clearSession();
-                      if (mounted) showAppToast('已清除本机登录');
-                    })),
-        SettingsRow(
-            icon: CupertinoIcons.person_crop_circle,
-            title: const Text('撤销当前设备'),
-            subtitle: const Text('服务器撤销后，该设备的令牌立即失效'),
-            onTap: _busy
-                ? null
-                : () => _run(() async {
-                      await context
-                          .read<StoryProvider>()
-                          .backend
-                          .revokeDevice();
-                      if (mounted) showAppToast('已撤销当前设备');
-                    })),
+        if (_advancedAuth)
+          SettingsRow(
+              icon: CupertinoIcons.lock,
+              title: const Text('清除本机登录'),
+              subtitle: const Text('删除安全存储中的访问和刷新令牌'),
+              onTap: _busy
+                  ? null
+                  : () => _run(() async {
+                        await context
+                            .read<StoryProvider>()
+                            .backend
+                            .clearSession();
+                        if (mounted) showAppToast('已清除本机登录');
+                      })),
+        if (_advancedAuth)
+          SettingsRow(
+              icon: CupertinoIcons.person_crop_circle,
+              title: const Text('撤销当前设备'),
+              subtitle: const Text('服务器撤销后，该设备的令牌立即失效'),
+              onTap: _busy
+                  ? null
+                  : () => _run(() async {
+                        await context
+                            .read<StoryProvider>()
+                            .backend
+                            .revokeDevice();
+                        if (mounted) showAppToast('已撤销当前设备');
+                      })),
       ];
     }
     if (config.type == StorySourceType.cos) {
@@ -444,6 +525,7 @@ class _StoryCommunitySettingsScreenState
           controller: controller,
           enabled: secret,
           builder: (revealed) => CupertinoTextField(
+                enabled: !_busy,
                 controller: controller,
                 placeholder: placeholder,
                 keyboardType: keyboardType,

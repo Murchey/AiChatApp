@@ -24,17 +24,27 @@ public class CommentService {
     public CommentService(JdbcTemplate jdbc,AppProperties properties,CursorCodec cursors,ObjectMapper mapper,SimpleRateLimiter limiter,AuditRepository audit){
         this.jdbc=jdbc;this.properties=properties;this.cursors=cursors;this.mapper=mapper;this.limiter=limiter;this.audit=audit;
     }
-    public record Comment(String id,String storyId,int storyVersion,String parentId,String body,String status,String createdAt,String updatedAt) {}
+    public record Comment(String id,String storyId,String characterId,int storyVersion,String parentId,String body,String status,String createdAt,String updatedAt) {}
     private record Row(Comment comment,String author,boolean publicVisibility) {}
     public void enabled(){if(!properties.getFeatures().isComments())throw error(HttpStatus.FORBIDDEN,"FEATURE_DISABLED","评论未启用");}
     private CurrentDevice authenticated(CurrentDevice device){enabled();if(device==null)throw error(HttpStatus.UNAUTHORIZED,"AUTH_REQUIRED","需要设备令牌");return device;}
     private int publishedVersion(String story){
         return jdbc.query("SELECT current_version FROM story WHERE id=? AND status='PUBLISHED'",(rs,n)->rs.getInt(1),story).stream().findFirst().orElseThrow(()->error(HttpStatus.NOT_FOUND,"NOT_FOUND","已发布故事不存在"));
     }
+    private int contentVersion(String story,String character){
+        if(character==null)return publishedVersion(story);
+        if(!properties.getFeatures().isCharacters())throw error(HttpStatus.FORBIDDEN,"FEATURE_DISABLED","角色卡服务未启用");
+        return jdbc.query("SELECT current_version FROM character_card WHERE id=?",(rs,n)->rs.getInt(1),character).stream().findFirst().orElseThrow(()->error(HttpStatus.NOT_FOUND,"NOT_FOUND","角色卡不存在"));
+    }
     public Map<String,Object> list(String story,String cursor,int requested){
-        enabled();publishedVersion(story);int limit=Math.max(1,Math.min(requested,50));var position=cursors.decode(cursor);
-        List<Object> args=new ArrayList<>();args.add(story);
-        String sql="SELECT c.* FROM comment c WHERE c.story_id=? AND c.public_visibility=1 AND c.status IN ('VISIBLE','DELETED') AND (c.parent_id IS NULL OR EXISTS (SELECT 1 FROM comment p WHERE p.id=c.parent_id AND p.public_visibility=1 AND p.status IN ('VISIBLE','DELETED')))";
+        return listContent(story,null,cursor,requested);
+    }
+    public Map<String,Object> listCharacter(String character,String cursor,int requested){return listContent(null,character,cursor,requested);}
+    private Map<String,Object> listContent(String story,String character,String cursor,int requested){
+        enabled();contentVersion(story,character);int limit=Math.max(1,Math.min(requested,50));var position=cursors.decode(cursor);
+        List<Object> args=new ArrayList<>();args.add(character==null?story:character);
+        String column=character==null?"story_id":"character_id";
+        String sql="SELECT c.* FROM comment c WHERE c."+column+"=? AND c.public_visibility=1 AND c.status IN ('VISIBLE','DELETED') AND (c.parent_id IS NULL OR EXISTS (SELECT 1 FROM comment p WHERE p.id=c.parent_id AND p.public_visibility=1 AND p.status IN ('VISIBLE','DELETED')))";
         if(position!=null){sql+=" AND (c.created_at<? OR (c.created_at=? AND c.id<?))";args.add(position.updatedAt());args.add(position.updatedAt());args.add(position.id());}
         sql+=" ORDER BY c.created_at DESC,c.id DESC LIMIT ?";args.add(limit+1);
         List<Comment> rows=jdbc.query(sql,(rs,n)->map(rs).comment(),args.toArray());boolean more=rows.size()>limit;
@@ -45,17 +55,28 @@ public class CommentService {
     }
     @Transactional
     public Object create(String story,String parent,String body,String key,CurrentDevice device){
-        authenticated(device);int version=publishedVersion(story);
+        return createContent(story,null,parent,body,key,device);
+    }
+    @Transactional
+    public Object createCharacter(String character,String body,String key,CurrentDevice device){return createContent(null,character,null,body,key,device);}
+    @Transactional
+    public Object reply(String parent,String body,String key,CurrentDevice device){
+        authenticated(device);Comment target=find(parent).comment();
+        return createContent(target.storyId(),target.characterId(),parent,body,key,device);
+    }
+    private Object createContent(String story,String character,String parent,String body,String key,CurrentDevice device){
+        authenticated(device);int version=contentVersion(story,character);
         if(body==null||body.isBlank()||body.codePointCount(0,body.length())>2000||body.matches("(?s).*<[^>]+>.*"))throw error(HttpStatus.BAD_REQUEST,"VALIDATION_ERROR","评论必须为1至2000字符纯文本");
         String normalized=body.trim();
-        return once(device,key,"create:"+story+":"+parent+":"+normalized,()->{
-            limiter.check("comment:"+device.id()+":"+story,10,60);
+        String contentKey=character==null?story:"character:"+character;
+        return once(device,key,"create:"+contentKey+":"+parent+":"+normalized,()->{
+            limiter.check("comment:"+device.id()+":"+contentKey,10,60);
             if(parent!=null){
                 Row target=find(parent);
-                if(!target.comment().storyId().equals(story)||target.comment().parentId()!=null||!publiclyVisible(target))throw error(HttpStatus.BAD_REQUEST,"VALIDATION_ERROR","只能回复本故事可见的一级评论");
+                if(!Objects.equals(target.comment().storyId(),story)||!Objects.equals(target.comment().characterId(),character)||target.comment().parentId()!=null||!publiclyVisible(target))throw error(HttpStatus.BAD_REQUEST,"VALIDATION_ERROR","只能回复同一内容下可见的一级评论");
             }
             String id=UUID.randomUUID().toString(),now=Instant.now().toString();
-            jdbc.update("INSERT INTO comment(id,story_id,story_version,parent_id,author_device_id,body,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'PENDING',?,?)",id,story,version,parent,device.id(),normalized,now,now);
+            jdbc.update("INSERT INTO comment(id,story_id,character_id,story_version,parent_id,author_device_id,body,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'PENDING',?,?)",id,story,character,version,parent,device.id(),normalized,now,now);
             return find(id).comment();
         });
     }
@@ -69,7 +90,7 @@ public class CommentService {
     }
     @Transactional
     public Object report(String id,String reason,String key,CurrentDevice device){
-        authenticated(device);Row row=find(id);publishedVersion(row.comment().storyId());
+        authenticated(device);Row row=find(id);contentVersion(row.comment().storyId(),row.comment().characterId());
         if(!publiclyVisible(row))throw error(HttpStatus.NOT_FOUND,"NOT_FOUND","评论不可见");
         if(reason==null||!Set.of("SPAM","ABUSE","ILLEGAL","OTHER").contains(reason))throw error(HttpStatus.BAD_REQUEST,"VALIDATION_ERROR","举报原因无效");
         return once(device,key,"report:"+id+":"+reason,()->{
@@ -113,7 +134,7 @@ public class CommentService {
     public String storyForReply(String id){enabled();return find(id).comment().storyId();}
     private Row find(String id){return jdbc.query("SELECT * FROM comment WHERE id=?",(rs,n)->map(rs),id).stream().findFirst().orElseThrow(()->error(HttpStatus.NOT_FOUND,"NOT_FOUND","评论不存在"));}
     private Row map(java.sql.ResultSet rs)throws java.sql.SQLException{
-        String status=rs.getString("status");return new Row(new Comment(rs.getString("id"),rs.getString("story_id"),rs.getInt("story_version"),rs.getString("parent_id"),"DELETED".equals(status)?"评论已删除":rs.getString("body"),status,rs.getString("created_at"),rs.getString("updated_at")),rs.getString("author_device_id"),rs.getInt("public_visibility")==1);
+        String status=rs.getString("status");return new Row(new Comment(rs.getString("id"),rs.getString("story_id"),rs.getString("character_id"),rs.getInt("story_version"),rs.getString("parent_id"),"DELETED".equals(status)?"评论已删除":rs.getString("body"),status,rs.getString("created_at"),rs.getString("updated_at")),rs.getString("author_device_id"),rs.getInt("public_visibility")==1);
     }
     private boolean publiclyVisible(Row row){
         if(!row.publicVisibility()||!Set.of("VISIBLE","DELETED").contains(row.comment().status()))return false;

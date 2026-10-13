@@ -8,6 +8,8 @@ class BackendConfig {
   final String port;
   final String scheme;
   final String deviceId;
+  final String accountUserId;
+  final String accountUsername;
   final String accessToken;
   final String refreshToken;
   final DateTime? accessExpiresAt;
@@ -20,6 +22,8 @@ class BackendConfig {
     this.port = '',
     this.scheme = 'https',
     this.deviceId = '',
+    this.accountUserId = '',
+    this.accountUsername = '',
     this.accessToken = '',
     this.refreshToken = '',
     this.accessExpiresAt,
@@ -78,6 +82,8 @@ class BackendConfig {
     String? port,
     String? scheme,
     String? deviceId,
+    String? accountUserId,
+    String? accountUsername,
     String? accessToken,
     String? refreshToken,
     DateTime? accessExpiresAt,
@@ -93,6 +99,8 @@ class BackendConfig {
       port: port ?? this.port,
       scheme: scheme ?? this.scheme,
       deviceId: deviceId ?? this.deviceId,
+      accountUserId: accountUserId ?? this.accountUserId,
+      accountUsername: accountUsername ?? this.accountUsername,
       accessToken: accessToken ?? this.accessToken,
       refreshToken: refreshToken ?? this.refreshToken,
       accessExpiresAt:
@@ -112,6 +120,8 @@ class BackendConfig {
         'port': port,
         'scheme': scheme,
         'device_id': deviceId,
+        'account_user_id': accountUserId,
+        'account_username': accountUsername,
         if (includeSecrets) 'access_token': accessToken,
         if (includeSecrets) 'refresh_token': refreshToken,
         if (accessExpiresAt != null)
@@ -138,6 +148,8 @@ class BackendConfig {
       port: json['port']?.toString() ?? '',
       scheme: json['scheme']?.toString() ?? 'https',
       deviceId: json['device_id']?.toString() ?? '',
+      accountUserId: json['account_user_id']?.toString() ?? '',
+      accountUsername: json['account_username']?.toString() ?? '',
       accessToken: json['access_token']?.toString() ?? '',
       refreshToken: json['refresh_token']?.toString() ?? '',
       accessExpiresAt: parse(json['access_expires_at']),

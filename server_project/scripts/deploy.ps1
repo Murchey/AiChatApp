@@ -9,14 +9,14 @@ $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 New-Item -ItemType Directory -Force -Path $InstallDir, (Join-Path $InstallDir 'data') | Out-Null
 Push-Location $root
 try {
-    if (-not $SkipTests) { & .\gradlew.bat test }
-    & .\gradlew.bat bootJar
+    & "$PSScriptRoot\build.ps1" -SkipTests:$SkipTests
     Copy-Item .\build\libs\aichat-backend.jar (Join-Path $InstallDir 'aichat-backend.jar') -Force
-    @"
+    if (-not (Test-Path (Join-Path $InstallDir 'aichat.env'))) { @"
 AICHAT_PORT=$Port
 AICHAT_DATA_DIR=$(Join-Path $InstallDir 'data')
-"@ | Set-Content (Join-Path $InstallDir 'aichat.env') -Encoding utf8
+"@ | Set-Content (Join-Path $InstallDir 'aichat.env') -Encoding utf8 }
+    Copy-Item (Join-Path $PSScriptRoot 'launch.ps1') (Join-Path $InstallDir 'launch.ps1') -Force
     Write-Host "部署完成：$InstallDir"
-    Write-Host "启动命令：java -jar `"$(Join-Path $InstallDir 'aichat-backend.jar')`""
+    Write-Host "启动命令：& `"$(Join-Path $InstallDir 'launch.ps1')`""
 } finally { Pop-Location }
 

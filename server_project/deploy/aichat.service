@@ -9,6 +9,7 @@ User=aichat
 Group=aichat
 WorkingDirectory=/opt/aichat
 EnvironmentFile=/etc/aichat/aichat.env
+Environment=AICHAT_BIND_ADDRESS=127.0.0.1
 ExecStart=/usr/bin/java -jar /opt/aichat/aichat-backend.jar
 Restart=on-failure
 RestartSec=5

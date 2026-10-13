@@ -28,6 +28,8 @@ public class AppProperties {
     public static class Features {
         private boolean sync;
         private boolean stories = true;
+        private boolean characters = true;
+        private boolean accountAuth = true;
         private boolean comments;
         private boolean adminPublish = true;
         private boolean llmRelay;
@@ -36,6 +38,10 @@ public class AppProperties {
         public void setSync(boolean sync) { this.sync = sync; }
         public boolean isStories() { return stories; }
         public void setStories(boolean stories) { this.stories = stories; }
+        public boolean isCharacters() { return characters; }
+        public void setCharacters(boolean characters) { this.characters = characters; }
+        public boolean isAccountAuth() { return accountAuth; }
+        public void setAccountAuth(boolean accountAuth) { this.accountAuth = accountAuth; }
         public boolean isComments() { return comments; }
         public void setComments(boolean comments) { this.comments = comments; }
         public boolean isAdminPublish() { return adminPublish; }

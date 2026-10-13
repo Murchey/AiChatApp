@@ -34,6 +34,8 @@ public class SystemController {
     public ApiResponse<Map<String, Object>> version(jakarta.servlet.http.HttpServletRequest request) {
         Map<String, Object> features = new LinkedHashMap<>();
         features.put("stories", properties.getFeatures().isStories());
+        features.put("characters", properties.getFeatures().isCharacters());
+        features.put("accountAuth", properties.getFeatures().isAccountAuth());
         features.put("sync", properties.getFeatures().isSync());
         features.put("comments", properties.getFeatures().isComments());
         features.put("adminPublish", properties.getFeatures().isAdminPublish());

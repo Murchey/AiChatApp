@@ -9,8 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@heroui/react": "^2.7.9",
-    "framer-motion": "^12.23.24",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

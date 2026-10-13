@@ -2,12 +2,18 @@ import '../models/backend_config.dart';
 import 'backend_http_client.dart';
 
 class DeviceTokenPair {
+  final String? deviceId;
+  final String? userId;
+  final String? username;
   final String accessToken;
   final String refreshToken;
   final DateTime? accessExpiresAt;
   final DateTime? refreshExpiresAt;
 
   const DeviceTokenPair({
+    this.deviceId,
+    this.userId,
+    this.username,
     required this.accessToken,
     required this.refreshToken,
     this.accessExpiresAt,
@@ -28,6 +34,9 @@ class DeviceTokenPair {
     DateTime? parse(Object? value) =>
         value == null ? null : DateTime.tryParse(value.toString())?.toUtc();
     return DeviceTokenPair(
+      deviceId: data['deviceId']?.toString(),
+      userId: data['userId']?.toString(),
+      username: data['username']?.toString(),
       accessToken: data['accessToken'].toString(),
       refreshToken: data['refreshToken'].toString(),
       accessExpiresAt:
@@ -42,6 +51,21 @@ class DeviceAuthService {
   final BackendHttpClient client;
 
   const DeviceAuthService(this.client);
+
+  Future<DeviceTokenPair> authenticateAccount(
+      BackendConfig config, String username, String password,
+      {required bool register}) async {
+    final decoded = await client.postJson(
+        config.endpoint(register ? '/api/auth/register' : '/api/auth/login'),
+        body: {'username': username.trim(), 'password': password});
+    final pair = DeviceTokenPair.fromJson(decoded);
+    if (pair.deviceId?.isNotEmpty != true ||
+        pair.userId?.isNotEmpty != true ||
+        pair.username?.isNotEmpty != true) {
+      throw const FormatException('服务器账号响应缺少账户或会话信息');
+    }
+    return pair;
+  }
 
   Future<DeviceTokenPair> exchangeInvite(
     BackendConfig config,

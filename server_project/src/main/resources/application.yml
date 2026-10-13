@@ -18,6 +18,7 @@ spring:
       fail-on-unknown-properties: true
 
 server:
+  address: ${AICHAT_BIND_ADDRESS:0.0.0.0}
   port: ${AICHAT_PORT:8080}
   forward-headers-strategy: framework
 
@@ -36,6 +37,8 @@ app:
   features:
     sync: ${AICHAT_FEATURE_SYNC:false}
     stories: ${AICHAT_FEATURE_STORIES:true}
+    characters: ${AICHAT_FEATURE_CHARACTERS:true}
+    account-auth: ${AICHAT_FEATURE_ACCOUNT_AUTH:true}
     comments: ${AICHAT_FEATURE_COMMENTS:false}
     admin-publish: ${AICHAT_FEATURE_ADMIN_PUBLISH:true}
     llm-relay: ${AICHAT_FEATURE_LLM_RELAY:false}

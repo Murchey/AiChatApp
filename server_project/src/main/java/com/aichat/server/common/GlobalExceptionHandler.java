@@ -11,6 +11,29 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler({org.springframework.web.servlet.resource.NoResourceFoundException.class,
+            org.springframework.web.servlet.NoHandlerFoundException.class})
+    public ResponseEntity<ApiErrorResponse> notFound(Exception exception, HttpServletRequest request) {
+        return response(HttpStatus.NOT_FOUND, "NOT_FOUND", "服务器接口或资源不存在", List.of(), request);
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> method(Exception exception, HttpServletRequest request) {
+        return response(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", "请求方法不支持", List.of(), request);
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> media(Exception exception, HttpServletRequest request) {
+        return response(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE", "请求内容类型不支持", List.of(), request);
+    }
+
+    @ExceptionHandler({org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class})
+    public ResponseEntity<ApiErrorResponse> parameter(Exception exception, HttpServletRequest request) {
+        return response(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "请求参数缺失或类型无效", List.of(), request);
+    }
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiErrorResponse> api(ApiException exception, HttpServletRequest request) {
         var result=response(exception.getStatus(), exception.getCode(), exception.getMessage(), exception.getDetails(), request);
@@ -41,6 +64,8 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> unexpected(
             Exception exception,
             HttpServletRequest request) {
+        log.error("Unhandled server error requestId={} method={} path={}",
+                RequestIdFilter.from(request), request.getMethod(), request.getRequestURI(), exception);
         return response(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "服务器内部错误", List.of(), request);
     }
 
