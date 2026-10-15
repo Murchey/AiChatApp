@@ -1,5 +1,6 @@
 import 'package:provider/provider.dart';
 import '../services/app_theme_store.dart';
+import '../services/theme_image.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
@@ -533,9 +534,10 @@ class _ChatBubbleState extends State<ChatBubble> {
             : null,
         child: Stack(children: [
           Positioned.fill(
-              child: Image.file(File(pack.path(image.file)),
+              child: Image(
+                  image: themeImageProvider(pack, image,
+                      maxDimension: 1024, sourceScale: imageScale),
                   fit: BoxFit.fill,
-                  scale: imageScale,
                   centerSlice: Rect.fromLTRB(
                       inset.left / imageScale,
                       inset.top / imageScale,
@@ -570,10 +572,11 @@ class _ChatBubbleState extends State<ChatBubble> {
                       width: size,
                       height: size,
                       child: IgnorePointer(
-                          child: Image.file(File(pack.path(leading.file)),
+                          child: Image(
+                              image: themeImageProvider(pack, leading,
+                                  maxDimension: (size * 3).ceil()),
                               key: const ValueKey('theme-bubble-leading'),
                               fit: BoxFit.contain,
-                              cacheWidth: (size * 3).ceil(),
                               errorBuilder: (context, error, stack) =>
                                   const SizedBox()))),
                 ],

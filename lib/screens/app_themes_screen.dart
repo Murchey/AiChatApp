@@ -10,6 +10,7 @@ import '../models/workshop_repository.dart';
 import '../models/workshop_asset.dart';
 import '../providers/workshop_provider.dart';
 import '../services/app_theme_store.dart';
+import '../services/theme_image.dart';
 import '../services/cos_auth.dart';
 import '../services/workshop_service.dart';
 import '../utils/app_toast.dart';
@@ -282,11 +283,11 @@ class _AppThemesScreenState extends State<AppThemesScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   if (pack.preview != null)
-                                    Image.file(File(pack.path(pack.preview!)),
+                                    Image(
+                                        image: themePreviewProvider(pack),
                                         height: 150,
                                         width: double.infinity,
                                         fit: BoxFit.contain,
-                                        cacheWidth: 800,
                                         errorBuilder: (context, error, stack) =>
                                             const SizedBox()),
                                   Text(

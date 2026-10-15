@@ -18,7 +18,10 @@ void main() {
   for (final folder in [
     'docs/theme-example',
     if (Directory('developDocs/themes/Hsin_theme').existsSync())
-      'developDocs/themes/Hsin_theme'
+      'developDocs/themes/Hsin_theme',
+    if (Directory('ThemeDevelopSpace/ThemesOutput/Aemeath_theme/Aemeath_theme')
+        .existsSync())
+      'ThemeDevelopSpace/ThemesOutput/Aemeath_theme/Aemeath_theme'
   ]) {
     testWidgets(
         '$folder supports short and long messages, preserves other bubble and user overrides',
@@ -103,10 +106,6 @@ void main() {
           final codec = await ui.instantiateImageCodec(
               await File(pack.path(pack.headers['home']!.file)).readAsBytes());
           final source = (await codec.getNextFrame()).image;
-          final sourcePixels =
-              (await source.toByteData(format: ui.ImageByteFormat.rawRgba))!
-                  .buffer
-                  .asUint8List();
           final bounds = tester
               .getSize(find.byKey(const ValueKey('theme-header-background')));
           expect(bounds.height, 60);
@@ -114,19 +113,38 @@ void main() {
               bounds.width / source.width > bounds.height / source.height
                   ? bounds.width / source.width
                   : bounds.height / source.height;
-          final sx =
-              ((source.width - bounds.width / scale) / 2 + 8 / scale).floor();
-          final sy = ((source.height - bounds.height / scale) * 0.3 + 8 / scale)
-              .floor();
+          final crop = Rect.fromLTWH(
+              (source.width - bounds.width / scale) / 2,
+              (source.height - bounds.height / scale) * 0.3,
+              bounds.width / scale,
+              bounds.height / scale);
+          // Compare against a filtered reference crop. A nearest-neighbor
+          // source pixel is unreliable for detailed, downscaled artwork.
+          final referenceRecorder = ui.PictureRecorder();
+          final referenceCanvas = Canvas(referenceRecorder);
+          referenceCanvas.drawImageRect(source, crop, Offset.zero & bounds,
+              Paint()..filterQuality = FilterQuality.medium);
+          referenceCanvas.drawRect(
+              Offset.zero & bounds,
+              Paint()
+                ..color =
+                    dark ? const Color(0x55000000) : const Color(0x55FFFFFF));
+          final referencePicture = referenceRecorder.endRecording();
+          final reference = await referencePicture.toImage(
+              bounds.width.ceil(), bounds.height.ceil());
+          final referencePixels =
+              (await reference.toByteData(format: ui.ImageByteFormat.rawRgba))!
+                  .buffer
+                  .asUint8List();
           for (var channel = 0; channel < 3; channel++) {
             final expected =
-                (sourcePixels[(sy * source.width + sx) * 4 + channel] * 2 +
-                        (dark ? 0 : 255)) /
-                    3;
+                referencePixels[(8 * reference.width + 8) * 4 + channel];
             expect(pixels[offset + channel], closeTo(expected, 8),
                 reason:
                     'Header must show artwork with equal scaling and upper portrait crop');
           }
+          reference.dispose();
+          referencePicture.dispose();
           source.dispose();
           codec.dispose();
           headerImage.dispose();

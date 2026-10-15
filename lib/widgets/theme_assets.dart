@@ -1,7 +1,8 @@
-import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import '../config/theme.dart';
 import '../services/app_theme_store.dart';
+import '../models/app_theme_pack.dart';
+import '../services/theme_image.dart';
 
 Widget themedNavigationIcon(BuildContext context, IconData icon,
     {double? size, Color? color, Key? key}) {
@@ -26,13 +27,13 @@ Widget themedNavigationIcon(BuildContext context, IconData icon,
         // Enlarge installed theme artwork too, without requiring a ZIP reimport.
         // The navigation slot constrains artwork when labels need more height.
         final imageSize = theme!.navigationSize(slot.$1, size ?? 24) * 1.1;
-        return Image.file(
-            File(theme.path(slot.$2 ? pair.$2.file : pair.$1.file)),
+        return Image(
+            image: themeImageProvider(theme, slot.$2 ? pair.$2 : pair.$1,
+                maxDimension: 144),
             key: key,
             width: imageSize,
             height: imageSize,
             fit: BoxFit.contain,
-            cacheWidth: 144,
             errorBuilder: (context, error, stack) => fallback);
       });
 }
@@ -62,7 +63,7 @@ class ThemeHeaderSurface extends StatelessWidget {
               : page.backgroundColor,
           resizeToAvoidBottomInset: page.resizeToAvoidBottomInset,
           navigationBar: _ThemeImageNavigationBar(
-              bar: page.navigationBar!, path: theme!.path(image.file)),
+              bar: page.navigationBar!, pack: theme!, asset: image),
           child: page.child,
         );
       });
@@ -72,8 +73,10 @@ class _ThemeImageNavigationBar extends StatelessWidget
     implements ObstructingPreferredSizeWidget {
   static const _extraHeight = 16.0;
   final ObstructingPreferredSizeWidget bar;
-  final String path;
-  const _ThemeImageNavigationBar({required this.bar, required this.path});
+  final AppThemePack pack;
+  final ThemeImageAsset asset;
+  const _ThemeImageNavigationBar(
+      {required this.bar, required this.pack, required this.asset});
   @override
   Size get preferredSize =>
       Size(bar.preferredSize.width, bar.preferredSize.height + _extraHeight);
@@ -83,22 +86,23 @@ class _ThemeImageNavigationBar extends StatelessWidget
   @override
   Widget build(BuildContext context) => Stack(children: [
         Positioned.fill(
-            child: IgnorePointer(
-                child: Stack(fit: StackFit.expand, children: [
-          Image.file(File(path),
+            child: RepaintBoundary(
+                child: IgnorePointer(
+                    child: Stack(fit: StackFit.expand, children: [
+          Image(
+              image: themeImageProvider(pack, asset, maxDimension: 1536),
               key: const ValueKey('theme-header-background'),
               fit: BoxFit.cover,
               // Favor the upper portrait, but avoid cropping to only the hair
               // when a compact header shows a narrow slice of the artwork.
               alignment: const Alignment(0, -0.4),
-              cacheWidth: 1500,
               errorBuilder: (context, error, stack) =>
                   ColoredBox(color: context.navBarColor)),
           ColoredBox(
               color: context.isDark
                   ? const Color(0x55000000)
                   : const Color(0x55FFFFFF)),
-        ]))),
+        ])))),
         Padding(
             padding: const EdgeInsets.symmetric(vertical: _extraHeight / 2),
             child: bar),

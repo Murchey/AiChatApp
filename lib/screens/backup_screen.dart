@@ -748,7 +748,7 @@ class _BackupScreenState extends State<BackupScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '打包应用内全部聊天、角色、表情包、软件设置与用户文件（不含任何密钥/API Key）。'
+          '打包应用内全部聊天、角色、表情包、应用主题（含资源、启用状态与调整）、软件设置与用户文件（不含任何密钥/API Key）。'
           '备份保存在应用私有目录，卸载会丢失；重要备份请「导出」到系统文件。',
           style: TextStyle(
             fontSize: 12,

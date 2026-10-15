@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:archive/archive.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -170,10 +171,19 @@ class AppThemeStore extends ChangeNotifier {
   }
 
   Future<void> validate(AppThemePack pack) async {
+    final checked = <String, (int, int)>{};
     for (final image in pack.images) {
+      final dimensions = (image.width, image.height);
+      if (checked.containsKey(image.file)) {
+        if (checked[image.file] != dimensions) {
+          throw FormatException('同一主题图片声明了不同尺寸: ${image.file}');
+        }
+        continue;
+      }
       await _validateImage(pack.path(image.file), image);
+      checked[image.file] = dimensions;
     }
-    if (pack.preview != null) {
+    if (pack.preview != null && !checked.containsKey(pack.preview)) {
       await _validateImage(pack.path(pack.preview!), null);
     }
     if (pack.font != null) {
@@ -245,36 +255,13 @@ class AppThemeStore extends ChangeNotifier {
     if (await file.length() > 50 * 1024 * 1024) {
       throw const FormatException('主题压缩包不能超过 50 MiB');
     }
-    final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
-    var total = 0;
-    final names = <String>{};
-    for (final entry in archive) {
-      if (entry.isSymbolicLink) {
-        throw const FormatException('主题包不支持符号链接');
-      }
-      themeResourcePath(entry.name.endsWith('/')
-          ? entry.name.substring(0, entry.name.length - 1)
-          : entry.name);
-      if (!names.add(entry.name.toLowerCase())) {
-        throw const FormatException('主题资源路径重复');
-      }
-      total += entry.size;
-      if (total > 200 * 1024 * 1024 || names.length > 4096) {
-        throw const FormatException('主题解压资源过大');
-      }
-    }
     final rootDir = await root;
     await rootDir.create(recursive: true);
     final staging = await Directory(
             '${rootDir.path}/.install-${DateTime.now().microsecondsSinceEpoch}')
         .create();
     try {
-      for (final entry in archive) {
-        if (!entry.isFile) continue;
-        final dest = File('${staging.path}/${entry.name}');
-        await dest.parent.create(recursive: true);
-        await dest.writeAsBytes(entry.content as List<int>);
-      }
+      await compute(_extractThemeFiles, [zipPath, staging.path]);
       final map = Map<String, dynamic>.from(
           jsonDecode(await File('${staging.path}/content.json').readAsString())
               as Map);
@@ -295,8 +282,6 @@ class AppThemeStore extends ChangeNotifier {
         }
         installed.removeWhere((p) => p.id == pack.id);
         installed.add(installedPack);
-        PaintingBinding.instance.imageCache.clear();
-        PaintingBinding.instance.imageCache.clearLiveImages();
         notifyListeners();
         try {
           if (await old.exists()) await old.delete(recursive: true);
@@ -322,22 +307,56 @@ class AppThemeStore extends ChangeNotifier {
     _overrides.remove(id);
     await (await SharedPreferences.getInstance())
         .setString('app_theme_adjustments', jsonEncode(_overrides));
-    PaintingBinding.instance.imageCache.clear();
     notifyListeners();
   }
 
   Future<List<int>> export(AppThemePack pack) async {
-    final archive = Archive();
-    await for (final e in Directory(pack.directory)
-        .list(recursive: true, followLinks: false)) {
-      if (e is File) {
-        archive.addFile(ArchiveFile.bytes(
-            e.path.substring(pack.directory.length + 1).replaceAll('\\', '/'),
-            await e.readAsBytes()));
-      }
-    }
-    return ZipEncoder().encode(archive);
+    return compute(_exportThemeFiles, pack.directory);
   }
+}
+
+// ZIP inflation/deflation and bulk file I/O run off the UI isolate. Keep all
+// archive validation before extraction, including limits and duplicate paths.
+void _extractThemeFiles(List<String> paths) {
+  final file = File(paths[0]);
+  if (file.lengthSync() > 50 * 1024 * 1024) {
+    throw const FormatException('主题压缩包不能超过 50 MiB');
+  }
+  final archive = ZipDecoder().decodeBytes(file.readAsBytesSync());
+  var total = 0;
+  final names = <String>{};
+  for (final entry in archive) {
+    if (entry.isSymbolicLink) throw const FormatException('主题包不支持符号链接');
+    themeResourcePath(entry.name.endsWith('/')
+        ? entry.name.substring(0, entry.name.length - 1)
+        : entry.name);
+    if (!names.add(entry.name.toLowerCase())) {
+      throw const FormatException('主题资源路径重复');
+    }
+    total += entry.size;
+    if (total > 200 * 1024 * 1024 || names.length > 4096) {
+      throw const FormatException('主题解压资源过大');
+    }
+  }
+  for (final entry in archive) {
+    if (!entry.isFile) continue;
+    final target = File('${paths[1]}/${entry.name}');
+    target.parent.createSync(recursive: true);
+    target.writeAsBytesSync(entry.content as List<int>);
+  }
+}
+
+List<int> _exportThemeFiles(String directory) {
+  final archive = Archive();
+  for (final entry
+      in Directory(directory).listSync(recursive: true, followLinks: false)) {
+    if (entry is File) {
+      archive.addFile(ArchiveFile.bytes(
+          entry.path.substring(directory.length + 1).replaceAll('\\', '/'),
+          entry.readAsBytesSync()));
+    }
+  }
+  return ZipEncoder().encode(archive);
 }
 
 class ThemeAlreadyInstalled implements Exception {
