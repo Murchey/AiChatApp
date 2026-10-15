@@ -42,9 +42,9 @@ def build():
             'size': 36,
         }
 
-    # This horizontal banner is already composed at 120px high. Preserve its
-    # native framing and dimensions rather than reusing the old portrait crop.
-    header = Image.open(SOURCE / 'NewHeaderImg.jpg').convert('RGB')
+    # The supplied horizontal banner is already composed. Preserve its native
+    # framing and dimensions rather than reusing the old portrait crop.
+    header = Image.open(SOURCE / 'HeaderImg.png').convert('RGB')
     header.save(IMAGES / 'header.png', optimize=True)
     manifest['headers'] = {
         slot: {'file': 'images/header.png', 'width': header.width, 'height': header.height}
