@@ -1,3 +1,4 @@
+import '../services/app_theme_store.dart';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -161,8 +162,16 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
   Widget _fontTile(String title, String name, bool isUser, {bool ui = false}) {
     final settings = context.read<SettingsProvider>();
     return SettingsInlinePicker<String>(
-      value: name.isEmpty ? '__system__' : name,
+      value: isUser && !ui && AppThemeStore.instance.fontChoice == '__theme__'
+          ? '__theme__'
+          : name.isEmpty
+              ? '__system__'
+              : name,
       options: [
+        if (isUser && !ui && AppThemeStore.instance.active?.font != null)
+          SettingsChoiceOption(
+              value: '__theme__',
+              label: '主题：${AppThemeStore.instance.active!.name}'),
         const SettingsChoiceOption(
           value: '__system__',
           label: '系统默认',
@@ -177,6 +186,10 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
       ],
       onChanged: (value) async {
         try {
+          if (isUser && !ui && value == '__theme__') {
+            await AppThemeStore.instance.adjust('font', null);
+            return;
+          }
           if (ui) {
             await settings.setUiFont(value == '__system__' ? '' : value);
             return;
@@ -203,7 +216,10 @@ class _BubbleFontScreenState extends State<BubbleFontScreen> {
           name.isEmpty ? '系统默认' : name,
         ),
         showChevron: true,
-        onTap: _fonts.isEmpty ? null : toggle,
+        onTap: _fonts.isEmpty &&
+                !(isUser && !ui && AppThemeStore.instance.active?.font != null)
+            ? null
+            : toggle,
       ),
     );
   }

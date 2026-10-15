@@ -1,3 +1,4 @@
+import '../services/app_theme_store.dart';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -154,6 +155,16 @@ extension BubbleColorSlotX on BubbleColorSlot {
 }
 
 class SettingsProvider extends ChangeNotifier {
+  SettingsProvider() {
+    AppThemeStore.instance.addListener(_themeChanged);
+  }
+  void _themeChanged() => notifyListeners();
+  @override
+  void dispose() {
+    AppThemeStore.instance.removeListener(_themeChanged);
+    super.dispose();
+  }
+
   AppThemeMode _themeMode = AppThemeMode.system;
   Color _accentColor = AppColors.presetColors.first; // 默认微信绿
   // 自定义聊天气泡颜色（未设置时使用 AppColors 默认值）
@@ -211,12 +222,22 @@ class SettingsProvider extends ChangeNotifier {
   HomeNavigationStyle get homeNavigationStyle => _homeNavigationStyle;
   String get splashIconPath => _splashIconPath;
   bool get hasSplashIcon => _splashIconPath.isNotEmpty;
-  String get selfBubbleFontName => _selfBubbleFontName;
+  String get selfBubbleFontName {
+    final theme = AppThemeStore.instance;
+    return theme.fontChoice == '__theme__'
+        ? '主题：${theme.active!.name}'
+        : theme.fontChoice ?? _selfBubbleFontName;
+  }
+
   String get otherBubbleFontName => _otherBubbleFontName;
   double get bubbleFontSize => _bubbleFontSize;
 
   String bubbleFontFamily(bool isUser) {
-    final name = isUser ? _selfBubbleFontName : _otherBubbleFontName;
+    final theme = AppThemeStore.instance;
+    if (isUser && theme.fontFamily != null) return theme.fontFamily!;
+    final name = isUser
+        ? (theme.fontChoice ?? _selfBubbleFontName)
+        : _otherBubbleFontName;
     return name.isEmpty ? '' : importedFontFamily(name);
   }
 
@@ -350,6 +371,10 @@ class SettingsProvider extends ChangeNotifier {
     if (name.isNotEmpty && !await _loadBubbleFont(name)) {
       throw StateError('字体文件不存在或无法加载');
     }
+    if (isUser && AppThemeStore.instance.active?.font != null) {
+      await AppThemeStore.instance.adjust('font', name);
+      return;
+    }
     if (isUser) {
       _selfBubbleFontName = name;
     } else {
@@ -371,6 +396,9 @@ class SettingsProvider extends ChangeNotifier {
 
   /// 删除字体后清除引用，防止下次启动时保留失效选择。
   Future<void> clearDeletedBubbleFont(String name) async {
+    if (AppThemeStore.instance.fontChoice == name) {
+      await AppThemeStore.instance.adjust('font', null);
+    }
     var changed = false;
     if (_uiFontName == name) {
       _uiFontName = '';
@@ -558,6 +586,13 @@ class SettingsProvider extends ChangeNotifier {
 
   /// 设置某一气泡内字体颜色项（浅/深 × 自己/对方）
   Future<void> setBubbleTextColor(BubbleTextSlot slot, Color color) async {
+    if (AppThemeStore.instance.bubbleEnabled &&
+        (slot == BubbleTextSlot.selfDark || slot == BubbleTextSlot.selfLight)) {
+      await AppThemeStore.instance.adjust(
+          slot == BubbleTextSlot.selfDark ? 'textDark' : 'textLight',
+          color.toARGB32());
+      return;
+    }
     _bubbleTextColors[slot] = color;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(slot.storageKey, color.toARGB32());
@@ -566,6 +601,12 @@ class SettingsProvider extends ChangeNotifier {
 
   /// 恢复某一气泡内字体颜色项为默认
   Future<void> resetBubbleTextColor(BubbleTextSlot slot) async {
+    if (AppThemeStore.instance.bubbleEnabled &&
+        (slot == BubbleTextSlot.selfDark || slot == BubbleTextSlot.selfLight)) {
+      await AppThemeStore.instance.adjust(
+          slot == BubbleTextSlot.selfDark ? 'textDark' : 'textLight', null);
+      return;
+    }
     _bubbleTextColors.remove(slot);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(slot.storageKey);

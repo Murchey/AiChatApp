@@ -33,6 +33,11 @@ IDEA.md
 /build/
 /coverage/
 
+# Personal theme artwork and generated packs (keep guides and build scripts).
+/developDocs/心月狐主题素材/
+/developDocs/themes/Hsin_theme/
+/developDocs/themes/Hsin_theme.zip
+
 # ── 桌面端 ─────────────────────────────────────────────
 # 保留 windows 工程源码（便于上传电脑版），只忽略构建产物与临时文件
 /windows/flutter/ephemeral/

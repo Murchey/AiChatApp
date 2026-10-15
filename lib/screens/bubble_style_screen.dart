@@ -1,3 +1,5 @@
+import '../services/app_theme_store.dart';
+import 'theme_appearance_screen.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
@@ -26,6 +28,15 @@ class BubbleStyleScreen extends StatelessWidget {
             SettingsSection(
               title: '选择样式',
               children: [
+                if (AppThemeStore.instance.active?.bubble != null)
+                  SettingsRow(
+                      icon: CupertinoIcons.paintbrush,
+                      title: const Text('气泡与文字颜色'),
+                      showChevron: true,
+                      onTap: () => Navigator.push(
+                          context,
+                          CupertinoPageRoute(
+                              builder: (_) => const ThemeAppearanceScreen()))),
                 SettingsInlinePicker<BubbleStyle>(
                   value: current,
                   options: [

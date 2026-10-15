@@ -1,3 +1,4 @@
+import 'chat_draft_service.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -68,6 +69,8 @@ class BackupService {
     'user_moments',
     'chat_backgrounds',
     'imported_fonts',
+    'app_themes',
+    'app_icons',
     'voice',
     'voice_samples',
   ];
@@ -205,6 +208,7 @@ class BackupService {
       '${docDir.path}/.aichat_backup_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
     try {
+      await ChatDraftService.instance.flushAll();
       await StorageMigrationService.exportSqlite(sqliteTemp);
       archive.addFile(ArchiveFile.bytes(
         _sqliteName,
@@ -418,6 +422,11 @@ class BackupService {
 
     final docDir = await getApplicationDocumentsDirectory();
     final prefs = await SharedPreferences.getInstance();
+
+    // Drain pending writes before replacing the database; old timers must not
+    // write conversation drafts into the restored snapshot.
+    await ChatDraftService.instance.flushAll();
+    ChatDraftService.instance.reset();
 
     // 恢复前：快照本机密钥（备份中不含密钥，恢复后回填，避免丢 Key）
     report(0.36, '创建安全副本');

@@ -131,6 +131,14 @@ class StorageManagerService {
       await _stickerItem(),
       await _characterItem(prefs),
       await _fontItem(),
+      StorageItem(
+          id: 'app_themes',
+          title: '应用主题与图标',
+          subtitle: '在应用主题或图标设置中管理；不作为缓存清理',
+          isUserData: true,
+          sizeBytes: await _docDirsSize(
+              names: const ['app_themes', 'app_icons'], prefixes: const []),
+          deletable: false),
       await _voiceCacheItem(),
       _notificationItem(prefs),
       _profileItem(prefs),
@@ -532,6 +540,7 @@ class StorageManagerService {
       _chatPrefixes.any((p) => name.startsWith(p)) ||
       _stickerDirs.contains(name) ||
       _fontDirs.contains(name) ||
+      const ['app_themes', 'app_icons'].contains(name) ||
       _voiceDirs.contains(name) ||
       _backupDirs.contains(name) ||
       _systemDirs.contains(name);

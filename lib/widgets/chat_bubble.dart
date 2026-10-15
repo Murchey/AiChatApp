@@ -1,3 +1,5 @@
+import 'package:provider/provider.dart';
+import '../services/app_theme_store.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
@@ -212,6 +214,7 @@ class _ChatBubbleState extends State<ChatBubble> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<SettingsProvider>();
     final message = widget.message;
     final isUser = message.isFromUser;
 
@@ -510,6 +513,74 @@ class _ChatBubbleState extends State<ChatBubble> {
     Widget child,
   ) {
     final isUser = widget.message.isFromUser;
+    final theme = AppThemeStore.instance;
+    if (isUser && !isImage && !isFile && theme.bubbleEnabled) {
+      final pack = theme.active!;
+      final image = pack.bubble!;
+      final inset = pack.stretchInsets;
+      final imageScale = [1.0, inset.horizontal / 28, inset.vertical / 20]
+          .reduce((a, b) => a > b ? a : b);
+      final leading = pack.bubbleLeading;
+      final size = pack.bubbleLeadingSize;
+      final outside = size * 0.4;
+      final body = Container(
+        key: const ValueKey('theme-bubble-body'),
+        constraints:
+            leading == null ? null : BoxConstraints(minHeight: size - 8),
+        decoration: widget.selected
+            ? BoxDecoration(
+                border: Border.all(color: context.accentColor, width: 1.5))
+            : null,
+        child: Stack(children: [
+          Positioned.fill(
+              child: Image.file(File(pack.path(image.file)),
+                  fit: BoxFit.fill,
+                  scale: imageScale,
+                  centerSlice: Rect.fromLTRB(
+                      inset.left / imageScale,
+                      inset.top / imageScale,
+                      (image.width - inset.right) / imageScale,
+                      (image.height - inset.bottom) / imageScale),
+                  errorBuilder: (context, error, stack) => DecoratedBox(
+                      decoration: BoxDecoration(
+                          color: context.bubbleSelfColor,
+                          borderRadius: BorderRadius.circular(12))))),
+          Padding(
+              padding: EdgeInsets.fromLTRB(
+                  leading == null ? 14 : size - outside + pack.bubbleLeadingGap,
+                  10,
+                  14,
+                  10),
+              child: child),
+        ]),
+      );
+      return Container(
+        key: _bubbleKey,
+        child: leading == null
+            ? body
+            : Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Padding(
+                      padding: EdgeInsets.only(left: outside, top: 8),
+                      child: body),
+                  Positioned(
+                      left: 0,
+                      top: 0,
+                      width: size,
+                      height: size,
+                      child: IgnorePointer(
+                          child: Image.file(File(pack.path(leading.file)),
+                              key: const ValueKey('theme-bubble-leading'),
+                              fit: BoxFit.contain,
+                              cacheWidth: (size * 3).ceil(),
+                              errorBuilder: (context, error, stack) =>
+                                  const SizedBox()))),
+                ],
+              ),
+      );
+    }
+
     // 尾巴样式（ww/zmd）：上边共线尾巴 + 大圆角弧线
     final isTailStyle = !isImage &&
         !isFile &&

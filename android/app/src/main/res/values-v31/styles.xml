@@ -4,6 +4,8 @@
          frame. Keep it visually empty so it cannot flash the launcher icon
          before the user-configured Flutter splash is ready. -->
     <style name="LaunchTheme" parent="Theme.SplashScreen">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="windowSplashScreenBackground">@android:color/white</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/transparent_splash_icon</item>
         <item name="windowSplashScreenAnimationDuration">0</item>

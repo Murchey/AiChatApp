@@ -1,3 +1,6 @@
+import '../config/routes.dart' show routeObserver;
+import '../services/chat_draft_service.dart';
+import '../utils/app_toast.dart';
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
@@ -16,6 +19,12 @@ class MessageInput extends StatefulWidget {
   /// pass a translucent chat canvas when a wallpaper is active.
   final Color? backdropColor;
   final Function(String) onSend;
+  final String? draftConversationId;
+  final ChatDraftService? draftService;
+  final Future<bool> Function(String)? onSendDraft;
+
+  /// Signals when a message enters the local list, before persistence finishes.
+  final Future<bool> Function(String, VoidCallback)? onSendWithFeedback;
   final Function(String)? onPickImage;
   final Function(String, String)? onPickFile; // (文件路径, 文件名)
   final VoidCallback? onSettings; // 打开聊天设置
@@ -44,6 +53,10 @@ class MessageInput extends StatefulWidget {
     this.backdropColor,
     this.inputKey,
     required this.onSend,
+    this.draftConversationId,
+    this.draftService,
+    this.onSendDraft,
+    this.onSendWithFeedback,
     this.onPickImage,
     this.onPickFile,
     this.onSettings,
@@ -67,7 +80,7 @@ class MessageInput extends StatefulWidget {
 }
 
 class MessageInputState extends State<MessageInput>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   // 原生系统文件选择（MainActivity 中实现，Android 专用）
   static const MethodChannel _fileChannel = MethodChannel(
     'com.aichat.ai_chat/files',
@@ -76,6 +89,13 @@ class MessageInputState extends State<MessageInput>
   final TextEditingController _controller = TextEditingController();
   final ImagePicker _picker = ImagePicker();
   final FocusNode _inputFocusNode = FocusNode();
+  ChatDraftService get _drafts =>
+      widget.draftService ?? ChatDraftService.instance;
+  ModalRoute<dynamic>? _draftRoute;
+  bool _sendingDraft = false;
+  int _draftRevision = 0;
+  String _lastInputText = '';
+  final ValueNotifier<bool> _hasText = ValueNotifier(false);
   _InputPanel _panel = _InputPanel.none;
   _InputPanel? _pendingPanel;
   final PageController _roleplayPanelController = PageController();
@@ -83,9 +103,9 @@ class MessageInputState extends State<MessageInput>
 
   /// 外部可直接设置输入框内容
   void setText(String text) {
-    _controller.text = text;
-    _controller.selection = TextSelection.fromPosition(
-      TextPosition(offset: text.length),
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 
@@ -105,6 +125,10 @@ class MessageInputState extends State<MessageInput>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _controller.addListener(_saveDraft);
+    _restoreDraft().catchError((Object e) {
+      debugPrint('草稿恢复失败: $e');
+    });
     // 点击（聚焦）输入框时自动折叠面板
     _inputFocusNode.addListener(() {
       if (_inputFocusNode.hasFocus) {
@@ -119,6 +143,66 @@ class MessageInputState extends State<MessageInput>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route =
+        widget.draftConversationId == null ? null : ModalRoute.of(context);
+    if (route != _draftRoute) {
+      routeObserver.unsubscribe(this);
+      _draftRoute = route;
+      if (route != null) routeObserver.subscribe(this, route);
+    }
+  }
+
+  void _flushDraft() {
+    final id = widget.draftConversationId;
+    if (id != null) {
+      _drafts.flush(id).catchError((Object e) {
+        debugPrint('草稿保存失败: $e');
+      });
+    }
+  }
+
+  @override
+  void didPushNext() => _flushDraft();
+  @override
+  void didPop() => _flushDraft();
+
+  void _saveDraft() {
+    final text = _controller.text;
+    // Selection/composing updates are frequent with mobile IMEs. They neither
+    // change the draft nor invalidate an accepted send's text revision.
+    if (text == _lastInputText) return;
+    _lastInputText = text;
+    _hasText.value = text.trim().isNotEmpty;
+    _draftRevision++;
+    final id = widget.draftConversationId;
+    if (id != null) _drafts.update(id, text);
+  }
+
+  Future<void> _restoreDraft() async {
+    final id = widget.draftConversationId;
+    if (id == null) return;
+    final revision = _draftRevision;
+    final text = await _drafts.load(id);
+    if (mounted &&
+        widget.draftConversationId == id &&
+        revision == _draftRevision) {
+      setText(text);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final id = widget.draftConversationId;
+    if (id != null && state != AppLifecycleState.resumed) {
+      _drafts.flush(id).catchError((Object e) {
+        debugPrint('草稿保存失败: $e');
+      });
+    }
+  }
+
+  @override
   void didChangeMetrics() {
     // 显式延迟逻辑负责等待 IME 最后一帧，避免 metrics 先归零时抢先展示 Panel。
   }
@@ -126,6 +210,25 @@ class MessageInputState extends State<MessageInput>
   @override
   void didUpdateWidget(covariant MessageInput oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.draftConversationId != widget.draftConversationId) {
+      final oldId = oldWidget.draftConversationId;
+      if (oldId != null) {
+        (oldWidget.draftService ?? ChatDraftService.instance)
+            .flush(oldId)
+            .catchError((Object e) {
+          debugPrint('草稿保存失败: $e');
+        });
+      }
+      _controller.removeListener(_saveDraft);
+      _controller.clear();
+      _lastInputText = '';
+      _hasText.value = false;
+      _controller.addListener(_saveDraft);
+      _draftRevision++;
+      _restoreDraft().catchError((Object e) {
+        debugPrint('草稿恢复失败: $e');
+      });
+    }
     if (!widget.showStickerButton && _panel == _InputPanel.sticker) {
       _panel = _InputPanel.none;
     }
@@ -133,18 +236,93 @@ class MessageInputState extends State<MessageInput>
 
   @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
+    final id = widget.draftConversationId;
+    if (id != null) {
+      _drafts.flush(id).catchError((Object e) {
+        debugPrint('草稿保存失败: $e');
+      });
+    }
     _controller.dispose();
+    _hasText.dispose();
     _inputFocusNode.dispose();
     _roleplayPanelController.dispose();
     super.dispose();
   }
 
-  void _handleSend() {
+  void _handleSend() async {
     final text = _controller.text.trim();
     if (text.isNotEmpty) {
-      widget.onSend(text);
-      _controller.clear();
+      if (widget.onSendDraft != null || widget.onSendWithFeedback != null) {
+        if (_sendingDraft) return;
+        _sendingDraft = true;
+        final revision = _draftRevision;
+        final original = _controller.text;
+        final originalValue = _controller.value;
+        final draftId = widget.draftConversationId;
+        final drafts = _drafts;
+        int? clearedRevision;
+        void onLocalMessageAdded() {
+          if (!mounted ||
+              widget.draftConversationId != draftId ||
+              revision != _draftRevision) {
+            return;
+          }
+          // Keep the durable draft until the send completes. This is a visual
+          // clear only; typing a new draft still saves normally in the meantime.
+          _controller.removeListener(_saveDraft);
+          _controller.clear();
+          _lastInputText = '';
+          _hasText.value = false;
+          clearedRevision = ++_draftRevision;
+          _controller.addListener(_saveDraft);
+        }
+
+        void restoreFailedSend() {
+          if (clearedRevision != null &&
+              mounted &&
+              widget.draftConversationId == draftId &&
+              clearedRevision == _draftRevision) {
+            _controller.value = originalValue;
+          }
+        }
+
+        try {
+          final accepted = widget.onSendWithFeedback != null
+              ? await widget.onSendWithFeedback!(text, onLocalMessageAdded)
+              : await widget.onSendDraft!(text);
+          if (!accepted) {
+            restoreFailedSend();
+          } else if (clearedRevision != null) {
+            final hasNewInput = widget.draftConversationId == draftId &&
+                clearedRevision != _draftRevision;
+            if (draftId != null && !hasNewInput) {
+              await drafts.clearIfUnchanged(draftId, original);
+            }
+          } else if (mounted &&
+              accepted &&
+              draftId == widget.draftConversationId &&
+              revision == _draftRevision) {
+            _controller.clear();
+            final id = widget.draftConversationId;
+            if (id != null) await _drafts.flush(id);
+          } else if (accepted &&
+              draftId != null &&
+              (!mounted || draftId != widget.draftConversationId)) {
+            await drafts.clearIfUnchanged(draftId, original);
+          }
+        } catch (e) {
+          restoreFailedSend();
+          debugPrint('发送失败，已保留草稿: $e');
+          showAppToast('消息保存失败，已保留文字，请重试');
+        } finally {
+          _sendingDraft = false;
+        }
+      } else {
+        widget.onSend(text);
+        _controller.clear();
+      }
     }
   }
 
@@ -316,12 +494,11 @@ class MessageInputState extends State<MessageInput>
                                 : null,
                           ),
                         ),
-                        // 右侧按钮只订阅文本值，避免每次输入都重建整个胶囊和
-                        // 已展开的功能面板。
-                        ValueListenableBuilder<TextEditingValue>(
-                          valueListenable: _controller,
-                          builder: (context, value, _) {
-                            final hasText = value.text.trim().isNotEmpty;
+                        // 仅在有无正文发生变化时重建按钮；普通输入、选区和
+                        // 输入法组词更新都不重建按钮、胶囊或功能面板。
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _hasText,
+                          builder: (context, hasText, _) {
                             if (hasText) {
                               return Padding(
                                 padding: const EdgeInsets.only(left: 6),

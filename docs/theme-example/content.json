@@ -1,0 +1,61 @@
+{
+  "id": "soft-cloud",
+  "name": "柔云",
+  "author": "AiChat 示例",
+  "description": "低饱和度导航、顶部背景和我方气泡",
+  "preview": "images/preview.png",
+  "navigation": {
+    "chat": {
+      "normal": "images/chat.png",
+      "selected": "images/chat-selected.png",
+      "width": 96,
+      "height": 96
+    },
+    "contacts": {
+      "normal": "images/contacts.png",
+      "selected": "images/contacts-selected.png",
+      "width": 96,
+      "height": 96
+    },
+    "discover": {
+      "normal": "images/discover.png",
+      "selected": "images/discover-selected.png",
+      "width": 96,
+      "height": 96
+    },
+    "profile": {
+      "normal": "images/profile.png",
+      "selected": "images/profile-selected.png",
+      "width": 96,
+      "height": 96
+    }
+  },
+  "headers": {
+    "home": {
+      "file": "images/home-header.png",
+      "width": 750,
+      "height": 150
+    },
+    "contacts": {
+      "file": "images/contacts-header.png",
+      "width": 750,
+      "height": 150
+    }
+  },
+  "selfBubble": {
+    "file": "images/self-bubble.png",
+    "width": 240,
+    "height": 120,
+    "stretchInsets": {
+      "left": 24,
+      "top": 24,
+      "right": 24,
+      "bottom": 24
+    },
+    "textColor": "#202124"
+  },
+  "selfFont": {
+    "file": "fonts/self.ttf",
+    "name": "DejaVu Sans"
+  }
+}

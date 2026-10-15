@@ -18,7 +18,8 @@ class LatestRepositoryRelease {
 }
 
 /// 从官方 API 返回的 Release 列表中选择最靠前的正式发布。
-LatestRepositoryRelease? latestPublishedReleaseFromJson(List<dynamic> releases) {
+LatestRepositoryRelease? latestPublishedReleaseFromJson(
+    List<dynamic> releases) {
   for (final item in releases) {
     if (item is! Map) continue;
     final map = item.cast<String, dynamic>();
@@ -140,8 +141,10 @@ class WorkshopService {
   static String cosDisplayName(String url) {
     final parsed = parseCosBaseUrl(url);
     final host = parsed.bucketRoot.host;
-    final segs =
-        parsed.prefix.split('/').where((s) => s.isNotEmpty).toList(growable: false);
+    final segs = parsed.prefix
+        .split('/')
+        .where((s) => s.isNotEmpty)
+        .toList(growable: false);
     if (segs.isEmpty) return host;
     return '$host/${segs.last}';
   }
@@ -206,8 +209,7 @@ class WorkshopService {
     final cacheKey = _cosListCacheKey(baseUrl, auth);
     if (!force) {
       final hit = _cosListCache[cacheKey];
-      if (hit != null &&
-          DateTime.now().difference(hit.at) < _cosListCacheTtl) {
+      if (hit != null && DateTime.now().difference(hit.at) < _cosListCacheTtl) {
         // 全量请求：仅当缓存已完整时才可直接返回
         if (firstPageOnly || hit.complete) return hit.objects;
       }
@@ -246,8 +248,8 @@ class WorkshopService {
       final doc = XmlDocument.parse(utf8.decode(resp.bodyBytes));
       result.addAll(_parseListBucketContents(doc));
 
-      truncated = doc.descendantElements
-          .any((e) => e.name.local == 'IsTruncated' && e.innerText.trim() == 'true');
+      truncated = doc.descendantElements.any(
+          (e) => e.name.local == 'IsTruncated' && e.innerText.trim() == 'true');
       String? next;
       for (final e in doc.descendantElements) {
         if (e.name.local == 'NextContinuationToken') {
@@ -315,6 +317,7 @@ class WorkshopService {
           _hasTopLevelFiles(objects, '$basePrefix$folder/', '.md');
 
       return [
+        if (hasZip(kCosThemesFolder)) kThemeStoreTag,
         if (hasZip(kCosCharactersFolder)) kCharacterPackTag,
         if (hasZip(kCosGamesFolder)) kGamePackTag,
         if (hasZip(kCosStickersFolder)) kStickerPackTag,
@@ -338,9 +341,7 @@ class WorkshopService {
       final key = '$basePrefix$kCosNoteFolder/$name';
       try {
         final url = Uri.parse(_cosDownloadUrl(baseUrl, key, basePrefix));
-        final resp = await http
-            .get(url)
-            .timeout(const Duration(seconds: 10));
+        final resp = await http.get(url).timeout(const Duration(seconds: 10));
         if (resp.statusCode == 200) {
           return const [kUpdateNotifyTag];
         }
@@ -357,11 +358,12 @@ class WorkshopService {
     CosAuth? auth,
     bool loadAll = false,
   }) async {
-    if (!kWorkshopPackTags.contains(tag)) return const [];
+    if (!kAllWorkshopAssetTags.contains(tag)) return const [];
     final folder = switch (tag) {
       kCharacterPackTag => kCosCharactersFolder,
       kGamePackTag => kCosGamesFolder,
       kStickerPackTag => kCosStickersFolder,
+      kThemeStoreTag => kCosThemesFolder,
       _ => null,
     };
     if (folder == null) return const [];
@@ -495,8 +497,7 @@ class WorkshopService {
   ) {
     final relative =
         key.startsWith(basePrefix) ? key.substring(basePrefix.length) : key;
-    final encoded =
-        relative.split('/').map(Uri.encodeComponent).join('/');
+    final encoded = relative.split('/').map(Uri.encodeComponent).join('/');
     final base = baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
     return '$base/$encoded';
   }
@@ -550,7 +551,7 @@ class WorkshopService {
     String path,
     String tag,
   ) async {
-    if (!kWorkshopPackTags.contains(tag)) return const [];
+    if (!kAllWorkshopAssetTags.contains(tag)) return const [];
     final parsed = parseRepoPath(path);
     if (parsed == null) return const [];
     final releases = await _fetchReleases(
@@ -583,7 +584,7 @@ class WorkshopService {
     for (final item in list) {
       final map = item as Map<String, dynamic>;
       final tag = (map['tag_name'] as String?)?.trim() ?? '';
-      if (tag.isEmpty || !kWorkshopPackTags.contains(tag)) continue;
+      if (tag.isEmpty || !kAllWorkshopAssetTags.contains(tag)) continue;
       final assets = <WorkshopAsset>[];
       for (final a in (map['assets'] as List? ?? [])) {
         final am = a as Map<String, dynamic>;
@@ -618,7 +619,10 @@ class WorkshopService {
     String proxyUrl = '',
     CosAuth? auth,
     void Function(double progress)? onProgress,
+    bool force = false,
+    int? maxBytes,
   }) async {
+    File? partial;
     try {
       final docDir = await getApplicationDocumentsDirectory();
       final workshopDir = Directory('${docDir.path}/workshop');
@@ -628,7 +632,12 @@ class WorkshopService {
       final name = _safeFileName(Uri.decodeComponent(rawName));
       final file = File('${workshopDir.path}/$name');
       // 已存在完整文件则跳过下载
-      if (file.existsSync() && file.lengthSync() > 0) return file.path;
+      if (!force &&
+          file.existsSync() &&
+          file.lengthSync() > 0 &&
+          (maxBytes == null || file.lengthSync() <= maxBytes)) {
+        return file.path;
+      }
 
       // 私有读签名时不能走加速代理（签名绑定原 host）
       final useAuth = auth?.isConfigured ?? false;
@@ -638,41 +647,59 @@ class WorkshopService {
       if (useAuth) {
         request.headers.addAll(_cosHeaders(Uri.parse(finalUrl), auth));
       }
-      final resp = await http.Client().send(request);
-      if (resp.statusCode != 200) {
-        debugPrint(
-          '[WorkshopService] downloadZip HTTP ${resp.statusCode} '
-          'url=$finalUrl useAuth=$useAuth',
-        );
-        return null;
-      }
-
-      // 先写入 .part 临时文件，下载完整后再改名发布
-      final tmp = File('${workshopDir.path}/$name.part');
-      final total = resp.contentLength;
-      var received = 0;
-      final sink = tmp.openWrite();
+      final client = http.Client();
       try {
-        await for (final chunk in resp.stream) {
-          sink.add(chunk);
-          received += chunk.length;
-          if (total != null && total > 0 && onProgress != null) {
-            onProgress((received / total).clamp(0.0, 1.0));
-          }
+        final resp =
+            await client.send(request).timeout(const Duration(seconds: 30));
+        if (resp.statusCode != 200) {
+          debugPrint(
+            '[WorkshopService] downloadZip HTTP ${resp.statusCode} '
+            'url=$finalUrl useAuth=$useAuth',
+          );
+          return null;
         }
-      } finally {
-        await sink.close();
-      }
 
-      if (tmp.lengthSync() == 0) {
-        tmp.deleteSync();
-        return null;
+        // 先写入 .part 临时文件，下载完整后再改名发布
+        if (maxBytes != null && (resp.contentLength ?? 0) > maxBytes) {
+          return null;
+        }
+        final tmp = File('${workshopDir.path}/$name.part');
+        partial = tmp;
+        final total = resp.contentLength;
+        var received = 0;
+        final sink = tmp.openWrite();
+        try {
+          await for (final chunk
+              in resp.stream.timeout(const Duration(seconds: 30))) {
+            received += chunk.length;
+            if (maxBytes != null && received > maxBytes) {
+              throw const FormatException('下载文件超过大小限制');
+            }
+            sink.add(chunk);
+            if (total != null && total > 0 && onProgress != null) {
+              onProgress((received / total).clamp(0.0, 1.0));
+            }
+          }
+        } finally {
+          await sink.close();
+        }
+
+        if (tmp.lengthSync() == 0 || (total != null && received != total)) {
+          tmp.deleteSync();
+          return null;
+        }
+        if (file.existsSync()) file.deleteSync();
+        tmp.renameSync(file.path);
+        return file.path;
+      } finally {
+        client.close();
       }
-      if (file.existsSync()) file.deleteSync();
-      tmp.renameSync(file.path);
-      return file.path;
     } catch (_) {
       return null;
+    } finally {
+      if (partial != null && await partial.exists()) {
+        await partial.delete();
+      }
     }
   }
 
@@ -741,7 +768,8 @@ class WorkshopService {
   }
 
   /// 获取仓库最新正式 Release，用于开发者预览真实的仓库更新提示。
-  static Future<LatestRepositoryRelease?> fetchLatestRelease(String path) async {
+  static Future<LatestRepositoryRelease?> fetchLatestRelease(
+      String path) async {
     final parsed = parseRepoPath(path);
     if (parsed == null) return null;
     final apiUrl = parsed.isGitee

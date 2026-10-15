@@ -1,3 +1,5 @@
+import 'services/app_theme_store.dart';
+import 'services/app_icon_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'app.dart';
@@ -33,6 +35,12 @@ Future<void> main() async {
   }
   // 自定义开屏依赖本地图片路径。必须在首帧前完成读取，避免先绘制默认
   // Logo、随后异步切换成自定义图片而产生闪现。
+  try {
+    await AppThemeStore.instance.init();
+  } catch (e) {
+    debugPrint('主题初始化失败: $e');
+  }
+  await AppIconService.instance.init();
   final settingsProvider = SettingsProvider();
   await settingsProvider.init();
   runApp(

@@ -1,3 +1,5 @@
+import '../widgets/theme_assets.dart';
+import '../services/app_theme_store.dart';
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
@@ -363,6 +365,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
+    context.watch<SettingsProvider>();
     // 朋友圈互动通知未读 → 底部「朋友圈」tab 显示红点
     final momentsUnread = context.watch<MomentNotificationProvider>().hasUnread;
     // 只监听未读数总和：聊天消息内容/排序变化不重建整个首页（4 个 tab + 底部栏），
@@ -453,8 +456,9 @@ class _HomeScreenState extends State<HomeScreen>
           label: AppNavigationIcons.tabs[0].label,
         ),
         BottomNavigationBarItem(
-          icon: Icon(AppNavigationIcons.tabs[1].icon),
-          activeIcon: Icon(AppNavigationIcons.tabs[1].activeIcon),
+          icon: themedNavigationIcon(context, AppNavigationIcons.tabs[1].icon),
+          activeIcon: themedNavigationIcon(
+              context, AppNavigationIcons.tabs[1].activeIcon),
           label: AppNavigationIcons.tabs[1].label,
         ),
         BottomNavigationBarItem(
@@ -469,8 +473,9 @@ class _HomeScreenState extends State<HomeScreen>
           label: AppNavigationIcons.tabs[2].label,
         ),
         BottomNavigationBarItem(
-          icon: Icon(AppNavigationIcons.tabs[3].icon),
-          activeIcon: Icon(AppNavigationIcons.tabs[3].activeIcon),
+          icon: themedNavigationIcon(context, AppNavigationIcons.tabs[3].icon),
+          activeIcon: themedNavigationIcon(
+              context, AppNavigationIcons.tabs[3].activeIcon),
           label: AppNavigationIcons.tabs[3].label,
         ),
       ],
@@ -485,7 +490,7 @@ class _HomeScreenState extends State<HomeScreen>
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Icon(icon),
+        themedNavigationIcon(context, icon),
         if (unreadCount > 0)
           Positioned(
             right: -12,
@@ -676,61 +681,64 @@ class _HomeScreenState extends State<HomeScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      AnimatedSwitcher(
-                        duration: AppMotion.tabIconFade,
-                        switchInCurve: AppMotion.tabSelectionCurve,
-                        switchOutCurve: AppMotion.exit,
-                        transitionBuilder: (child, animation) {
-                          return FadeTransition(
-                            opacity: animation,
-                            child: ScaleTransition(
-                              scale: Tween<double>(
-                                begin: 0.88,
-                                end: 1,
-                              ).animate(animation),
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: Icon(
-                          selected ? activeIcon : icon,
-                          key: ValueKey(selected),
-                          size: selected ? 22 : 21,
-                          color: selected
-                              ? context.accentColor
-                              : context.textSecondaryColor,
-                        ),
-                      ),
-                      if (badge)
-                        Positioned(
-                          right: -10,
-                          top: -6,
-                          child: _buildUnreadBadge(
-                            totalUnread,
-                            context.surfaceColor,
+                  Flexible(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        AnimatedSwitcher(
+                          duration: AppMotion.tabIconFade,
+                          switchInCurve: AppMotion.tabSelectionCurve,
+                          switchOutCurve: AppMotion.exit,
+                          transitionBuilder: (child, animation) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: ScaleTransition(
+                                scale: Tween<double>(
+                                  begin: 0.88,
+                                  end: 1,
+                                ).animate(animation),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: themedNavigationIcon(
+                            context,
+                            selected ? activeIcon : icon,
+                            key: ValueKey(selected),
+                            size: selected ? 22 : 21,
+                            color: selected
+                                ? context.accentColor
+                                : context.textSecondaryColor,
                           ),
                         ),
-                      if (momentBadge)
-                        Positioned(
-                          right: -7,
-                          top: -6,
-                          child: Container(
-                            width: 9,
-                            height: 9,
-                            decoration: BoxDecoration(
-                              color: CupertinoColors.systemRed,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: context.surfaceColor,
-                                width: 1.2,
+                        if (badge)
+                          Positioned(
+                            right: -10,
+                            top: -6,
+                            child: _buildUnreadBadge(
+                              totalUnread,
+                              context.surfaceColor,
+                            ),
+                          ),
+                        if (momentBadge)
+                          Positioned(
+                            right: -7,
+                            top: -6,
+                            child: Container(
+                              width: 9,
+                              height: 9,
+                              decoration: BoxDecoration(
+                                color: CupertinoColors.systemRed,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: context.surfaceColor,
+                                  width: 1.2,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 2),
                   AnimatedDefaultTextStyle(
@@ -764,149 +772,165 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildChatList() {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('AiChat'),
-        // 右上角：搜索 + 加号（加号用于创建群聊）
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  CupertinoPageRoute(builder: (_) => const ChatSearchScreen()),
-                );
-              },
-              child: const Icon(CupertinoIcons.search),
-            ),
-            const SizedBox(width: 8),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _openCreateGroup,
-              child: const Icon(CupertinoIcons.add),
-            ),
-          ],
-        ),
-      ),
-      child: Selector2<ChatProvider, GroupChatProvider, List<HomeChatEntry>>(
-        selector: (_, chatProvider, groupProvider) =>
-            _buildChatEntries(chatProvider, groupProvider),
-        builder: (context, entries, _) {
-          if (entries.isEmpty) {
-            return Center(
-              child: Text(
-                '暂无会话',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: context.textSecondaryColor,
+    return ThemeHeaderSurface(
+        slot: 'home',
+        child: CupertinoPageScaffold(
+          backgroundColor:
+              AppThemeStore.instance.active?.headers['home'] != null
+                  ? CupertinoColors.transparent
+                  : null,
+          navigationBar: CupertinoNavigationBar(
+            automaticBackgroundVisibility:
+                AppThemeStore.instance.active?.headers['home'] == null,
+            enableBackgroundFilterBlur:
+                AppThemeStore.instance.active?.headers['home'] == null,
+            backgroundColor:
+                AppThemeStore.instance.active?.headers['home'] != null
+                    ? CupertinoColors.transparent
+                    : null,
+            middle: const Text('AiChat'),
+            // 右上角：搜索 + 加号（加号用于创建群聊）
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                          builder: (_) => const ChatSearchScreen()),
+                    );
+                  },
+                  child: const Icon(CupertinoIcons.search),
                 ),
-              ),
-            );
-          }
-
-          return Container(
-            color: context.scaffoldColor,
-            child: ListView.separated(
-              padding: EdgeInsets.only(
-                // CupertinoPageScaffold exposes the translucent navigation
-                // bar overlap through MediaQuery.padding.top. Keep the first
-                // row below that area so it remains reachable and visible at
-                // the top of the list.
-                top: MediaQuery.paddingOf(context).top + UiSpec.spaceSm,
-                bottom: _homeContentBottomInset(context),
-              ),
-              itemCount: entries.length,
-              separatorBuilder: (_, __) => Container(
-                height: 0.5,
-                margin: const EdgeInsets.only(left: 76),
-                color: context.conversationDividerColor,
-              ),
-              itemBuilder: (context, index) {
-                final entry = entries[index];
-                return GestureDetector(
-                  // 长按会话：在长按位置旁弹出悬浮菜单（置顶/取消置顶）
-                  onLongPressStart: (details) =>
-                      _showEntryMenu(context, details.globalPosition, entry),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      minHeight: UiSpec.conversationRowHeight,
-                    ),
-                    child: CupertinoListTile(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                      // 置顶会话背景变灰，区分普通会话
-                      backgroundColor:
-                          entry.pinned ? context.pinnedChatColor : null,
-                      // CupertinoListTile 默认把 leading 约束在 28×28，
-                      // 必须显式指定与头像一致的尺寸，否则头像被压缩
-                      leadingSize: UiSpec.conversationAvatar,
-                      leading: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          _buildSquareAvatar(
-                            context,
-                            entry.title,
-                            entry.avatar,
-                            fallbackIcon: entry.isGroup
-                                ? CupertinoIcons.person_3_fill
-                                : CupertinoIcons.person_fill,
-                          ),
-                          // 未读消息数字角标（私聊与群聊统一展示）
-                          if (entry.unreadCount > 0)
-                            Positioned(
-                              right: -8,
-                              top: -6,
-                              child: _buildUnreadBadge(
-                                entry.unreadCount,
-                                context.scaffoldColor,
-                              ),
-                            ),
-                        ],
-                      ),
-                      title: Text(
-                        entry.title,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: context.textPrimaryColor,
-                        ),
-                      ),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          entry.lastMessage.isEmpty
-                              ? '开始对话...'
-                              : entry.lastMessage,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.25,
-                            color: context.textSecondaryColor,
-                          ),
-                        ),
-                      ),
-                      trailing: Text(
-                        _formatTime(entry.lastMessageTime),
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: context.textSecondaryColor,
-                        ),
-                      ),
-                      onTap: () => _openChatEntry(entry),
+                const SizedBox(width: 8),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _openCreateGroup,
+                  child: const Icon(CupertinoIcons.add),
+                ),
+              ],
+            ),
+          ),
+          child:
+              Selector2<ChatProvider, GroupChatProvider, List<HomeChatEntry>>(
+            selector: (_, chatProvider, groupProvider) =>
+                _buildChatEntries(chatProvider, groupProvider),
+            builder: (context, entries, _) {
+              if (entries.isEmpty) {
+                return Center(
+                  child: Text(
+                    '暂无会话',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: context.textSecondaryColor,
                     ),
                   ),
                 );
-              },
-            ),
-          );
-        },
-      ),
-    );
+              }
+
+              return Container(
+                color: context.scaffoldColor,
+                child: ListView.separated(
+                  padding: EdgeInsets.only(
+                    // CupertinoPageScaffold exposes the translucent navigation
+                    // bar overlap through MediaQuery.padding.top. Keep the first
+                    // row below that area so it remains reachable and visible at
+                    // the top of the list.
+                    top: MediaQuery.paddingOf(context).top + UiSpec.spaceSm,
+                    bottom: _homeContentBottomInset(context),
+                  ),
+                  itemCount: entries.length,
+                  separatorBuilder: (_, __) => Container(
+                    height: 0.5,
+                    margin: const EdgeInsets.only(left: 76),
+                    color: context.conversationDividerColor,
+                  ),
+                  itemBuilder: (context, index) {
+                    final entry = entries[index];
+                    return GestureDetector(
+                      // 长按会话：在长按位置旁弹出悬浮菜单（置顶/取消置顶）
+                      onLongPressStart: (details) => _showEntryMenu(
+                          context, details.globalPosition, entry),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minHeight: UiSpec.conversationRowHeight,
+                        ),
+                        child: CupertinoListTile(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          // 置顶会话背景变灰，区分普通会话
+                          backgroundColor:
+                              entry.pinned ? context.pinnedChatColor : null,
+                          // CupertinoListTile 默认把 leading 约束在 28×28，
+                          // 必须显式指定与头像一致的尺寸，否则头像被压缩
+                          leadingSize: UiSpec.conversationAvatar,
+                          leading: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              _buildSquareAvatar(
+                                context,
+                                entry.title,
+                                entry.avatar,
+                                fallbackIcon: entry.isGroup
+                                    ? CupertinoIcons.person_3_fill
+                                    : CupertinoIcons.person_fill,
+                              ),
+                              // 未读消息数字角标（私聊与群聊统一展示）
+                              if (entry.unreadCount > 0)
+                                Positioned(
+                                  right: -8,
+                                  top: -6,
+                                  child: _buildUnreadBadge(
+                                    entry.unreadCount,
+                                    context.scaffoldColor,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          title: Text(
+                            entry.title,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: context.textPrimaryColor,
+                            ),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              entry.lastMessage.isEmpty
+                                  ? '开始对话...'
+                                  : entry.lastMessage,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 1.25,
+                                color: context.textSecondaryColor,
+                              ),
+                            ),
+                          ),
+                          trailing: Text(
+                            _formatTime(entry.lastMessageTime),
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: context.textSecondaryColor,
+                            ),
+                          ),
+                          onTap: () => _openChatEntry(entry),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ));
   }
 
   /// 合并私聊与会话为统一会话列表：置顶优先，其余按最近消息时间倒序
@@ -972,223 +996,241 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildCharacterList() {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('通讯录'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () {
-            Navigator.push(
-              context,
-              CupertinoPageRoute(builder: (_) => const ContactsSearchScreen()),
-            );
-          },
-          child: const Icon(CupertinoIcons.search),
-        ),
-      ),
-      child: Consumer<CharacterProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoading) {
-            return const Center(child: CupertinoActivityIndicator());
-          }
+    return ThemeHeaderSurface(
+        slot: 'contacts',
+        child: CupertinoPageScaffold(
+          backgroundColor:
+              AppThemeStore.instance.active?.headers['contacts'] != null
+                  ? CupertinoColors.transparent
+                  : null,
+          navigationBar: CupertinoNavigationBar(
+            automaticBackgroundVisibility:
+                AppThemeStore.instance.active?.headers['contacts'] == null,
+            enableBackgroundFilterBlur:
+                AppThemeStore.instance.active?.headers['contacts'] == null,
+            backgroundColor:
+                AppThemeStore.instance.active?.headers['contacts'] != null
+                    ? CupertinoColors.transparent
+                    : null,
+            middle: const Text('通讯录'),
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                      builder: (_) => const ContactsSearchScreen()),
+                );
+              },
+              child: const Icon(CupertinoIcons.search),
+            ),
+          ),
+          child: Consumer<CharacterProvider>(
+            builder: (context, provider, _) {
+              if (provider.isLoading) {
+                return const Center(child: CupertinoActivityIndicator());
+              }
 
-          final self = provider.selfCharacter;
-          if (provider.manageableCharacters.isEmpty && self == null) {
-            return Center(
-              child: Text(
-                '暂无可用角色',
-                style: TextStyle(color: context.textSecondaryColor),
-              ),
-            );
-          }
-
-          // 按拼音首字母分组排序（类似手机通讯录，排除固定的"自己"）
-          final groups = provider.sortedCharactersGrouped
-              .map(
-                (g) => MapEntry(
-                  g.key,
-                  g.value
-                      .where((c) => c.id != CharacterProvider.selfCharacterId)
-                      .toList(),
-                ),
-              )
-              .where((g) => g.value.isNotEmpty)
-              .toList();
-          final availableLetters = groups.map((g) => g.key).toSet();
-          final topPadding = MediaQuery.paddingOf(context).top + UiSpec.spaceSm;
-          final entries = <_ContactListItem>[];
-          var offset = topPadding;
-          if (self != null) {
-            entries.add(
-              const _ContactListItem(
-                kind: _ContactListItemKind.self,
-                keyValue: 'self',
-                height: 76,
-              ),
-            );
-            offset += 76;
-            entries.add(
-              const _ContactListItem(
-                kind: _ContactListItemKind.divider,
-                keyValue: 'self-divider',
-                height: 1,
-              ),
-            );
-            offset += 1;
-          }
-          final sectionOffsets = <String, double>{};
-          for (final group in groups) {
-            sectionOffsets[group.key] = offset;
-            entries.add(
-              _ContactListItem(
-                kind: _ContactListItemKind.section,
-                keyValue: 'section-${group.key}',
-                height: 34,
-              ),
-            );
-            offset += 34;
-            for (final character in group.value) {
-              entries.add(
-                _ContactListItem(
-                  kind: _ContactListItemKind.contact,
-                  keyValue: 'contact-${character.id}',
-                  character: character,
-                  height: 76,
-                ),
-              );
-              offset += 76;
-            }
-            entries.add(
-              _ContactListItem(
-                kind: _ContactListItemKind.divider,
-                keyValue: 'divider-${group.key}',
-                height: 1,
-              ),
-            );
-            offset += 1;
-          }
-          // These values are consumed by the index callbacks. They are derived
-          // from the current provider snapshot and do not represent UI state.
-          _contactSectionOffsets
-            ..clear()
-            ..addAll(sectionOffsets);
-          _contactAvailableLetters = availableLetters;
-
-          return Stack(
-            children: [
-              // 主列表：扁平化后懒构建，滚动时只创建可见联系人行。
-              ColoredBox(
-                color: context.scaffoldColor,
-                child: ListView.builder(
-                  controller: _contactsScrollController,
-                  padding: EdgeInsets.only(
-                    top: topPadding,
-                    right: 28,
-                    bottom: _homeContentBottomInset(context),
+              final self = provider.selfCharacter;
+              if (provider.manageableCharacters.isEmpty && self == null) {
+                return Center(
+                  child: Text(
+                    '暂无可用角色',
+                    style: TextStyle(color: context.textSecondaryColor),
                   ),
-                  itemCount: entries.length,
-                  itemExtentBuilder: (index, _) => entries[index].height,
-                  itemBuilder: (context, index) {
-                    final item = entries[index];
-                    switch (item.kind) {
-                      case _ContactListItemKind.self:
-                        return KeyedSubtree(
-                          key: const ValueKey('contact-self'),
-                          child: _buildSelfTile(context, self!),
-                        );
-                      case _ContactListItemKind.section:
-                        return KeyedSubtree(
-                          key: ValueKey(item.keyValue),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: Text(
-                                item.keyValue.substring('section-'.length),
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: context.textSecondaryColor,
+                );
+              }
+
+              // 按拼音首字母分组排序（类似手机通讯录，排除固定的"自己"）
+              final groups = provider.sortedCharactersGrouped
+                  .map(
+                    (g) => MapEntry(
+                      g.key,
+                      g.value
+                          .where(
+                              (c) => c.id != CharacterProvider.selfCharacterId)
+                          .toList(),
+                    ),
+                  )
+                  .where((g) => g.value.isNotEmpty)
+                  .toList();
+              final availableLetters = groups.map((g) => g.key).toSet();
+              final topPadding =
+                  MediaQuery.paddingOf(context).top + UiSpec.spaceSm;
+              final entries = <_ContactListItem>[];
+              var offset = topPadding;
+              if (self != null) {
+                entries.add(
+                  const _ContactListItem(
+                    kind: _ContactListItemKind.self,
+                    keyValue: 'self',
+                    height: 76,
+                  ),
+                );
+                offset += 76;
+                entries.add(
+                  const _ContactListItem(
+                    kind: _ContactListItemKind.divider,
+                    keyValue: 'self-divider',
+                    height: 1,
+                  ),
+                );
+                offset += 1;
+              }
+              final sectionOffsets = <String, double>{};
+              for (final group in groups) {
+                sectionOffsets[group.key] = offset;
+                entries.add(
+                  _ContactListItem(
+                    kind: _ContactListItemKind.section,
+                    keyValue: 'section-${group.key}',
+                    height: 34,
+                  ),
+                );
+                offset += 34;
+                for (final character in group.value) {
+                  entries.add(
+                    _ContactListItem(
+                      kind: _ContactListItemKind.contact,
+                      keyValue: 'contact-${character.id}',
+                      character: character,
+                      height: 76,
+                    ),
+                  );
+                  offset += 76;
+                }
+                entries.add(
+                  _ContactListItem(
+                    kind: _ContactListItemKind.divider,
+                    keyValue: 'divider-${group.key}',
+                    height: 1,
+                  ),
+                );
+                offset += 1;
+              }
+              // These values are consumed by the index callbacks. They are derived
+              // from the current provider snapshot and do not represent UI state.
+              _contactSectionOffsets
+                ..clear()
+                ..addAll(sectionOffsets);
+              _contactAvailableLetters = availableLetters;
+
+              return Stack(
+                children: [
+                  // 主列表：扁平化后懒构建，滚动时只创建可见联系人行。
+                  ColoredBox(
+                    color: context.scaffoldColor,
+                    child: ListView.builder(
+                      controller: _contactsScrollController,
+                      padding: EdgeInsets.only(
+                        top: topPadding,
+                        right: 28,
+                        bottom: _homeContentBottomInset(context),
+                      ),
+                      itemCount: entries.length,
+                      itemExtentBuilder: (index, _) => entries[index].height,
+                      itemBuilder: (context, index) {
+                        final item = entries[index];
+                        switch (item.kind) {
+                          case _ContactListItemKind.self:
+                            return KeyedSubtree(
+                              key: const ValueKey('contact-self'),
+                              child: _buildSelfTile(context, self!),
+                            );
+                          case _ContactListItemKind.section:
+                            return KeyedSubtree(
+                              key: ValueKey(item.keyValue),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  child: Text(
+                                    item.keyValue.substring('section-'.length),
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: context.textSecondaryColor,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                        );
-                      case _ContactListItemKind.contact:
-                        return KeyedSubtree(
-                          key: ValueKey(item.keyValue),
-                          child: _buildContactTile(context, item.character!),
-                        );
-                      case _ContactListItemKind.divider:
-                        return KeyedSubtree(
-                          key: ValueKey(item.keyValue),
-                          child: Container(
-                            margin: const EdgeInsets.only(left: 76),
-                            color: context.contactDividerColor,
-                          ),
-                        );
-                    }
-                  },
-                ),
-              ),
-              // 右侧字母索引栏
-              Positioned(
-                right: 0,
-                top: MediaQuery.paddingOf(context).top + 8,
-                bottom: _homeContentBottomInset(context) + 8,
-                child: AlphabetIndexBar(
-                  availableLetters: availableLetters,
-                  onDragStart: () {
-                    _setIndexDragging(true);
-                  },
-                  onLetterChanged: (letter) {
-                    if (!_showCharIndexTooltip ||
-                        _currentCharTooltipLetter != letter) {
-                      setState(() {
-                        _showCharIndexTooltip = true;
-                        _currentCharTooltipLetter = letter;
-                      });
-                    }
-                    _scrollToNearest(letter, _contactAvailableLetters);
-                  },
-                  onDragEnd: () {
-                    _setIndexDragging(false);
-                    setState(() {
-                      _showCharIndexTooltip = false;
-                    });
-                  },
-                ),
-              ),
-              // 字母提示气泡
-              if (_showCharIndexTooltip)
-                Positioned(
-                  right: 48,
-                  top: MediaQuery.of(context).size.height / 2 - 32,
-                  child: Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: context.accentColor,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      _currentCharTooltipLetter,
-                      style: const TextStyle(
-                        fontSize: 30,
-                        fontWeight: FontWeight.bold,
-                        color: CupertinoColors.white,
-                      ),
+                            );
+                          case _ContactListItemKind.contact:
+                            return KeyedSubtree(
+                              key: ValueKey(item.keyValue),
+                              child:
+                                  _buildContactTile(context, item.character!),
+                            );
+                          case _ContactListItemKind.divider:
+                            return KeyedSubtree(
+                              key: ValueKey(item.keyValue),
+                              child: Container(
+                                margin: const EdgeInsets.only(left: 76),
+                                color: context.contactDividerColor,
+                              ),
+                            );
+                        }
+                      },
                     ),
                   ),
-                ),
-            ],
-          );
-        },
-      ),
-    );
+                  // 右侧字母索引栏
+                  Positioned(
+                    right: 0,
+                    top: MediaQuery.paddingOf(context).top + 8,
+                    bottom: _homeContentBottomInset(context) + 8,
+                    child: AlphabetIndexBar(
+                      availableLetters: availableLetters,
+                      onDragStart: () {
+                        _setIndexDragging(true);
+                      },
+                      onLetterChanged: (letter) {
+                        if (!_showCharIndexTooltip ||
+                            _currentCharTooltipLetter != letter) {
+                          setState(() {
+                            _showCharIndexTooltip = true;
+                            _currentCharTooltipLetter = letter;
+                          });
+                        }
+                        _scrollToNearest(letter, _contactAvailableLetters);
+                      },
+                      onDragEnd: () {
+                        _setIndexDragging(false);
+                        setState(() {
+                          _showCharIndexTooltip = false;
+                        });
+                      },
+                    ),
+                  ),
+                  // 字母提示气泡
+                  if (_showCharIndexTooltip)
+                    Positioned(
+                      right: 48,
+                      top: MediaQuery.of(context).size.height / 2 - 32,
+                      child: Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: context.accentColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          _currentCharTooltipLetter,
+                          style: const TextStyle(
+                            fontSize: 30,
+                            fontWeight: FontWeight.bold,
+                            color: CupertinoColors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ));
   }
 
   /// 通讯录显示名：有备注时显示「备注（昵称）」，无备注仅显示昵称

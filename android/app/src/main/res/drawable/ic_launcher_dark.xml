@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <!-- Dark-mode palette: a deep slate background with muted lavender bubbles. -->
+    <path android:fillColor="#252A35" android:pathData="M224,0 L800,0 C924,0 1024,100 1024,224 L1024,800 C1024,924 924,1024 800,1024 L224,1024 C100,1024 0,924 0,800 L0,224 C0,100 100,0 224,0 Z" />
+    <path android:fillColor="#7E899C" android:pathData="M221,270 C221,215 266,170 321,170 L728,170 C783,170 828,215 828,270 L828,523 C828,578 783,623 728,623 L500,623 L365,735 C340,753 305,735 305,704 L305,623 L221,623 Z" />
+    <path android:fillColor="#C0B8CA" android:pathData="M184,402 C184,347 229,302 284,302 L691,302 C746,302 791,347 791,402 L791,655 C791,710 746,755 691,755 L463,755 L328,867 C303,885 268,867 268,836 L268,755 L184,755 Z" />
+    <path android:fillColor="#454D60" android:pathData="M368,504 A24,24 0,1 0,368,552 A24,24 0,1 0,368,504 Z" />
+    <path android:fillColor="#454D60" android:pathData="M512,504 A24,24 0,1 0,512,552 A24,24 0,1 0,512,504 Z" />
+    <path android:fillColor="#454D60" android:pathData="M656,504 A24,24 0,1 0,656,552 A24,24 0,1 0,656,504 Z" />
+</vector>

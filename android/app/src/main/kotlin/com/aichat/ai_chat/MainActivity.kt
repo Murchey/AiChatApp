@@ -32,6 +32,15 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         handleWidgetIntent(intent)
+        val mode = getSharedPreferences("app_icons", 0).getString("mode", "system") ?: "system"
+        try { AppIconManager.apply(this, mode) } catch (e: Exception) { android.util.Log.w("AiChat", "Icon refresh failed", e) }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val mode = getSharedPreferences("app_icons", 0).getString("mode", "system") ?: "system"
+        if (mode == "system") AppIconManager.apply(this, mode)
+        WidgetUpdateManager.updateAllWidgets(this)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -75,6 +84,34 @@ class MainActivity : FlutterActivity() {
                 }
             }
         
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.aichat.ai_chat/icons")
+            .setMethodCallHandler { call, result ->
+                try {
+                    when (call.method) {
+                        "shortcutStatus" -> result.success(AppIconManager.status(this))
+                        "preview" -> {
+                            val mode = call.argument<String>("mode") ?: "system"
+                            val dark = mode == "dark" || (mode == "system" && resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES)
+                            val drawable = getDrawable(if (dark) R.drawable.ic_launcher_dark else R.drawable.ic_launcher_light)!!
+                            val bitmap = android.graphics.Bitmap.createBitmap(256,256,android.graphics.Bitmap.Config.ARGB_8888)
+                            drawable.setBounds(0,0,256,256)
+                            drawable.draw(android.graphics.Canvas(bitmap))
+                            val out = java.io.ByteArrayOutputStream()
+                            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out)
+                            bitmap.recycle()
+                            result.success(out.toByteArray())
+                        }
+                        "setIcon" -> { AppIconManager.apply(this, call.argument<String>("mode") ?: "system"); result.success(true) }
+                        "pinShortcut" -> result.success(AppIconManager.pin(this, call.argument<String>("path") ?: error("缺少图片")))
+                        "refresh" -> {
+                            AppIconManager.apply(this, call.argument<String>("mode") ?: "system")
+                            result.success(AppIconManager.refresh(this, call.argument<String>("path")))
+                        }
+                        else -> result.notImplemented()
+                    }
+                } catch (e: Exception) { result.error("ICON_ERROR", e.message, null) }
+            }
+
         // 文件操作通道
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->

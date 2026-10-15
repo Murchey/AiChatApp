@@ -1,3 +1,6 @@
+import '../services/app_theme_store.dart';
+import '../services/app_icon_service.dart';
+import '../services/chat_draft_service.dart';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
@@ -307,9 +310,7 @@ class _BackupScreenState extends State<BackupScreen> {
 
     final password = await _askPassword(
       title: '输入备份密码',
-      message: looksEncrypted
-          ? '此备份已加密，请输入备份密码。'
-          : '若为加密备份请填写密码；未加密可留空。',
+      message: looksEncrypted ? '此备份已加密，请输入备份密码。' : '若为加密备份请填写密码；未加密可留空。',
       requireConfirm: false,
     );
     if (password == null) return;
@@ -645,6 +646,9 @@ class _BackupScreenState extends State<BackupScreen> {
     final sticker = context.read<StickerProvider>();
     final chatBg = context.read<ChatBackgroundProvider>();
 
+    ChatDraftService.instance.reset();
+    await AppThemeStore.instance.init();
+    await AppIconService.instance.init();
     await settings.init();
     await auth.init();
     await chat.init();
@@ -889,19 +893,29 @@ class _BackupScreenState extends State<BackupScreen> {
 
   Widget _emptyHint(String text) => BackupEmptyHint(text: text);
 
+  Widget _section({required String title, required List<Widget> children}) =>
+      BackupSection(title: title, children: children);
 
-  Widget _section({required String title, required List<Widget> children}) => BackupSection(title: title, children: children);
-
-
-  Widget _actionTile({required IconData icon, required String title, required String subtitle, VoidCallback? onTap, bool enabled = true}) => BackupActionTile(icon: icon, title: title, subtitle: subtitle, onTap: onTap, enabled: enabled);
-
+  Widget _actionTile(
+          {required IconData icon,
+          required String title,
+          required String subtitle,
+          VoidCallback? onTap,
+          bool enabled = true}) =>
+      BackupActionTile(
+          icon: icon,
+          title: title,
+          subtitle: subtitle,
+          onTap: onTap,
+          enabled: enabled);
 
   Widget _localBackupTile(File file) {
     final name = file.path.split(RegExp(r'[/\\]')).last;
     final encrypted = BackupService.isLocalBackupEncrypted(file);
     return _backupTileBody(
       title: name,
-      meta: '${_fileTime(file)} · ${BackupService.formatSize(file.lengthSync())}',
+      meta:
+          '${_fileTime(file)} · ${BackupService.formatSize(file.lengthSync())}',
       encrypted: encrypted,
       actions: [
         _miniButton(
@@ -947,9 +961,17 @@ class _BackupScreenState extends State<BackupScreen> {
     );
   }
 
-  Widget _backupTileBody({required String title, required String meta, required bool encrypted, required List<Widget> actions}) => BackupTileBody(title: title, meta: meta, encrypted: encrypted, actions: actions);
+  Widget _backupTileBody(
+          {required String title,
+          required String meta,
+          required bool encrypted,
+          required List<Widget> actions}) =>
+      BackupTileBody(
+          title: title, meta: meta, encrypted: encrypted, actions: actions);
 
-
-  Widget _miniButton({required String label, required VoidCallback? onTap, bool destructive = false}) => BackupMiniButton(label: label, onTap: onTap, destructive: destructive);
-
+  Widget _miniButton(
+          {required String label,
+          required VoidCallback? onTap,
+          bool destructive = false}) =>
+      BackupMiniButton(label: label, onTap: onTap, destructive: destructive);
 }

@@ -137,11 +137,15 @@ class DownloadZipDialogState extends State<DownloadZipDialog> {
 /// 批量下载 zip 进度弹窗：下载所有 zip 后自动关闭，返回 item.key -> 本地路径 的映射
 class BatchDownloadDialog extends StatefulWidget {
   final List<ZipItem> items;
+  final bool forceDownload;
+  final int? maxBytes;
   final String Function(ZipItem item) getProxyUrl;
   final CosAuth? Function(ZipItem item)? getCosAuth;
 
   const BatchDownloadDialog({
     required this.items,
+    this.forceDownload = false,
+    this.maxBytes,
     required this.getProxyUrl,
     this.getCosAuth,
   });
@@ -177,6 +181,8 @@ class BatchDownloadDialogState extends State<BatchDownloadDialog> {
         downloadUrl: item.asset.downloadUrl,
         proxyUrl: proxyUrl,
         auth: auth,
+        force: widget.forceDownload,
+        maxBytes: widget.maxBytes,
         onProgress: (p) {
           if (mounted) setState(() => _currentProgress = p);
         },

@@ -1,3 +1,5 @@
+import '../providers/chat_provider.dart';
+import '../providers/token_usage_provider.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +7,57 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/platform_support.dart';
 
 class WidgetSyncService {
+  /// Explicit refresh reports native errors instead of treating them as success.
+  static Future<void> refreshNow(
+      TokenUsageProvider token, ChatProvider chat) async {
+    if (!PlatformSupport.supportsHomeWidgets) {
+      throw UnsupportedError('当前平台不支持小组件');
+    }
+    int privateChat = 0, groupChat = 0, moment = 0;
+    token.allUsages.forEach((id, u) {
+      if (id == TokenUsageProvider.kMomentUsageId) {
+        moment += u.totalTokens;
+      } else if (id.startsWith('group_')) {
+        groupChat += u.totalTokens;
+      } else {
+        privateChat += u.totalTokens;
+      }
+    });
+    final prefs = await SharedPreferences.getInstance();
+    for (final e in {
+      'total': token.total,
+      'sent': token.sentTotal,
+      'received': token.receivedTotal,
+      'private': privateChat,
+      'group': groupChat,
+      'moment': moment
+    }.entries) {
+      if (!await prefs.setInt('widget_data_token_${e.key}', e.value)) {
+        throw StateError('小组件数据写入失败');
+      }
+    }
+    await prefs.setInt(
+        'widget_data_token_last_update', DateTime.now().millisecondsSinceEpoch);
+    await prefs.setString(
+        'widget_conversations',
+        jsonEncode(chat.conversations
+            .take(10)
+            .map((c) => {
+                  'id': c.id,
+                  'character_id': c.characterId,
+                  'character_name': c.characterName,
+                  'last_message': c.lastMessage,
+                  'last_message_time': c.lastMessageTime.millisecondsSinceEpoch,
+                  'unread_count': c.unreadCount,
+                  'pinned': c.pinned,
+                })
+            .toList()));
+    await prefs.setInt('widget_conversations_last_update',
+        DateTime.now().millisecondsSinceEpoch);
+    final ok = await _channel.invokeMethod<bool>('updateWidgets');
+    if (ok != true) throw StateError('小组件刷新失败');
+  }
+
   static const _tokenKey = 'widget_data';
   static const _convKey = 'widget_conversations';
   static const _channel = MethodChannel('com.aichat.ai_chat/widget');

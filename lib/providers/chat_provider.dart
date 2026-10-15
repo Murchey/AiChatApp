@@ -1,3 +1,5 @@
+import '../services/chat_draft_service.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -308,13 +310,24 @@ class ChatProvider extends ChangeNotifier {
   /// 且最后一次写入始终包含最新数据。
   bool _persistRunning = false;
   bool _persistDirty = false;
+  Completer<void>? _persistCompletion;
+  Object? _persistError;
+  StackTrace? _persistStack;
 
-  Future<void> _persist() async {
+  Future<void> _persist({bool requireSuccess = false}) async {
     if (_persistRunning) {
       _persistDirty = true;
+      if (requireSuccess) {
+        await _persistCompletion!.future;
+        if (_persistError != null) {
+          Error.throwWithStackTrace(_persistError!, _persistStack!);
+        }
+      }
       return;
     }
     _persistRunning = true;
+    final completion = _persistCompletion = Completer<void>();
+    _persistError = null;
     try {
       do {
         _persistDirty = false;
@@ -342,11 +355,15 @@ class ChatProvider extends ChangeNotifier {
           encoded['systemTokens']!,
         );
       } while (_persistDirty);
-    } catch (e) {
+    } catch (e, stack) {
+      _persistError = e;
+      _persistStack = stack;
       // 持久化失败不阻塞主流程（多为平台通道/磁盘异常），下次变更会再次尝试
       debugPrint('[ChatProvider] 持久化失败: $e');
+      if (requireSuccess) rethrow;
     } finally {
       _persistRunning = false;
+      completion.complete();
       // 同步到小组件（异步，不阻塞）
       _syncToWidget();
     }
@@ -406,8 +423,9 @@ class ChatProvider extends ChangeNotifier {
     required String content,
     String quoteContent = '',
     String quoteSender = '',
+    VoidCallback? onLocalMessageAdded,
   }) async {
-    await _clearRoleplayChoicesForNextTurn(conversationId);
+    final choicesCleared = _clearRoleplayChoicesForNextTurn(conversationId);
     final userMessage = Message(
       id: const Uuid().v4(),
       conversationId: conversationId,
@@ -425,7 +443,10 @@ class ChatProvider extends ChangeNotifier {
     _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
     _lastError = null;
     notifyListeners();
-    await _persist();
+    // Input feedback must not wait for the full-history persistence pass.
+    onLocalMessageAdded?.call();
+    await choicesCleared;
+    await _persist(requireSuccess: true);
   }
 
   /// 添加用户主导的语C剧情行动/旁白，不自动触发角色回复。
@@ -1356,6 +1377,9 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void deleteConversation(String conversationId) {
+    ChatDraftService.instance.remove(conversationId).catchError((Object e) {
+      debugPrint('删除草稿失败: $e');
+    });
     _conversations.removeWhere((c) => c.id == conversationId);
     _messagesMap.remove(conversationId);
     _messageRevisions.remove(conversationId);
@@ -1368,6 +1392,7 @@ class ChatProvider extends ChangeNotifier {
   /// 清空全部聊天数据（管理占用空间页使用）：
   /// 清空内存中的会话/消息/上下文统计，并删除本地存储键。
   Future<void> clearAllData() async {
+    await ChatDraftService.instance.clearAll();
     _conversations.clear();
     _messagesMap.clear();
     _messageRevisions.clear();

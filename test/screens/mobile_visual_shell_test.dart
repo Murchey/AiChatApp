@@ -1,3 +1,7 @@
+import 'dart:io';
+import 'dart:convert';
+import 'package:ai_chat/models/app_theme_pack.dart';
+import 'package:ai_chat/services/app_theme_store.dart';
 import 'package:ai_chat/config/theme.dart';
 import 'package:ai_chat/config/motion.dart';
 import 'package:ai_chat/config/navigation_icons.dart';
@@ -35,6 +39,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  String imagePath(ImageProvider image) {
+    if (image is ResizeImage) return imagePath(image.imageProvider);
+    return image is FileImage ? image.file.path : image.toString();
+  }
 
   Widget themed(Widget child, {Brightness brightness = Brightness.light}) {
     return CupertinoApp(
@@ -473,6 +481,177 @@ void main() {
     expect(find.text('发现'), findsOneWidget);
     expect(find.text('我'), findsOneWidget);
     expect(find.byIcon(AppNavigationIcons.tabs[2].icon), findsOneWidget);
+  });
+  testWidgets('theme images preserve floating navigation and header actions',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider();
+    await settings.init();
+    await settings.setAutoCheckUpdate(false);
+    await settings.setHomeNavigationStyle(HomeNavigationStyle.floating);
+    final store = AppThemeStore.instance;
+    final manifest = Map<String, dynamic>.from(
+        jsonDecode(File('docs/theme-example/content.json').readAsStringSync())
+            as Map);
+    for (final slot in (manifest['navigation'] as Map).values) {
+      (slot as Map)['size'] = 36;
+    }
+    final pack = AppThemePack.parse(
+        manifest, Directory('docs/theme-example').absolute.path);
+    store.installed = [pack];
+    store.activeId = pack.id;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: settings),
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => ChatProvider()),
+          ChangeNotifierProvider(create: (_) => CharacterProvider()),
+          ChangeNotifierProvider(create: (_) => GroupChatProvider()),
+          ChangeNotifierProvider(create: (_) => ChatBackgroundProvider()),
+          ChangeNotifierProvider(create: (_) => ApiProvider()),
+          ChangeNotifierProvider(create: (_) => ChatSettingsProvider()),
+          ChangeNotifierProvider(create: (_) => MomentNotificationProvider()),
+          ChangeNotifierProvider(create: (_) => MemoryPointProvider()),
+          ChangeNotifierProvider(create: (_) => AutoMomentProvider()),
+          ChangeNotifierProvider(create: (_) => ProactiveGreetingProvider()),
+          ChangeNotifierProvider(create: (_) => WorkshopProvider()),
+          ChangeNotifierProvider(create: (_) => StickerProvider()),
+          ChangeNotifierProvider.value(value: TokenUsageProvider.instance),
+        ],
+        child: themed(const HomeScreen(), brightness: Brightness.light),
+      ),
+    );
+    await tester.pump();
+
+    final files = tester
+        .widgetList<Image>(find.byType(Image))
+        .map((i) => imagePath(i.image))
+        .toString();
+    expect(files, contains('home-header.png'));
+    expect(files, contains('chat-selected.png'));
+    final themeIcons = tester
+        .widgetList<Image>(find.byType(Image))
+        .where((image) => !imagePath(image.image).contains('header'));
+    expect(themeIcons, isNotEmpty);
+    expect(
+        themeIcons
+            .every((image) => image.width == 39.6 && image.height == 39.6),
+        true);
+    expect(tester.takeException(), isNull);
+    for (final scale in [1.0, 1.2, 2.0]) {
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      await tester.pump();
+      expect(tester.takeException(), isNull,
+          reason: 'Theme navigation must fit with text scale $scale');
+      for (var index = 0; index < 4; index++) {
+        final tab = find.byKey(ValueKey('home-floating-tab-$index'));
+        final image = find.descendant(of: tab, matching: find.byType(Image));
+        final label = find.descendant(
+            of: tab, matching: find.text(AppNavigationIcons.tabs[index].label));
+        expect(tester.getBottomLeft(image).dy,
+            lessThanOrEqualTo(tester.getTopLeft(label).dy));
+      }
+    }
+    expect(find.byIcon(CupertinoIcons.search), findsOneWidget);
+    await tester.tap(find.text('通讯录'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final next = tester
+        .widgetList<Image>(find.byType(Image))
+        .map((i) => imagePath(i.image))
+        .toString();
+    expect(next, contains('contacts-header.png'));
+    expect(next, contains('contacts-selected.png'));
+    await store.enable(null);
+    await tester.pump();
+    expect(find.byIcon(AppNavigationIcons.tabs[1].activeIcon), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    store.installed = [];
+    settings.dispose();
+  });
+
+  testWidgets('theme images preserve bottomPanel navigation and header actions',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider();
+    await settings.init();
+    await settings.setAutoCheckUpdate(false);
+    await settings.setHomeNavigationStyle(HomeNavigationStyle.bottomPanel);
+    final store = AppThemeStore.instance;
+    final manifest = Map<String, dynamic>.from(
+        jsonDecode(File('docs/theme-example/content.json').readAsStringSync())
+            as Map);
+    for (final slot in (manifest['navigation'] as Map).values) {
+      (slot as Map)['size'] = 36;
+    }
+    final pack = AppThemePack.parse(
+        manifest, Directory('docs/theme-example').absolute.path);
+    store.installed = [pack];
+    store.activeId = pack.id;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: settings),
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => ChatProvider()),
+          ChangeNotifierProvider(create: (_) => CharacterProvider()),
+          ChangeNotifierProvider(create: (_) => GroupChatProvider()),
+          ChangeNotifierProvider(create: (_) => ChatBackgroundProvider()),
+          ChangeNotifierProvider(create: (_) => ApiProvider()),
+          ChangeNotifierProvider(create: (_) => ChatSettingsProvider()),
+          ChangeNotifierProvider(create: (_) => MomentNotificationProvider()),
+          ChangeNotifierProvider(create: (_) => MemoryPointProvider()),
+          ChangeNotifierProvider(create: (_) => AutoMomentProvider()),
+          ChangeNotifierProvider(create: (_) => ProactiveGreetingProvider()),
+          ChangeNotifierProvider(create: (_) => WorkshopProvider()),
+          ChangeNotifierProvider(create: (_) => StickerProvider()),
+          ChangeNotifierProvider.value(value: TokenUsageProvider.instance),
+        ],
+        child: themed(const HomeScreen(), brightness: Brightness.dark),
+      ),
+    );
+    await tester.pump();
+
+    final files = tester
+        .widgetList<Image>(find.byType(Image))
+        .map((i) => imagePath(i.image))
+        .toString();
+    expect(files, contains('home-header.png'));
+    expect(files, contains('chat-selected.png'));
+    final themeIcons = tester
+        .widgetList<Image>(find.byType(Image))
+        .where((image) => !imagePath(image.image).contains('header'));
+    expect(themeIcons, isNotEmpty);
+    expect(
+        themeIcons
+            .every((image) => image.width == 39.6 && image.height == 39.6),
+        true);
+    expect(tester.takeException(), isNull);
+    expect(find.byIcon(CupertinoIcons.search), findsOneWidget);
+    await tester.tap(find.text('通讯录'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final next = tester
+        .widgetList<Image>(find.byType(Image))
+        .map((i) => imagePath(i.image))
+        .toString();
+    expect(next, contains('contacts-header.png'));
+    expect(next, contains('contacts-selected.png'));
+    await store.enable(null);
+    await tester.pump();
+    expect(find.byIcon(AppNavigationIcons.tabs[1].activeIcon), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    store.installed = [];
+    settings.dispose();
   });
 }
 

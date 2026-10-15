@@ -1,3 +1,4 @@
+import '../services/app_theme_store.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
@@ -318,8 +319,9 @@ extension AppThemeX on BuildContext {
   /// 自己气泡内字体颜色：支持在设置中按明暗模式单独自定义
   Color get bubbleTextSelfColor {
     final settings = read<SettingsProvider>();
-    return settings.bubbleTextColor(
-        isDark ? BubbleTextSlot.selfDark : BubbleTextSlot.selfLight);
+    return AppThemeStore.instance.textColor(isDark) ??
+        settings.bubbleTextColor(
+            isDark ? BubbleTextSlot.selfDark : BubbleTextSlot.selfLight);
   }
 
   /// 对方气泡内字体颜色：支持在设置中按明暗模式单独自定义
@@ -441,6 +443,8 @@ extension AppThemeX on BuildContext {
 
   /// 气泡内文字色：sr/ww/zmd 样式固定配色，经典样式使用自定义文字色
   Color bubbleTextColor(bool isUser) {
+    final themeColor = isUser ? AppThemeStore.instance.textColor(isDark) : null;
+    if (themeColor != null) return themeColor;
     if (bubbleStyle == BubbleStyle.sr) {
       if (isUser) return SrBubbleColors.selfTextColor;
       return isDark

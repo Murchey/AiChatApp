@@ -1,3 +1,6 @@
+import 'widget_icon_settings_screen.dart';
+import 'theme_appearance_screen.dart';
+import '../services/app_theme_store.dart';
 import 'package:flutter/cupertino.dart';
 
 import 'package:provider/provider.dart';
@@ -434,7 +437,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       settingsValueText(context, value);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AnimatedBuilder(
+      animation: AppThemeStore.instance,
+      builder: (context, _) => _buildSettings(context));
+
+  Widget _buildSettings(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
 
     return CupertinoPageScaffold(
@@ -568,6 +575,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: '显示',
             children: [
               SettingsRow(
+                  icon: CupertinoIcons.square_grid_2x2,
+                  title: const Text('小组件和应用图标'),
+                  showChevron: true,
+                  onTap: () => Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                          builder: (_) => const WidgetIconSettingsScreen()))),
+              if (AppThemeStore.instance.active != null)
+                SettingsRow(
+                    icon: CupertinoIcons.paintbrush,
+                    title: const Text('气泡与文字颜色'),
+                    subtitle: const Text('按当前主题显示有效设置'),
+                    showChevron: true,
+                    onTap: () => Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                            builder: (_) => const ThemeAppearanceScreen()))),
+              SettingsRow(
                 icon: CupertinoIcons.chat_bubble_2_fill,
                 iconColor: context.settingIconColor(SettingIconRole.display),
                 title: const Text('气泡样式'),
@@ -626,7 +651,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 panelBuilder: (panelContext, close) =>
                     _buildBubbleFontSizePanel(panelContext, settings, close),
               ),
-              if (settings.bubbleStyle == BubbleStyle.classic)
+              if (AppThemeStore.instance.active == null &&
+                  settings.bubbleStyle == BubbleStyle.classic)
                 SettingsInlinePanel(
                   estimatedPanelHeight: 520,
                   panelKey: 'settings-bubble-color-picker',

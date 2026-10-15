@@ -1,3 +1,8 @@
+const String kThemeStoreTag = 'ThemeStore';
+
+/// Object storage directory; independent of the GitHub/Gitee Release tag.
+const String kCosThemesFolder = 'Theme';
+
 /// 角色分类角色包 Release tag（zip 内含 Profile.json 的角色文件夹）
 const String kCharacterPackTag = 'V1.1.0';
 
@@ -56,3 +61,5 @@ class WorkshopAsset {
   bool get isGame => tag == kGamePackTag;
   bool get isSticker => tag == kStickerPackTag;
 }
+
+const kAllWorkshopAssetTags = [...kWorkshopPackTags, kThemeStoreTag];

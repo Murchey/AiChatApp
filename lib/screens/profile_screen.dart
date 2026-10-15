@@ -1,3 +1,4 @@
+import 'app_themes_screen.dart';
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -94,7 +95,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       UiSpec.settingsSectionRadius,
                     ),
                     border: Border.all(
-                      color: context.settingsOutlineColor.withValues(alpha: 0.7),
+                      color:
+                          context.settingsOutlineColor.withValues(alpha: 0.7),
                       width: 0.6,
                     ),
                   ),
@@ -211,6 +213,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       );
                     },
+                  ),
+                  CupertinoListTile(
+                    leading: Icon(CupertinoIcons.paintbrush,
+                        color: context.textSecondaryColor),
+                    title: const Text('应用主题'),
+                    trailing: Icon(CupertinoIcons.chevron_right,
+                        size: 16, color: context.textSecondaryColor),
+                    onTap: () => Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                            builder: (_) => const AppThemesScreen())),
                   ),
                   CupertinoListTile(
                     leading: Icon(

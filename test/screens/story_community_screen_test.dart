@@ -193,7 +193,10 @@ void main() {
 
     await tester.pumpWidget(
       MultiProvider(
-        providers: [ChangeNotifierProvider.value(value: provider)],
+        providers: [
+          ChangeNotifierProvider.value(value: provider),
+          ChangeNotifierProvider.value(value: backend),
+        ],
         child: themed(const StoryCommunityScreen()),
       ),
     );

@@ -483,29 +483,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   /// 发送消息（携带引用）：只发送用户消息，不自动触发模型回复，
   /// 由用户点击输入框右侧的"对号"按钮手动触发角色回复。
-  void _handleSend(String content) {
+  Future<bool> _handleSend(String content,
+      [VoidCallback? onLocalMessageAdded]) async {
     // 防止长会话卡顿期间用户重复点击导致同一条消息被发送多次
     final now = DateTime.now();
     if (now.difference(_lastSendAt).inMilliseconds < _sendThrottleMs) {
       debugPrint('[ChatScreen] 发送过于频繁，忽略本次点击（${_sendThrottleMs}ms 内）');
-      return;
+      return false;
     }
     _lastSendAt = now;
     final quote = _quoteMessage;
-    context.read<ChatProvider>().sendMessage(
+    await context.read<ChatProvider>().sendMessage(
           conversationId: widget.conversationId,
           content: content,
           quoteContent: quote?.content ?? '',
           quoteSender: quote == null
               ? ''
               : (quote.isFromUser ? '我' : widget.characterName),
+          onLocalMessageAdded: onLocalMessageAdded,
         );
     // 发送后清空引用
-    if (_quoteMessage != null) {
+    if (mounted && _quoteMessage == quote && _quoteMessage != null) {
       setState(() {
         _quoteMessage = null;
       });
     }
+    return true;
   }
 
   /// 取消引用
@@ -1277,6 +1280,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   ? context.chatBgColor.withValues(alpha: 0.86)
                                   : context.chatBgColor,
                               onSend: _handleSend,
+                              draftConversationId: widget.conversationId,
+                              onSendWithFeedback: _handleSend,
                               onPickImage: _handlePickImage,
                               onStickerSelected: _handleStickerSelection,
                               onRoleplayNarration: context
