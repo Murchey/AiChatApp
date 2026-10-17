@@ -1,6 +1,7 @@
 import '../widgets/secret_field.dart';
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/api_provider.dart';
@@ -42,6 +43,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   late final TextEditingController _apiKeyController;
   late final TextEditingController _contextController;
   bool _detecting = false; // 上下文长度自动检测中
+  bool _testing = false;
   String _ttsProtocol = 'auto';
   String _ttsCapabilityPreset = 'auto';
 
@@ -242,8 +244,12 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: Text(title),
-        content: Text(message),
+        content: SingleChildScrollView(child: Text(message)),
         actions: [
+          CupertinoDialogAction(
+            onPressed: () => Clipboard.setData(ClipboardData(text: message)),
+            child: const Text('复制详情'),
+          ),
           CupertinoDialogAction(
             isDefaultAction: true,
             onPressed: () => Navigator.pop(ctx),
@@ -252,6 +258,33 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _testConnection() async {
+    if (_testing) return;
+    final model = ApiModel(
+        id: 'connection-test',
+        displayName: '',
+        modelName: _modelNameController.text.trim(),
+        baseUrl: _baseUrlController.text.trim(),
+        apiKey: _apiKeyController.text.trim());
+    setState(() => _testing = true);
+    try {
+      await LLMService.fetchCompletion(
+          model: model,
+          messages: const [
+            {'role': 'user', 'content': 'Reply with OK.'}
+          ],
+          temperature: null,
+          maxTokens: 64);
+      if (mounted) _showDetectDialog('连接成功', '模型已返回有效回复，可以用于聊天。');
+    } catch (error) {
+      if (mounted) {
+        _showDetectDialog('连接失败', LLMService.describeException(error));
+      }
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
   }
 
   String _ttsProtocolLabel(String value) => switch (value) {
@@ -280,7 +313,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
         _isEdit ? '编辑模型' : '添加模型',
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: _save,
+          onPressed: _testing ? null : _save,
           child: Text(
             '保存',
             style: TextStyle(
@@ -340,6 +373,14 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                 placeholder:
                     '输入你的 API Key（DeepSeek 在 platform.deepseek.com 申请）',
                 obscureText: true,
+              ),
+              CupertinoListTile(
+                title: Text(_testing ? '正在测试连接…' : '测试模型连接'),
+                subtitle: const Text('发送少量测试消息；失败时显示具体原因（会消耗少量 token）'),
+                trailing: _testing
+                    ? const CupertinoActivityIndicator()
+                    : const Icon(CupertinoIcons.arrow_right),
+                onTap: _testing ? null : _testConnection,
               ),
             ],
           ),
@@ -488,6 +529,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
               controller: controller,
               enabled: obscureText,
               builder: (revealed) => CupertinoTextField(
+                    enabled: !_testing,
                     controller: controller,
                     placeholder: placeholder,
                     obscureText: obscureText && !revealed,

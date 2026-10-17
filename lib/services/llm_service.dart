@@ -51,14 +51,72 @@ class LLMService {
   /// 当前思考强度（由聊天设置同步）；写入请求体的兼容字段。
   static ModelThinkingLevel thinkingLevel = ModelThinkingLevel.defaultLevel;
 
-  /// 按思考强度生成请求体附加字段。
-  ///
-  /// 尽量兼容 MiMo / Qwen / DeepSeek / Grok / Gemini / GPT / GLM / Kimi / 混元
-  /// 等 OpenAI 兼容网关：默认不附加；显式档位时同时带
-  /// `reasoning_effort`（OpenAI 系）与 `enable_thinking`（Qwen/混元系），
-  /// 不认识的字段通常会被忽略。
-  static Map<String, Object> thinkingRequestFields() {
-    switch (thinkingLevel) {
+  /// Grok 通过名称或官方域名识别，按模型能力发送思考参数；其它兼容
+  /// 网关保留既有字段。服务商不一定忽略未知字段，不能混发 Qwen 参数。
+  static bool _isGrok(ApiModel model) =>
+      model.modelName.trim().toLowerCase().split('/').last.startsWith('grok') ||
+      Uri.tryParse(model.baseUrl.trim())?.host.toLowerCase() == 'api.x.ai';
+
+  /// Only the official xAI host gets an implicit /v1; custom gateways keep
+  /// their configured prefix and credentials are never redirected by name.
+  static String apiBaseUrl({String baseUrl = '', String modelName = ''}) {
+    var base = baseUrl.trim();
+    if (base.isEmpty) {
+      base = modelName.trim().toLowerCase().split('/').last.startsWith('grok')
+          ? 'https://api.x.ai/v1'
+          : defaultBaseUrl;
+    }
+    var uri = Uri.parse(base);
+    var path = uri.path.replaceAll(RegExp(r'/+$'), '');
+    if (path.endsWith('/chat/completions')) {
+      path = path.substring(0, path.length - '/chat/completions'.length);
+    }
+    if (uri.host.toLowerCase() == 'api.x.ai' && path.isEmpty) path = '/v1';
+    uri = uri.replace(path: path);
+    return uri.toString();
+  }
+
+  static String completionUrl(ApiModel model) {
+    final uri = Uri.parse(
+        apiBaseUrl(baseUrl: model.baseUrl, modelName: model.modelName));
+    return uri.replace(path: '${uri.path}/chat/completions').toString();
+  }
+
+  static int _outputLimit(ApiModel model, int requested) {
+    final name = model.modelName.toLowerCase().split('/').last;
+    final reasoning = _isGrok(model) &&
+        !name.contains('non-reasoning') &&
+        (name.startsWith('grok-4') || name.startsWith('grok-3-mini'));
+    // xAI includes reasoning in max_tokens. The app's 16–1024 token budgets
+    // can otherwise be exhausted before any answer is produced.
+    return reasoning && requested < 4096 ? 4096 : requested;
+  }
+
+  static Duration _responseTimeout(ApiModel model) =>
+      Duration(seconds: _isGrok(model) ? 180 : 60);
+
+  static Map<String, Object> thinkingRequestFields(
+      {ApiModel? model, ModelThinkingLevel? level}) {
+    final selected = level ?? thinkingLevel;
+    if (model != null && _isGrok(model)) {
+      // Grok does not use Qwen's enable_thinking. Only Grok 3 mini exposes
+      // low/high reasoning_effort; other Grok families use model defaults.
+      if (!model.modelName
+              .toLowerCase()
+              .split('/')
+              .last
+              .startsWith('grok-3-mini') ||
+          selected == ModelThinkingLevel.defaultLevel) {
+        return const {};
+      }
+      return {
+        'reasoning_effort': switch (selected) {
+          ModelThinkingLevel.off || ModelThinkingLevel.low => 'low',
+          _ => 'high',
+        }
+      };
+    }
+    switch (selected) {
       case ModelThinkingLevel.off:
         return const {'enable_thinking': false};
       case ModelThinkingLevel.low:
@@ -222,11 +280,7 @@ class LLMService {
     }
 
     // 拼接请求地址：baseUrl 留空使用官方地址，兼容结尾 /v1 或 /chat/completions
-    var base =
-        model.baseUrl.trim().isNotEmpty ? model.baseUrl.trim() : defaultBaseUrl;
-    base = base.replaceAll(RegExp(r'/+$'), '');
-    final url =
-        base.endsWith('/chat/completions') ? base : '$base/chat/completions';
+    final url = completionUrl(model);
 
     // 部分模型（快速/推理模型）偶发返回 HTTP 200 但 content 为空，
     // 重发一次请求让模型重新生成，显著降低"API 返回内容为空"的出现频率。
@@ -240,6 +294,9 @@ class LLMService {
         jsonMode: jsonMode,
       );
       if (result.content.trim().isNotEmpty) return result;
+      if (result.finishReason == 'length') {
+        throw const LLMException('模型已达到输出额度但未生成正文，推理可能耗尽了额度；可改用非推理模型');
+      }
       debugPrint('[LLMService] 第 ${attempt + 1} 次响应 content 为空，自动重试');
     }
     throw const LLMException('API 返回内容为空，已自动重试一次仍无结果，请稍后重试或检查模型设置');
@@ -270,20 +327,19 @@ class LLMService {
         'model': model.modelName,
         'messages': messages,
         'stream': false,
-        'max_tokens': maxTokens,
+        'max_tokens': _outputLimit(model, maxTokens),
         if (temperature != null) 'temperature': temperature,
         if (jsonMode) 'response_format': {'type': 'json_object'},
-        ...thinkingRequestFields(),
+        ...thinkingRequestFields(model: model),
       })));
 
-      final response =
-          await request.close().timeout(const Duration(seconds: 60));
+      final response = await request.close().timeout(_responseTimeout(model));
       // 响应头到达后，正文读取同样设置超时，
       // 避免网关慢速传输时界面一直卡在"正在输入"
       final body = await response
           .transform(utf8.decoder)
           .join()
-          .timeout(const Duration(seconds: 60));
+          .timeout(_responseTimeout(model));
       stopwatch.stop();
 
       if (response.statusCode == 200) {
@@ -297,35 +353,57 @@ class LLMService {
         final reasoning = _extractReasoning(message) ?? '';
         final content = message?['content'] as String? ?? '';
         final usage = _parseUsage(decoded);
-        final reasoningTokens = usage.reasoningTokens ??
-            estimateReasoningTokens(reasoning);
+        final reasoningTokens =
+            usage.reasoningTokens ?? estimateReasoningTokens(reasoning);
         // 有思考正文，或网关返回了思考 token 时记录时长；
         // 否则不把纯正文耗时误标成思考
-        final hasThinking =
-            reasoning.trim().isNotEmpty || reasoningTokens > 0;
-        final durationMs =
-            hasThinking ? stopwatch.elapsedMilliseconds : null;
+        final hasThinking = reasoning.trim().isNotEmpty || reasoningTokens > 0;
+        final durationMs = hasThinking ? stopwatch.elapsedMilliseconds : null;
         return CompletionResult(
           content,
           usage,
           reasoningContent: reasoning,
           reasoningDurationMs: durationMs,
+          finishReason: (choices.first as Map<String, dynamic>)['finish_reason']
+              as String?,
         );
       }
 
       // 非 200：尽量解析官方错误信息 {"error":{"message":...}}
-      var errorMessage = 'HTTP ${response.statusCode}';
-      try {
-        final decoded = jsonDecode(body) as Map<String, dynamic>;
-        final err = decoded['error'] as Map<String, dynamic>?;
-        final msg = err?['message'];
-        if (msg != null) errorMessage = '$msg';
-      } catch (_) {}
-      throw LLMException('API 请求失败：$errorMessage');
+      throw _apiError(response.statusCode, body, apiKey: model.apiKey);
     } finally {
       stopwatch.stop();
       client.close(force: true);
     }
+  }
+
+  static LLMException _apiError(int status, String body, {String apiKey = ''}) {
+    var detail = body.trim();
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        final error = decoded['error'];
+        detail = (error is Map ? error['message'] ?? error['code'] : error)
+                ?.toString() ??
+            decoded['message']?.toString() ??
+            detail;
+      }
+    } catch (_) {}
+    if (apiKey.isNotEmpty) detail = detail.replaceAll(apiKey, '[已隐藏密钥]');
+    detail = detail.replaceAll(
+        RegExp(r'Bearer\s+[^\s"<>]+', caseSensitive: false), 'Bearer [已隐藏]');
+    if (detail.length > 600) detail = '${detail.substring(0, 600)}…';
+    final hint = switch (status) {
+      400 || 422 => '请求参数被服务端拒绝',
+      401 => '鉴权失败',
+      403 => '访问被拒绝，请检查账户权限、额度或地区限制',
+      404 => 'API 地址或模型不存在',
+      429 => '请求限流或账户额度不足',
+      >= 500 => '模型服务端异常',
+      _ => 'API 请求失败',
+    };
+    return LLMException(
+        '$hint（HTTP $status）${detail.isEmpty ? '' : '：$detail'}');
   }
 
   /// 功能检测：测试当前模型是否支持图片（多模态）发送。
@@ -348,11 +426,7 @@ class LLMService {
       throw const LLMException('所选模型未配置 API Key，请到「API 设置」中填写');
     }
 
-    var base =
-        model.baseUrl.trim().isNotEmpty ? model.baseUrl.trim() : defaultBaseUrl;
-    base = base.replaceAll(RegExp(r'/+$'), '');
-    final url =
-        base.endsWith('/chat/completions') ? base : '$base/chat/completions';
+    final url = completionUrl(model);
 
     // 16x16 纯红色 PNG（有明确视觉内容的小测试图）。
     // 不能用 1x1 透明图：透明/空白图对任何模型都没有可识别内容，
@@ -391,19 +465,23 @@ class LLMService {
           },
         ],
         'stream': false,
-        'max_tokens': 16,
+        'max_tokens': _outputLimit(model, 16),
         'temperature': 0,
         // 部分百炼模型（qwen3.7-plus 等）默认开启思考，回复可能只有
         // reasoning_content 而 content 为空，无法据此判断是否看到图片，
         // 检测时显式关闭思考，让模型直接回答颜色。
-        'enable_thinking': false,
+        ...thinkingRequestFields(model: model, level: ModelThinkingLevel.off),
       })));
 
-      final response =
-          await request.close().timeout(const Duration(seconds: 60));
+      final response = await request.close().timeout(_responseTimeout(model));
       final body = await response.transform(utf8.decoder).join();
       debugPrint('[LLMService] 图片功能检测 HTTP ${response.statusCode}');
-      if (response.statusCode != 200) return false;
+      if (response.statusCode != 200) {
+        if (response.statusCode == 400 || response.statusCode == 422) {
+          return false;
+        }
+        throw _apiError(response.statusCode, body, apiKey: model.apiKey);
+      }
 
       // HTTP 200：结合回复内容判定，避免「模型忽略图片直接回文本」的假阳性
       final reply = _extractReplyText(body);
@@ -431,11 +509,7 @@ class LLMService {
     }
     if (bytes.isEmpty) return null;
 
-    var base =
-        model.baseUrl.trim().isNotEmpty ? model.baseUrl.trim() : defaultBaseUrl;
-    base = base.replaceAll(RegExp(r'/+$'), '');
-    final url =
-        base.endsWith('/chat/completions') ? base : '$base/chat/completions';
+    final url = completionUrl(model);
 
     final client = HttpClient();
     try {
@@ -471,12 +545,11 @@ class LLMService {
           },
         ],
         'stream': false,
-        'max_tokens': 300,
+        'max_tokens': _outputLimit(model, 300),
         'temperature': 0.3,
       })));
 
-      final response =
-          await request.close().timeout(const Duration(seconds: 60));
+      final response = await request.close().timeout(_responseTimeout(model));
       if (response.statusCode != 200) return null;
       final body = await response.transform(utf8.decoder).join();
       return _parseStickerAutoTags(body);
@@ -618,13 +691,9 @@ class LLMService {
     if (local != null) return local;
 
     // 2. 请求 GET /models 探测（仅注册表未命中的模型）
-    var base =
-        model.baseUrl.trim().isNotEmpty ? model.baseUrl.trim() : defaultBaseUrl;
-    base = base.replaceAll(RegExp(r'/+$'), '');
-    if (base.endsWith('/chat/completions')) {
-      base = base.substring(0, base.length - '/chat/completions'.length);
-    }
-    final url = '$base/models';
+    final base = Uri.parse(
+        apiBaseUrl(baseUrl: model.baseUrl, modelName: model.modelName));
+    final url = base.replace(path: '${base.path}/models').toString();
 
     final client = HttpClient();
     try {
@@ -719,9 +788,6 @@ class LLMService {
   /// 采用「API 探测 + 本地注册表」混合策略：本地注册表优先（即时、离线可用），
   /// 覆盖主流与常见第三方模型；未命中的模型再走 /models 接口探测与家族启发式。
 
-
-
-
   /// 获取 OpenAI 兼容服务商的可用模型 ID 列表（GET /models）。
   ///
   /// 请求失败或返回为空时抛出 [LLMException]（可读提示）。
@@ -730,12 +796,8 @@ class LLMService {
     String baseUrl = '',
     String apiKey = '',
   }) async {
-    var base = baseUrl.trim().isNotEmpty ? baseUrl.trim() : defaultBaseUrl;
-    base = base.replaceAll(RegExp(r'/+$'), '');
-    if (base.endsWith('/chat/completions')) {
-      base = base.substring(0, base.length - '/chat/completions'.length);
-    }
-    final url = '$base/models';
+    final base = Uri.parse(apiBaseUrl(baseUrl: baseUrl));
+    final url = base.replace(path: '${base.path}/models').toString();
 
     final client = HttpClient();
     try {
@@ -750,8 +812,7 @@ class LLMService {
           await request.close().timeout(const Duration(seconds: 30));
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode != 200) {
-        throw LLMException(
-            '获取模型列表失败（HTTP ${response.statusCode}），请检查请求地址与 API Key');
+        throw _apiError(response.statusCode, body, apiKey: apiKey);
       }
       final ids = _parseModelList(body);
       if (ids.isEmpty) {
@@ -1028,6 +1089,7 @@ class ChatUsage {
 class CompletionResult {
   final String content;
   final ChatUsage usage;
+  final String? finishReason;
 
   /// 思考过程原文（可能为空）
   final String reasoningContent;
@@ -1040,6 +1102,7 @@ class CompletionResult {
     this.usage, {
     this.reasoningContent = '',
     this.reasoningDurationMs,
+    this.finishReason,
   });
 }
 

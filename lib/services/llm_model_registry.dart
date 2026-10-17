@@ -51,6 +51,7 @@ class LlmModelRegistry {
     'mimo-v2.5-omni': 1048576,
     'mimo-v2-flash': 57344,
     // xAI Grok
+    'grok-4.3': 1000000,
     'grok-4.5': 500000,
     'grok-4.20-reasoning': 2097152,
     'grok-4.20-non-reasoning': 2097152,
@@ -104,6 +105,7 @@ class LlmModelRegistry {
     ('gemini', 1048576),
     ('claude', 200000),
     ('deepseek', 1048576),
+    ('grok-4.3', 1000000),
     ('grok', 500000),
     ('mimo', 1048576),
     ('gpt-4o', 128000),

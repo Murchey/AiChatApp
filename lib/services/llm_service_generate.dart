@@ -190,63 +190,76 @@ String _imageMime(String path) {
   }
 
   /// OpenAI 兼容 SSE 流式补全，仅语C正文使用，同时透传流式 usage。
-  Stream<StreamCompletionChunk> streamCompletion({
-    required ApiModel model,
-    required List<Map<String, Object>> messages,
-    int maxTokens = 1024,
-    double temperature = 0.9,
-  }) async* {
-    if (model.modelName.isEmpty) {
-      throw const LLMException('所选模型未填写模型名称，请到「API 设置」中检查');
+Stream<StreamCompletionChunk> streamCompletion({
+  required ApiModel model,
+  required List<Map<String, Object>> messages,
+  int maxTokens = 1024,
+  double temperature = 0.9,
+}) async* {
+  if (model.modelName.isEmpty) {
+    throw const LLMException('所选模型未填写模型名称，请到「API 设置」中检查');
+  }
+  if (model.apiKey.isEmpty) {
+    throw const LLMException('所选模型未配置 API Key，请到「API 设置」中填写');
+  }
+  final url = LLMService.completionUrl(model);
+  final client = HttpClient();
+  try {
+    final request = await client
+        .postUrl(Uri.parse(url))
+        .timeout(const Duration(seconds: 20));
+    request.headers
+        .set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
+    request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
+    request.headers
+        .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
+    request.add(utf8.encode(jsonEncode({
+      'model': model.modelName,
+      'messages': messages,
+      'stream': true,
+      'stream_options': {'include_usage': true},
+      'max_tokens': LLMService._outputLimit(model, maxTokens),
+      'temperature': temperature,
+      ...LLMService.thinkingRequestFields(model: model),
+    })));
+    final response =
+        await request.close().timeout(LLMService._responseTimeout(model));
+    if (response.statusCode != 200) {
+      final body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(LLMService._responseTimeout(model));
+      throw LLMService._apiError(response.statusCode, body,
+          apiKey: model.apiKey);
     }
-    if (model.apiKey.isEmpty) {
-      throw const LLMException('所选模型未配置 API Key，请到「API 设置」中填写');
-    }
-    var base =
-        model.baseUrl.trim().isNotEmpty ? model.baseUrl.trim() : LLMService.defaultBaseUrl;
-    base = base.replaceAll(RegExp(r'/+$'), '');
-    final url =
-        base.endsWith('/chat/completions') ? base : '$base/chat/completions';
-    final client = HttpClient();
-    try {
-      final request = await client
-          .postUrl(Uri.parse(url))
-          .timeout(const Duration(seconds: 20));
-      request.headers.set(
-          HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
-      request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
-      request.add(utf8.encode(jsonEncode({
-        'model': model.modelName,
-        'messages': messages,
-        'stream': true,
-        'stream_options': {'include_usage': true},
-        'max_tokens': maxTokens,
-        'temperature': temperature,
-        ...LLMService.thinkingRequestFields(),
-      })));
-      final response =
-          await request.close().timeout(const Duration(seconds: 60));
-      if (response.statusCode != 200) {
-        final body = await response.transform(utf8.decoder).join();
-        throw LLMException(
-            'API 请求失败：HTTP ${response.statusCode} ${body.trim()}');
+    var receivedContent = false;
+    await for (final line in response
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .timeout(LLMService._responseTimeout(model))) {
+      if (!line.startsWith('data:')) continue;
+      final data = line.substring(5).trim();
+      if (data == '[DONE]') break;
+      if (data.isEmpty) continue;
+      final decoded = jsonDecode(data);
+      if (decoded is Map && decoded['error'] != null) {
+        throw LLMService._apiError(200, data, apiKey: model.apiKey);
       }
-      await for (final line
-          in response.transform(utf8.decoder).transform(const LineSplitter())) {
-        if (!line.startsWith('data:')) continue;
-        final data = line.substring(5).trim();
-        if (data == '[DONE]') break;
-        final chunk = LLMService.parseStreamChunk(data);
-        if (chunk.content.isNotEmpty || chunk.reasoning.isNotEmpty || !chunk.usage.isEmpty) {
+      final chunk = LLMService.parseStreamChunk(data);
+      receivedContent = receivedContent || chunk.content.trim().isNotEmpty;
+      if (chunk.content.isNotEmpty ||
+          chunk.reasoning.isNotEmpty ||
+          !chunk.usage.isEmpty) {
         yield chunk;
       }
-      }
-    } finally {
-      client.close(force: true);
     }
+    if (!receivedContent) {
+      throw const LLMException('模型流式响应未返回正文，可能是推理耗尽输出额度；请增加输出额度或改用非推理模型');
+    }
+  } finally {
+    client.close(force: true);
   }
+}
 
-  /// 解析单个 OpenAI 兼容 SSE data payload。
-  /// usage 通常出现在最后一条、且 choices 为空的事件。
+/// 解析单个 OpenAI 兼容 SSE data payload。
+/// usage 通常出现在最后一条、且 choices 为空的事件。

@@ -77,6 +77,7 @@ const List<ProviderPreset> providerPresets = [
     description: 'Grok 4.5 旗舰，2M 上下文',
     baseUrl: 'https://api.x.ai/v1',
     models: [
+      (displayName: 'Grok 4.3', modelName: 'grok-4.3'),
       (displayName: 'Grok 4.5', modelName: 'grok-4.5'),
       (displayName: 'Grok 4.20 Reasoning', modelName: 'grok-4.20-reasoning'),
       (
