@@ -1,4 +1,4 @@
-﻿import 'package:flutter/cupertino.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../../config/theme.dart';
 import '../../providers/settings_provider.dart';
@@ -140,6 +140,18 @@ class SettingsPickers {
       defaultUrl: kGiteeRepoUrl,
       onSave: (u) => settings.setUpdateGiteeRepoUrl(u),
       onReset: () => settings.setUpdateGiteeRepoUrl(kGiteeRepoUrl),
+    );
+  }
+
+  static void showUpdateRepositoryDialog(
+      BuildContext context, SettingsProvider settings) {
+    showSingleUpdateRepoDialog(
+      context: context,
+      title: '更新检测仓库地址',
+      currentUrl: settings.updateRepositoryUrl,
+      defaultUrl: kGiteeRepoUrl,
+      onSave: (u) => settings.setUpdateRepositoryUrl(u),
+      onReset: () => settings.setUpdateRepositoryUrl(kGiteeRepoUrl),
     );
   }
 

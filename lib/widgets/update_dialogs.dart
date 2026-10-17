@@ -3,7 +3,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import '../config/theme.dart';
 import '../services/update_service.dart';
 
-/// 更新下载源：Gitee 优先（国内直连），GitHub 备用（可走代理加速）
+/// 更新下载源：默认 GitHub（可走代理加速），Gitee 作为备用
 enum UpdateSource { gitee, github }
 
 /// 辅助函数：替换 URL 中的 APK 文件名为指定 ABI 版本
@@ -170,7 +170,7 @@ class _UpdateAvailableDialog extends StatefulWidget {
 
 class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
   late UpdateSource _source;
-  bool _useProxy = true; // 是否使用内置代理加速下载（仅 GitHub 源生效）
+  bool _useProxy = true; // 默认使用内置代理加速下载（仅 GitHub 源生效）
 
   // ABI 选择相关
   String _selectedAbi = 'arm64-v8a';
@@ -187,8 +187,8 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
   @override
   void initState() {
     super.initState();
-    // 默认优先 Gitee，Gitee 不可用时回退 GitHub
-    _source = _giteeAvailable ? UpdateSource.gitee : UpdateSource.github;
+    // 默认选 GitHub；GitHub 不可用时才回退到 Gitee。
+    _source = _githubAvailable ? UpdateSource.github : UpdateSource.gitee;
   }
 
   void _showAbiPicker(BuildContext context) {
@@ -319,7 +319,7 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
                         UpdateSource.gitee: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 6),
                           child: Text(
-                            'Gitee（推荐）',
+                            'Gitee',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 13,

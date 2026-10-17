@@ -210,6 +210,9 @@ class SettingsProvider extends ChangeNotifier {
   bool get autoCheckUpdate => _autoCheckUpdate;
   String get updateProxyUrl => _updateProxyUrl;
   String get updateGiteeRepoUrl => _updateGiteeRepoUrl;
+
+  /// 用于检查 APP 更新的主仓库。默认使用 Gitee，兼容旧版 Gitee 设置。
+  String get updateRepositoryUrl => _updateGiteeRepoUrl;
   String get updateGitHubRepoUrl => _updateGitHubRepoUrl;
   bool get unreadNotify => _unreadNotify;
   bool get developerMode => _developerMode;
@@ -286,8 +289,9 @@ class SettingsProvider extends ChangeNotifier {
     _autoCheckUpdate = prefs.getBool('auto_check_update') ?? true;
     _updateProxyUrl =
         prefs.getString('update_proxy_url') ?? kProxySources.first;
-    _updateGiteeRepoUrl =
-        prefs.getString('update_gitee_repo_url') ?? kGiteeRepoUrl;
+    _updateGiteeRepoUrl = prefs.getString('update_repository_url') ??
+        prefs.getString('update_gitee_repo_url') ??
+        kGiteeRepoUrl;
     _updateGitHubRepoUrl =
         prefs.getString('update_github_repo_url') ?? kGitHubRepoUrl;
     // 将早期内置仓库地址迁移到当前官方仓库；用户自定义的其他地址不覆盖。
@@ -473,7 +477,13 @@ class SettingsProvider extends ChangeNotifier {
         v.isEmpty ? kGiteeRepoUrl : v.replaceAll(RegExp(r'/+$'), '');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('update_gitee_repo_url', _updateGiteeRepoUrl);
+    await prefs.setString('update_repository_url', _updateGiteeRepoUrl);
     notifyListeners();
+  }
+
+  /// 设置 APP 更新检测仓库地址（默认 Gitee，空串恢复默认）。
+  Future<void> setUpdateRepositoryUrl(String url) async {
+    await setUpdateGiteeRepoUrl(url);
   }
 
   /// 设置更新检测用的 GitHub 仓库地址（空串恢复默认）

@@ -742,11 +742,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               SettingsRow(
                 icon: CupertinoIcons.globe,
-                title: const Text('Gitee 更新仓库'),
+                title: const Text('更新检测仓库地址'),
+                subtitle: Text(settings.updateRepositoryUrl),
+                showChevron: true,
+                onTap: () => SettingsPickers.showUpdateRepositoryDialog(
+                    context, settings),
+              ),
+              SettingsRow(
+                icon: CupertinoIcons.cloud_download,
+                title: const Text('Gitee 实际下载源仓库'),
                 subtitle: Text(settings.updateGiteeRepoUrl),
                 showChevron: true,
-                onTap: () =>
-                    SettingsPickers.showGiteeRepoDialog(context, settings),
+                onTap: () => SettingsPickers.showGiteeRepoDialog(
+                    context, settings),
               ),
               SettingsRow(
                 icon: CupertinoIcons.globe,
