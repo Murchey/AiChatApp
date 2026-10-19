@@ -1,6 +1,7 @@
 # AiChat
 
 > 📖 **English Version** — [README_FILES/README_EN.md](README_FILES/README_EN.md)
+> 相关仓库（开发者的AiChat角色卡示例仓库）：[Murchey/AiChatCharacterCommunity](https://github.com/Murchey/AiChatCharacterCommunity)
 
 一款**角色扮演类微信聊天风格**的 Flutter Android 应用：内置多个角色，可与角色进行一对一的沉浸式聊天（支持发送图片、合并转发、角色包导入导出、自动更新等）。
 
@@ -893,7 +894,7 @@ curl -I "https://你的桶域名/Note/update.md"
 
 - 该桶**只放**可公开的角色包 / 表情包 / 通知，不要上传密钥、隐私数据
 - 不需要公网 List 时，可将 BASE_URL 收窄到某个前缀，并只对该前缀授权
-- 付费/私有内容请另寻鉴权方案：当前实现仅支持匿名 List + Get
+- 付费 / 私有内容：添加仓库时开启「使用访问密钥（私有读）」（支持腾讯云 COS、阿里云 OSS），不要依赖匿名 List + Get
 
 ---
 

@@ -1,5 +1,8 @@
 # AiChat
 
+> 📖 **Chinese Version** — [README.md](../README.md)
+> Related repository (developer's AiChat character card example repository): [Murchey/AiChatCharacterCommunity](https://github.com/Murchey/AiChatCharacterCommunity)
+
 A **roleplay-style WeChat chat app** built with Flutter for Android. Features multiple built-in characters for immersive one-on-one conversations (supports image sending, message forwarding, character pack import/export, auto-updates, and more).
 
 > Pure Cupertino (iOS-style) UI, Android-only.
@@ -14,6 +17,12 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 - This app does not offer any paid services or subscriptions. Please be aware of any scams.
 - This app is for educational and personal use only. Commercial use is prohibited.
 
+## Donations
+
+**Please note: your support motivates the developer to keep improving the app, but it is not tied to any specific development outcome. Donations are voluntary and are in no way a purchase of this software's services!**
+
+![WeChat donation QR code](BUY_ME_A_COFFEE.jpg)
+
 ---
 
 ## Table of Contents
@@ -21,6 +30,7 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 ### User Guide
 
 - [Features](#features)
+- [Roleplay Mode (Custom Improvisation)](#roleplay-mode-custom-improvisation)
 - [App Preview](#app-preview)
 - [How to Add Characters (CharactersImport Example)](#how-to-add-characters-charactersimport-example)
 - [Moments Data Pack (Import / Export)](#moments-data-pack-import--export)
@@ -29,6 +39,7 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 - [Workshop](#workshop)
 - [Story Community and Repository Template](#story-community-and-repository-template)
 - [Self-Hosting Object Storage (COS / OSS)](#self-hosting-object-storage-cos--oss)
+- [Workshop Sticker ZIP Packing Standard](#workshop-sticker-zip-packing-standard)
 - [Auto-Post Moments & Proactive Greeting](#auto-post-moments--proactive-greeting)
 - [Chat Background & UI Styles](#chat-background--ui-styles)
 - [Token Usage Statistics](#token-usage-statistics)
@@ -40,6 +51,8 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 
 ### Developer Guide
 
+- [App Theme Creation Guide and Field Reference (Chinese)](../developDocs/应用主题制作指南.md)
+- [Hsin_theme Theme Creation Walkthrough (Chinese)](../developDocs/心月狐主题制作实战.md)
 - [Project Structure](#project-structure)
 - [Changing App Version (V1.0.0)](#changing-app-version-v100)
 - [Building APK Locally](#building-apk-locally)
@@ -53,6 +66,7 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 ### Core Chat
 
 - **Immersive Character Chat**: Multiple built-in characters (persona, speaking style, core memories). Supports custom persona and user relationship.
+- **Roleplay Mode**: Switch between SMS mode and bracketed-action roleplay, with customizable progression style, plot actions, streaming replies, and suggested actions.
 - **Message Forwarding**: Select multiple messages to forward as a card, displayed independently with sender avatar.
 - **Image Messages**: Send images via models added in API Settings (requires vision-capable model).
 - **Markdown Rendering**: AI responses support Markdown formatting (code blocks, lists, tables, etc.).
@@ -77,7 +91,7 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 ### Character Packs & Workshop
 
 - **Character Pack Import/Export**: One-click `.zip` character pack import/export, supports batch selection.
-- **Workshop**: Download character packs and game packs from GitHub/Gitee repositories or COS-compatible object storage.
+- **Workshop**: Download character packs, game packs and sticker packs from GitHub/Gitee repositories or COS-compatible object storage.
   - Support adding multiple repositories with auto-detection of available Release tags / folders.
   - **Characters Category (V1.1.0)**: ZIP files containing character folders with `Profile.json`.
   - **Games Category (V1.0.0)**: Moments data packs containing `moments.json`.
@@ -90,7 +104,7 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 
 ### Memory System
 
-- **Persistent Memories**: Long-press chat bubbles to batch-save as memory points. These are sent to the model along with the character's system prompt. Memories are imported/exported with character packs (written to Profile.json).
+- **Persistent Memories**: Long-press chat bubbles to batch-save as memory points. These are sent to the model along with the character's system prompt, effective in both chats and Moments interactions. Memories are imported/exported with character packs (written to Profile.json).
 - **Memory Pool (Cross-Scene Memory)**: Aggregates a character's recent memories from "outside the current conversation" to maintain cross-scene memory coherence.
   - Recent private chat content
   - Recent Moments (latest N posts + all likes & comments)
@@ -102,14 +116,22 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 ### Moments (Social Feed)
 
 - **Moments Interaction**: After you post a Moment, characters within the visible range will automatically like/comment.
-- **Auto-Post Moments**: Characters can automatically generate and post Moments content on a configurable schedule (hours, posts per cycle, visibility).
+- **Auto-Post Moments**: Characters can automatically generate and post Moments content on a configurable schedule.
+  - Configurable post cycle (hours) and posts per cycle
+  - Configurable Moments visibility range
+  - Checked and back-posted on app launch / foreground return
 - **Moments Interaction Notifications**: Character likes/comments generate unread notifications; the Moments tab shows a red dot.
-- **Moments Visibility Groups**: Custom visibility range groups (only self / all characters / custom group).
+- **Moments Visibility Groups**: Custom Moments visibility range groups.
+  - Only visible to yourself
+  - Visible to all characters (default)
+  - Custom group (select specific characters)
 - **Moments Management**: Import/Export Moments data packs.
 
 ### Proactive Greeting
 
-- **Proactive Greeting**: Characters will proactively send a greeting message after you haven't chatted with them for a period (default 72 hours). Checked on app launch/foreground return.
+- **Proactive Greeting**: Characters will proactively send a greeting message after you haven't chatted with them for a period.
+  - Configurable idle hours before triggering (default 72 hours)
+  - Checked and triggered on app launch / foreground return
 
 ### API & Models
 
@@ -119,7 +141,7 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 - **AI Thinking Content**: Store model reasoning without sending it back; long-press an AI message to view it; optional thinking duration under the bubble.
 - **Provider Presets**: Built-in presets for multiple AI providers (OpenAI, Google Gemini, Xiaomi MiMo, etc.).
 - **Model Detection**: One-click detection of available model lists.
-- **Token Usage Statistics**: Cumulative input / output / **thinking** tokens (output already includes thinking, aligned with billing).
+- **Token Usage Statistics**: Cumulative input / output / **thinking** tokens (output already includes thinking, aligned with billing); one-click reset.
 
 ### UI & Personalization
 
@@ -133,11 +155,11 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 
 ### Other Features
 
-- **Auto-Update**: Auto-detect new versions on startup (Gitee primary, GitHub backup). Gitee/GitHub check repositories are separately configurable. One-click APK download and install.
+- **Auto-Update**: Auto-detect new versions on startup (Gitee primary, GitHub backup). Gitee/GitHub check repositories are separately configurable. Download source is selectable in the update dialog; one-click APK download and install.
 - **Chat History Export/Import**: Export chat as zip (text/images/files); optional inclusion of AI thinking content.
 - **Storage Management**: Manage app storage (user data / app cache), with cleanup support.
-- **Developer Log**: View real-time logs in developer mode.
-- **System Notification**: Push notifications when characters send messages while you're outside the chat.
+- **Developer Log**: View real-time logs in developer mode (Moments AI interaction logs, app notifications, error messages, etc.).
+- **System Notification**: Push notifications when characters send messages while you're outside the chat (including character name, message content, and avatar).
 - **Image Crop**: Crop images before sending.
 - **Contacts A–Z Index**: Side letter index with long-press slide to jump.
 
@@ -148,6 +170,59 @@ A **roleplay-style WeChat chat app** built with Flutter for Android. Features mu
 - **Moments Data Pack**: Moments content importable/exportable with batch selection.
 - **Memory Points with Character Pack**: Memory points automatically written to character pack; automatically restored on import.
 - **Storage Management**: View and clean up app storage.
+
+---
+
+## Roleplay Mode (Custom Improvisation)
+
+Roleplay mode is for character-driven conversation that is not bound by instant-messaging limits. The character replies with a bracketed action flow, for example:
+
+```text
+(Glances up at you, fingertips tapping the desk lightly) You're here.
+```
+
+### How to Enable
+
+Go to **Chat page → "..." at top-right → Chat Settings → Reply Format** and switch "Roleplay / SMS mode" to "Roleplay". This is a global chat setting and affects character replies in both private chats and group chats; switch back to "SMS" to restore the original split JSON short-message replies.
+
+### Roleplay Progression Styles
+
+Roleplay mode supports three progression styles, none of which decide the user's own actions, lines, thoughts, or plot outcomes:
+
+- **Free**: Naturally continue the current scene and relationship; may describe the world and other characters' reactions while leaving the user's character in control of its decisions.
+- **Plot**: Advance the world through environmental changes, NPC actions, clues, obstacles, and plausible consequences, always leaving a hook the user can respond to.
+- **Companion**: Focus on companionship, relationship interaction, and emotional experience; avoid strong conflict, danger, melodramatic misunderstandings, or forced twists.
+
+### Input and Replies
+
+- **Normal messages**: Type lines or actions directly; the character continues from the current roleplay context.
+- **Plot action**: Tap **Plot Action** in the "+" panel of the input box to add an action or story development led by the user. This only writes the plot and does not trigger a character reply automatically; you can then send a normal message or tap the reply button to continue.
+- **Roleplay streaming replies**: Enabled by default; the character's body text appears in a single bubble in real time as the model generates. When disabled, regular requests are used, which suits endpoints that do not support SSE streaming.
+- **Length**: Each reply is about 1–2 groups of "(action) + line", just one or two sentences, avoiding long blocks of text.
+- **Suggested actions**: Enabled by default. After each roleplay reply, exactly 4 concrete lines or "(action) line" continuations are generated (they can be filled into the input box and sent directly); generic labels such as "care about the other person" are not allowed. Suggestions are not written to the chat history and do not decide plot outcomes for the user; turning off "Generate roleplay suggested actions" stops generating or showing them.
+
+### Roleplay Context Rules
+
+- Roleplay replies use the character's `Prompt.txt`, the relationship, persistent memories, and the current conversation history.
+- Real-world time, the character's active hours, and out-of-scene memory pools (Moments / group chats) are not injected, so real-world social rules do not interfere with the roleplay.
+- The character never appends actions, lines, thoughts, or decisions the user did not write.
+- Roleplay body text keeps the full bracketed action flow; unlike SMS mode it is not split into multiple messages by sentence, and the body does not need to be JSON or Markdown.
+- Roleplay mode still supports calling imported sticker packs within the action flow, exactly like SMS mode.
+
+### Related Settings
+
+In **Chat Settings → Reply Format / Input Box** you can adjust:
+
+| Setting | Description |
+| ---- | ---- |
+| `Roleplay / SMS mode` | Switch between split SMS replies and bracketed-action roleplay |
+| `Roleplay progression style` | Free / Plot / Companion; applies only in roleplay mode |
+| `Generate roleplay suggested actions` | Whether to generate 4 concrete lines/actions after each roleplay reply |
+| `Roleplay streaming replies` | Whether to show roleplay body text via SSE in real time |
+| `Model thinking intensity` | Off / Low / Default / High / XHigh |
+| `Show AI thinking duration` | Whether to show "Thinking x.xs" under the character bubble (not sent back) |
+
+> Roleplay requires a configured OpenAI-compatible model. Disabling streaming replies supports endpoints without SSE; suggested actions are generated by the model, and in non-streaming mode an extra request is made — if suggestion generation fails, the reply body is not affected.
 
 ---
 
@@ -208,11 +283,12 @@ CharactersImport/
 | `personality` | Personality traits | Optional |
 | `greeting` | Opening greeting | Optional |
 | `user_relationship` | Relationship with user | Optional |
+| `voice` | Character voice card object: `type` is the voice type (`preset` preset / `design` text design / `clone` voice clone; defaults to `preset`); `voice_id` is the preset voice name (e.g. `Cherry` / `茉莉`); `instructions` describes tone and timbre; `sample_file` is the clone sample's relative path inside the pack (e.g. `voice/sample.mp3`); `mime_type` is the sample MIME type (`audio/mpeg` / `audio/wav`). The voice model is selected globally in API Settings | Optional |
 | `active_start` / `active_end` | Active hours, value as `"HH:mm"` (e.g., `"09:00"`); when both are set and active, the character won't say goodbye or goodnight during that time; either one being empty means unset | Optional |
 | `tags` | Tag array, e.g., `["Wuthering Waves","Digital Ghost"]` | Optional |
 | `avatar` | Embedded avatar (base64 string; takes priority over image file if present) | Optional |
 | `background` | Embedded background image (base64 string; takes priority over `ProfileBackground.jpg` if present) | Optional |
-| `memory_points` | Persistent memory array (optional); elements are `{"content": "memory content", "created_at": "creation time"}` | Optional |
+| `memory_points` | Persistent memory array (optional); elements are `{"content": "memory content", "created_at": "creation time"}`, written into the character's memory library when the pack is imported | Optional |
 
 Example `Sample1\爱弥斯\Profile.json`:
 
@@ -222,6 +298,10 @@ Example `Sample1\爱弥斯\Profile.json`:
     "location": "拉海洛·星炬学院",
     "gender": "女",
     "signature": "关注飞行雪绒喵~",
+    "voice": {
+        "voice_id": "Cherry",
+        "instructions": "明亮、亲近、语速自然，带一点俏皮感"
+    },
     "active_start": "00:00",
     "active_end": "23:59"
 }
@@ -312,7 +392,7 @@ A normal comment only needs `sender` + `content`. To express "someone replied to
   - If the replied-to nickname **exists in contacts** (and is not "self") → replies as that character.
   - If the replied-to nickname is not in contacts → replies as the **post's author character**.
   - If the reply target is "self" → no AI reply is triggered.
-- Character replies prioritize the "Moments interaction" model (falls back to chat model if not configured); if context estimation reaches **70%** of the interaction model's context window, recent chat history is automatically compressed into a summary before requesting the model.
+- Character replies prioritize the "Moments interaction" model (falls back to chat model if not configured); if context estimation reaches **70%** of the interaction model's context window, recent chat history is automatically compressed into a summary before requesting the model. Related debug logs go to the in-app "Developer Log" section.
 
 - Image files support jpg / jpeg / png / webp / gif / bmp, placed in `files/` directory, referenced by `images` field with relative path `files/xxx.jpg`; each post shows a maximum of **9 images** (excess truncated). 1 image displays as a large image; multiple images are shown in a 3-column grid (matching WeChat Moments).
 - When there is no `moments` folder, the character has no Moments content, and the Moments area in the detail page shows an empty state.
@@ -467,7 +547,7 @@ Inside a group chat, tap "..." at top-right → "Group Chat Settings" to configu
 
 ## Workshop
 
-The Workshop is used to download character packs and game packs from GitHub/Gitee repositories or COS-compatible object storage.
+The Workshop is used to download character packs, game packs and sticker packs from GitHub/Gitee repositories or COS-compatible object storage.
 
 ### Access
 
@@ -706,6 +786,8 @@ Bucket → Permission → Policy. Example (replace region / uid / bucket):
 }
 ```
 
+Notes:
+
 | Action | API | Purpose |
 | ------ | --- | ------- |
 | `name/cos:GetObject` | GET Object | Download zip / md |
@@ -720,6 +802,8 @@ Workshop settings → **+** → paste:
 ```text
 https://aichatapp-1398802649.cos.ap-guangzhou.myqcloud.com
 ```
+
+After saving you should see category chips for Characters / Games / Stickers; if only "Update notes" appears, it usually means List permission is still not enabled.
 
 #### 5. Update notes
 
@@ -787,7 +871,11 @@ Bucket → Permission → Bucket authorization → add:
 
 ```text
 https://my-bucket.oss-cn-hangzhou.aliyuncs.com
-# or
+```
+
+Or:
+
+```text
 https://my-bucket.oss-cn-hangzhou.aliyuncs.com/aichat
 ```
 
@@ -798,6 +886,8 @@ The app uses native HTTP, so CORS is generally **not required**. Configure CORS 
 ---
 
 ### Self-check
+
+After configuration, verify quickly with a browser or from the command line:
 
 ```bash
 # Should return XML listing (200), not 403/400
@@ -820,6 +910,76 @@ curl -I "https://your-bucket-domain/Note/update.md"
 - Put only publicly shareable packs / notes in this bucket — never keys or private data
 - Prefer a narrow BASE_URL prefix if the whole bucket need not be listed
 - Paid/private content: enable access-key private read (Tencent COS / Aliyun OSS) instead of relying on anonymous List + Get
+
+---
+
+## Workshop Sticker ZIP Packing Standard
+
+Sticker assets for the Workshop's "Stickers category (V1.3.0)" must be `.zip` archives. The app extracts every supported image inside and imports them into the local sticker library; each image's **filename (without the extension) is saved as the sticker note**, used for sticker management, local search, and characters sending stickers by meaning.
+
+### Supported Image Formats
+
+| Format | Extension | Notes |
+| ---- | ---- | ---- |
+| GIF animation | `.gif` | Plays as an animation in chat and sticker previews |
+| WebP | `.webp` | Static WebP supported; animated WebP playback depends on the device's system image decoder |
+| PNG | `.png` | Supports transparent backgrounds |
+| JPEG | `.jpg` / `.jpeg` | Regular static images |
+
+> Unsupported files are ignored automatically; no extra JSON, manifest, or same-named `.txt` note files are needed.
+
+### Folder Structure
+
+Images can be placed directly in the ZIP, or wrapped in a single top-level folder like an ordinary sticker pack. The app scans every directory level inside the ZIP recursively, so both layouts below are supported.
+
+**Recommended layout: a folder named after the archive**
+
+```text
+大肥鱼表情包.zip
+└── 大肥鱼表情包/
+    ├── 大肥鱼_烦恼醉酒中.gif
+    ├── 大肥鱼_要饭.jpg
+    └── 大肥鱼_顶盆子.jpg
+```
+
+**Or put images directly in the ZIP root**
+
+```text
+表情包合集.zip
+├── 熊猫头_无语.png
+├── 小狗_开心.webp
+└── 猫猫_晚安.gif
+```
+
+### Note Naming Rules
+
+The sticker note is the filename with the final extension removed, kept verbatim; Chinese characters, digits, spaces, underscores, and common symbols are all preserved.
+
+| File in ZIP | Imported sticker note |
+| ---------- | ------------------ |
+| `大肥鱼_烦恼醉酒中.gif` | `大肥鱼_烦恼醉酒中` |
+| `熊猫头 无语.png` | `熊猫头 无语` |
+| `cat-happy.webp` | `cat-happy` |
+
+Use filenames that describe the sticker's meaning, emotion, or usage scenario, e.g. `猫猫_委屈想哭.gif` or `熊猫头_上班摸鱼.jpg`. This makes local matching more reliable when a character requests `[[查询表情包:委屈]]` or `[[查询表情包:上班摸鱼]]`.
+
+### Packing and Publishing Steps
+
+1. Create a sticker folder, e.g. `大肥鱼表情包`.
+2. Put GIF, WebP, PNG, and JPG/JPEG images into it, naming each image by its meaning.
+3. Compress the **folder itself** into a ZIP, e.g. `大肥鱼表情包.zip`.
+4. Publish it to a Workshop source:
+   - **Git**: upload the ZIP as an asset in the repository's `V1.3.0` Release;
+   - **Object storage**: upload it to `Stickers/大肥鱼表情包.zip`.
+5. Users select and download it in **Me → Workshop → Stickers category**.
+
+After import, stickers appear in the sticker panel of the chat input box and can be viewed, edited, or deleted in **Me → Settings → Manage Stickers**.
+
+### Update Notifications
+
+- Update notifications can be enabled on the repository management page, with a notification repository selected.
+- **Git**: on startup, check whether there is a new `V1.2.0` Release; show a dialog when the Release description changes.
+- **Object storage**: on startup, fetch `Note/*.md` (preferring `update.md`); notify **only when the content changes** (a fingerprint is recorded per repository and compared after normalizing line endings); the dialog shows the full Markdown.
 
 ---
 
@@ -1054,7 +1214,7 @@ lib/
 │   └── theme.dart                 # Theme color palette & extensions
 ├── models/                        # Data models
 │   ├── character.dart             # Character model
-│   ├── message.dart               # Message model (text/image/file/system/forwarded)
+│   ├── message.dart               # Message model (text/image/file/sticker/system/story action/forwarded)
 │   ├── conversation.dart          # Private conversation
 │   ├── group_chat.dart            # Group chat model
 │   ├── moment.dart                # Moments post
@@ -1224,7 +1384,7 @@ flutter build apk --release --split-per-abi
 
 - **Version Check (Dual-Source)**:
   1. Gitee first: default `https://gitee.com/Murchey/AiChatApp` (direct in China);
-  2. GitHub backup: default `https://github.com/Niriko-mu/AiChat` (supports acceleration proxy).
+  2. GitHub backup: default `https://github.com/Murchey/AiChatApp` (supports acceleration proxy).
   Check repositories can be customized separately under **Settings → Updates → Gitee / GitHub update repository** (full URL or `owner/repo`, persisted). Download URLs follow the configured repositories.
   Compares `tag_name` with local version; Gitee is prioritized for version and update notes.
 - **Download Source Tabs**: The update dialog provides "Download Source" tabs. **Gitee is preferred**, then GitHub. GitHub source supports acceleration proxy download.
@@ -1250,6 +1410,58 @@ Release new versions workflow: Create a Release in **both Gitee and GitHub repos
 - Configure **context length** for each model, serving as the baseline for session compression's 70% threshold.
 - **Compression Model**: Specify a separate model for compression (defaults to the chat model).
 - **Moments Interaction Model**: Specify a separate model for Moments interactions (auto-posting / liking & commenting).
+- **Voice Model (current support scope)**: A voice model in API Settings supports four non-streaming TTS protocols: OpenAI, MiMo, MiniMax, and Qwen. OpenAI and compatible services on unknown domains use `POST /audio/speech`; MiMo's official domain uses `POST /chat/completions` and reads Base64 WAV; MiniMax's official domain uses `POST /v1/t2a_v2` and reads hex-encoded audio; Qwen's official domain uses the multimodal generation API and reads an audio URL or Base64. A voice model's name must explicitly contain `tts`, start with `speech-`, or belong to `MiniMax-Speech`; ordinary chat models never appear in the voice model list.
+
+### Voice Playback
+
+- The speaker button under a character reply bubble reads that character message aloud on demand; playback uses the "Voice Model" selected in API Settings.
+- After enabling "Auto Play" in the profile card / chat management at the top-right of a conversation, character replies play automatically once generation finishes.
+- A character's voice is part of the character card; the "Character Voice ID" and "Voice Description" can be edited in the profile card.
+- `Profile.json` uses the following optional structure:
+
+```json
+{
+    "voice": {
+        "type": "preset",
+        "voice_id": "Cherry",
+        "instructions": "温柔、清晰、语速偏慢"
+    }
+}
+```
+
+When cloning a voice, the character pack carries a sample file that `Profile.json` references:
+
+```json
+{
+    "voice": {
+        "type": "clone",
+        "sample_file": "voice/sample.mp3",
+        "template_path": "voice/sample.mp3",
+        "mime_type": "audio/mpeg",
+        "instructions": "语速稍慢，温柔、克制"
+    }
+}
+```
+
+Character pack ZIP layout:
+
+```text
+character-pack.zip
+├── Profile.json
+├── Prompt.txt
+├── avatar.png
+└── voice/
+    └── sample.mp3    ← clone template audio (mp3 or wav, ≤ 10 MB after Base64)
+```
+
+`voice/` folder notes:
+
+- Holds clone template audio only; selectable directly in the character profile card.
+- `sample_file` is a path relative to the character pack (e.g. `voice/sample.mp3`); carried automatically on import/export.
+- `template_path` is a local absolute path (used internally by the app); `sample_file` takes precedence when exporting a pack.
+- Only the 5 most recent audio files are cached for playback and cleared after playback, reducing memory usage.
+
+`voice_id` is passed to the TTS provider as-is; supported voice names differ per provider, so follow that platform's documentation. OpenAI-compatible services use `voice` with `instructions` on supported models; MiMo uses `audio.voice` and passes the voice description as an optional `user` message; MiniMax uses `voice_setting.voice_id`; Qwen uses `input.voice`, and only Instruct models receive `input.instructions`. When `type` is `clone`, the app reads the audio sample at `sample_file`, assembles a Data URI, and clones the voice through MiMo's `mimo-v2.5-tts-voiceclone` model.
 
 ### Session Compression (Me → Chat Settings → Compress Session)
 
