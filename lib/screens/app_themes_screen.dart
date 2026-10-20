@@ -265,13 +265,17 @@ class _AppThemesScreenState extends State<AppThemesScreen> {
                     if (_tab == 0) ...[
                       CupertinoButton(
                           onPressed: _busy ? null : _local,
-                          child: const Text('从本地导入 ZIP 主题')),
+                          child: _ThemeActionButton(
+                              icon: CupertinoIcons.folder_badge_plus,
+                              label: '从本地导入 ZIP 主题')),
                       if (store.active != null)
                         CupertinoButton(
                             onPressed: _busy
                                 ? null
                                 : () => _run(() => store.enable(null)),
-                            child: const Text('禁用当前主题')),
+                            child: _ThemeActionButton(
+                                icon: CupertinoIcons.clear_circled,
+                                label: '禁用当前主题')),
                       if (store.installed.isEmpty)
                         const Padding(
                             padding: EdgeInsets.all(24),
@@ -305,11 +309,16 @@ class _AppThemesScreenState extends State<AppThemesScreen> {
                                             ? null
                                             : () => _run(
                                                 () => store.enable(pack.id)),
-                                        child: const Text('启用')),
+                                        child: _ThemeActionButton(
+                                            icon: CupertinoIcons.checkmark,
+                                            label: '启用',
+                                            filled: true)),
                                     CupertinoButton(
                                         onPressed:
                                             _busy ? null : () => _export(pack),
-                                        child: const Text('导出')),
+                                        child: _ThemeActionButton(
+                                            icon: CupertinoIcons.share,
+                                            label: '导出')),
                                     CupertinoButton(
                                         onPressed: _busy
                                             ? null
@@ -319,10 +328,10 @@ class _AppThemesScreenState extends State<AppThemesScreen> {
                                                     await store.delete(pack.id);
                                                   }
                                                 }),
-                                        child: const Text('删除',
-                                            style: TextStyle(
-                                                color: CupertinoColors
-                                                    .systemRed))),
+                                        child: const _ThemeActionButton(
+                                            icon: CupertinoIcons.trash,
+                                            label: '删除',
+                                            destructive: true)),
                                   ]),
                                 ])),
                     ] else ...[
@@ -350,7 +359,8 @@ class _AppThemesScreenState extends State<AppThemesScreen> {
                             child: Text(_error!)),
                         CupertinoButton(
                             onPressed: _busy ? null : _refresh,
-                            child: const Text('重试加载')),
+                            child: _ThemeActionButton(
+                                icon: CupertinoIcons.refresh, label: '重试加载')),
                       ],
                       if (_onlineLoaded &&
                           !_busy &&
@@ -391,6 +401,7 @@ class _AppThemesScreenState extends State<AppThemesScreen> {
                         child: SizedBox(
                             width: double.infinity,
                             child: CupertinoButton.filled(
+                                borderRadius: BorderRadius.circular(14),
                                 onPressed: _busy || _selected.isEmpty
                                     ? null
                                     : _downloadSelected,
@@ -483,7 +494,9 @@ class _ThemeSourcesScreenState extends State<ThemeSourcesScreen> {
                       'GitHub/Gitee：ThemeStore Release 下的 ZIP。对象存储：配置路径/Theme/ 下的 ZIP，需具备列举和读取权限。')),
               CupertinoButton(
                   onPressed: _busy ? null : _copy,
-                  child: const Text('从创意工坊复制来源配置')),
+                  child: _ThemeActionButton(
+                      icon: CupertinoIcons.arrow_down_doc,
+                      label: '从创意工坊复制来源配置')),
               if (_busy) const CupertinoActivityIndicator(),
               for (final repo in store.repositories)
                 CupertinoListTile(
@@ -505,4 +518,49 @@ class _ThemeSourcesScreenState extends State<ThemeSourcesScreen> {
                             color: CupertinoColors.systemRed))),
             ])),
           )));
+}
+
+/// 主题二级页统一的轻量操作按钮，沿用设置页的圆角、描边和字号。
+class _ThemeActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool filled;
+  final bool destructive;
+
+  const _ThemeActionButton({
+    required this.icon,
+    required this.label,
+    this.filled = false,
+    this.destructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive ? CupertinoColors.systemRed : context.accentColor;
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 13),
+      decoration: BoxDecoration(
+        color: filled ? color : context.fieldBgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: filled ? color : context.settingsOutlineColor,
+          width: 0.7,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: filled ? CupertinoColors.white : color),
+          const SizedBox(width: 6),
+          Text(label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: filled ? CupertinoColors.white : color,
+              )),
+        ],
+      ),
+    );
+  }
 }
