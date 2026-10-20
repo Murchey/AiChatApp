@@ -131,6 +131,7 @@ class BackupScheduleService {
   static const _cloudKey = 'backup_schedule_cloud_v1';
   static const _lastLocalKey = 'backup_schedule_last_local_v1';
   static const _lastCloudKey = 'backup_schedule_last_cloud_v1';
+  static bool _automaticRunInProgress = false;
 
   static Future<BackupScheduleConfig> loadLocal() async {
     final prefs = await SharedPreferences.getInstance();
@@ -294,33 +295,39 @@ class BackupScheduleService {
   /// 打开 APP 时检查并执行到期的本地 / 云端自动备份。
   /// 返回本次实际执行的备份说明（用于 Toast）；无执行返回空列表。
   static Future<List<String>> checkAndRunOnAppOpen() async {
+    if (_automaticRunInProgress) return const [];
+    _automaticRunInProgress = true;
     final results = <String>[];
-    final localCfg = await loadLocal();
-    final cloudCfg = await loadCloud();
+    try {
+      final localCfg = await loadLocal();
+      final cloudCfg = await loadCloud();
 
-    if (isDue(config: localCfg, lastRun: await lastLocalRun())) {
-      try {
-        results.add(await runLocalAutoBackup(localCfg));
-      } catch (e) {
-        debugPrint('[BackupSchedule] local auto backup failed: $e');
-        results.add('本地自动备份失败：$e');
-      }
-    }
-
-    if (isDue(config: cloudCfg, lastRun: await lastCloudRun())) {
-      final cloudConfig = await CloudBackupService.loadConfig();
-      if (!cloudConfig.isConfigured) {
-        results.add('云端定时备份已到期，但未配置对象储存，已跳过');
-      } else {
+      if (isDue(config: localCfg, lastRun: await lastLocalRun())) {
         try {
-          results.add(await runCloudAutoBackup(cloudConfig, cloudCfg));
+          results.add(await runLocalAutoBackup(localCfg));
         } catch (e) {
-          debugPrint('[BackupSchedule] cloud auto backup failed: $e');
-          results.add('云端自动备份失败：$e');
+          debugPrint('[BackupSchedule] local auto backup failed: $e');
+          results.add('本地自动备份失败：$e');
         }
       }
+
+      if (isDue(config: cloudCfg, lastRun: await lastCloudRun())) {
+        final cloudConfig = await CloudBackupService.loadConfig();
+        if (!cloudConfig.isConfigured) {
+          results.add('云端定时备份已到期，但未配置对象储存，已跳过');
+        } else {
+          try {
+            results.add(await runCloudAutoBackup(cloudConfig, cloudCfg));
+          } catch (e) {
+            debugPrint('[BackupSchedule] cloud auto backup failed: $e');
+            results.add('云端自动备份失败：$e');
+          }
+        }
+      }
+      return results;
+    } finally {
+      _automaticRunInProgress = false;
     }
-    return results;
   }
 
   /// 备份页保存配置后立即评估一次（便于用户刚改完就能触发）。

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 
@@ -74,15 +76,18 @@ class _AiChatAppState extends State<AiChatApp> {
 
   /// 打开 APP 时执行到期的自动备份（延迟，等 Provider 加载完再打包）
   void _runScheduledBackups() {
-    Future.delayed(const Duration(seconds: 3), () async {
-      if (!mounted) return;
-      try {
-        final messages = await BackupScheduleService.checkAndRunOnAppOpen();
-        if (!mounted || messages.isEmpty) return;
-        showAppToast(messages.join('；'));
-      } catch (e) {
-        debugPrint('[BackupSchedule] check on app open failed: $e');
-      }
+    // 等首帧和启动期 Provider 初始化完全结束后再启动备份任务。
+    // 备份包含 SQLite 快照、文件读取、压缩和加密，不能参与首屏启动；
+    // 任务在后台异步运行，完成或失败均不弹 Toast，避免打断用户操作。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(Future<void>.delayed(const Duration(seconds: 8), () async {
+        if (!mounted) return;
+        try {
+          await BackupScheduleService.checkAndRunOnAppOpen();
+        } catch (e) {
+          debugPrint('[BackupSchedule] silent check on app open failed: $e');
+        }
+      }));
     });
   }
 
