@@ -103,6 +103,24 @@ class ChatProvider extends ChangeNotifier {
     _persist();
   }
 
+  /// 仅从首页会话列表移除会话（不删除聊天记录）。
+  ///
+  /// 会话对象与消息都保留：从通讯录再次进入该角色仍能看到完整历史；
+  /// 之后收到或发送新消息时会自动取消隐藏，重新回到首页列表。
+  Future<void> hideConversation(String conversationId) async {
+    final index = _conversations.indexWhere((c) => c.id == conversationId);
+    if (index == -1) return;
+    final conv = _conversations[index];
+    if (conv.hidden && !conv.pinned && conv.unreadCount == 0) return;
+    _conversations[index] = conv.copyWith(
+      hidden: true,
+      pinned: false,
+      unreadCount: 0,
+    );
+    notifyListeners();
+    await _persist();
+  }
+
   /// 是否正在为该会话生成回复（聊天标题据此显示"对方正在输入……"）
   bool isReplying(String conversationId) =>
       _replyingConversationId == conversationId;
@@ -374,6 +392,7 @@ class ChatProvider extends ChangeNotifier {
     Future.microtask(() async {
       try {
         final convList = _conversations
+            .where((conv) => !conv.hidden)
             .map((conv) => {
                   'id': conv.id,
                   'character_id': conv.characterId,
@@ -1138,6 +1157,35 @@ class ChatProvider extends ChangeNotifier {
     _persist();
   }
 
+  /// 批量删除消息（多选删除）：只移除选中的消息，
+  /// 并同步重算上下文估算与会话列表的最后一条消息预览。
+  Future<void> deleteMessages(
+    String conversationId,
+    Iterable<String> messageIds,
+  ) async {
+    final ids = messageIds.toSet();
+    if (ids.isEmpty) return;
+    final messages = _messagesMap[conversationId];
+    if (messages == null) return;
+    final before = messages.length;
+    messages.removeWhere((m) => ids.contains(m.id));
+    if (messages.length == before) return;
+    _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
+    if (messages.isNotEmpty) {
+      _updateConversationLastMessage(conversationId, messages.last.content);
+    } else {
+      final index = _conversations.indexWhere((c) => c.id == conversationId);
+      if (index != -1) {
+        _conversations[index] = _conversations[index].copyWith(
+          lastMessage: '',
+          lastMessageTime: DateTime.now(),
+        );
+      }
+    }
+    notifyListeners();
+    await _persist();
+  }
+
   /// 修改消息内容，供语C用户编辑剧情行动或模型上一轮回复。
   Future<void> editMessage({
     required String conversationId,
@@ -1340,6 +1388,8 @@ class ChatProvider extends ChangeNotifier {
       _conversations[index] = _conversations[index].copyWith(
         lastMessage: content,
         lastMessageTime: DateTime.now(),
+        // 新消息到达（发送/回复/问候）时，被移除的会话重新回到首页
+        hidden: false,
       );
       final conv = _conversations.removeAt(index);
       _conversations.insert(0, conv);

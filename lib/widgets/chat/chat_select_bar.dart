@@ -10,6 +10,7 @@ class ChatSelectBar extends StatelessWidget {
   final VoidCallback? onSaveMemory;
   final VoidCallback? onForwardSingle;
   final VoidCallback? onForwardMerge;
+  final VoidCallback? onDelete;
 
   const ChatSelectBar({
     super.key,
@@ -19,20 +20,29 @@ class ChatSelectBar extends StatelessWidget {
     this.onSaveMemory,
     this.onForwardSingle,
     this.onForwardMerge,
+    this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
     final enabled = count > 0;
-    Widget btn(String label, VoidCallback? onTap) => CupertinoButton(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    Widget btn(
+      String label,
+      VoidCallback? onTap, {
+      bool destructive = false,
+    }) =>
+        CupertinoButton(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           onPressed: onTap,
           child: Text(
             label,
+            maxLines: 1,
             style: TextStyle(
               fontSize: 15,
               color: enabled && onTap != null
-                  ? context.accentColor
+                  ? (destructive
+                      ? CupertinoColors.systemRed
+                      : context.accentColor)
                   : context.textSecondaryColor,
             ),
           ),
@@ -44,7 +54,7 @@ class ChatSelectBar extends StatelessWidget {
         child: Row(
           children: [
             CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
               onPressed: onCancel,
               child: Text(
                 '取消',
@@ -57,6 +67,8 @@ class ChatSelectBar extends StatelessWidget {
             Expanded(
               child: Text(
                 '已选 $count 条',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 15,
@@ -70,6 +82,7 @@ class ChatSelectBar extends StatelessWidget {
             else ...[
               btn('逐条转发', enabled ? onForwardSingle : null),
               btn('合并转发', enabled ? onForwardMerge : null),
+              btn('删除', enabled ? onDelete : null, destructive: true),
             ],
           ],
         ),

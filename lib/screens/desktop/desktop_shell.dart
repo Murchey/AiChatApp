@@ -237,7 +237,9 @@ class _DesktopShellState extends State<DesktopShell> {
     return Consumer2<ChatProvider, GroupChatProvider>(
       builder: (context, chat, groups, _) {
         final entries = <_DesktopConversationEntry>[
-          ...chat.conversations.map(_DesktopConversationEntry.private),
+          ...chat.conversations
+              .where((c) => !c.hidden)
+              .map(_DesktopConversationEntry.private),
           ...groups.groups.map(_DesktopConversationEntry.group),
         ]..sort((a, b) {
             if (a.pinned != b.pinned) return a.pinned ? -1 : 1;

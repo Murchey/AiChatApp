@@ -572,6 +572,43 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         },
       );
 
+  /// 删除多选中的消息（不可恢复），完成后退出多选模式。
+  Future<void> _deleteSelectedMessages() async {
+    if (_selectedIds.isEmpty) return;
+    final count = _selectedIds.length;
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('删除消息'),
+        content: Text('确定删除选中的 $count 条消息？删除后无法恢复。'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text('删除'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final ids = Set<String>.of(_selectedIds);
+    final quoted = _quoteMessage;
+    final chatProvider = context.read<ChatProvider>();
+    await chatProvider.deleteMessages(widget.conversationId, ids);
+    if (!mounted) return;
+    setState(() {
+      // 被引用的消息被删掉时同步清空引用条
+      if (quoted != null && ids.contains(quoted.id)) _quoteMessage = null;
+    });
+    _exitSelectMode();
+    showAppToast('已删除 $count 条消息');
+  }
+
   Widget _buildTimeLabel(DateTime time) => ChatTimeLabel(time: time);
 
   Widget _buildSelectBar(BuildContext context) {
@@ -582,6 +619,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       onSaveMemory: _saveSelectedAsMemory,
       onForwardSingle: () => _forwardMessages(merge: false),
       onForwardMerge: () => _forwardMessages(merge: true),
+      onDelete: _deleteSelectedMessages,
     );
   }
 

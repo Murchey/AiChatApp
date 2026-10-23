@@ -123,6 +123,7 @@ class _AiChatAppState extends State<AiChatApp> {
 
         // 同步会话数据
         final convList = chatProvider.conversations
+            .where((conv) => !conv.hidden)
             .map((conv) => {
                   'id': conv.id,
                   'character_id': conv.characterId,

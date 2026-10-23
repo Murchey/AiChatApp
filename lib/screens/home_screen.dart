@@ -28,6 +28,7 @@ import '../services/moment_ai_service.dart';
 import '../services/update_service.dart';
 import '../widgets/alphabet_index_bar.dart';
 import '../widgets/character_avatar.dart';
+import '../utils/app_toast.dart';
 import '../widgets/update_dialogs.dart';
 import 'discover_screen.dart';
 import 'profile_screen.dart';
@@ -372,7 +373,9 @@ class _HomeScreenState extends State<HomeScreen>
     // 仅未读数字变化时才重建角标；会话列表自身由 _buildChatList 内的 Consumer 独立刷新。
     return Selector2<ChatProvider, GroupChatProvider, int>(
       selector: (_, chat, group) =>
-          chat.conversations.fold<int>(0, (sum, c) => sum + c.unreadCount) +
+          chat.conversations
+              .where((c) => !c.hidden)
+              .fold<int>(0, (sum, c) => sum + c.unreadCount) +
           group.totalUnreadCount,
       builder: (context, totalUnread, _) {
         final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
@@ -939,7 +942,7 @@ class _HomeScreenState extends State<HomeScreen>
     GroupChatProvider groupProvider,
   ) {
     final entries = <HomeChatEntry>[
-      for (final c in chatProvider.conversations)
+      for (final c in chatProvider.conversations.where((c) => !c.hidden))
         HomeChatEntry(
           isGroup: false,
           id: c.id,
@@ -1362,7 +1365,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  /// 长按会话弹出悬浮菜单（在长按位置旁），提供【置顶聊天】/【取消置顶】
+  /// 长按会话弹出悬浮菜单（在长按位置旁）：
+  /// 置顶 / 取消置顶，私聊额外提供【删除会话】（仅从首页移除，保留聊天记录）
   void _showEntryMenu(
     BuildContext context,
     Offset globalPos,
@@ -1373,8 +1377,11 @@ class _HomeScreenState extends State<HomeScreen>
     final overlayBox = overlay.context.findRenderObject() as RenderBox?;
     if (overlayBox == null) return;
 
-    const panelWidth = 160.0;
-    const panelHeight = 44.0;
+    const panelWidth = 168.0;
+    const itemHeight = 44.0;
+    // 私聊多一项「删除会话」；群聊不可隐藏，故只有置顶一项
+    final itemCount = entry.isGroup ? 1 : 2;
+    final panelHeight = itemHeight * itemCount + 0.5 * (itemCount - 1);
     // 菜单尽量保持在屏幕内（留 8px 边距）
     var left = globalPos.dx;
     if (left + panelWidth > overlayBox.size.width - 8) {
@@ -1414,20 +1421,45 @@ class _HomeScreenState extends State<HomeScreen>
                 ],
               ),
               clipBehavior: Clip.antiAlias,
-              child: _chatMenuItem(
-                icon: pinned ? CupertinoIcons.pin_slash : CupertinoIcons.pin,
-                label: pinned ? '取消置顶' : '置顶聊天',
-                onTap: () {
-                  _dismissChatMenu();
-                  if (entry.isGroup) {
-                    context.read<GroupChatProvider>().setPinned(
-                          entry.id,
-                          !pinned,
-                        );
-                  } else {
-                    context.read<ChatProvider>().setPinned(entry.id, !pinned);
-                  }
-                },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _chatMenuItem(
+                    icon:
+                        pinned ? CupertinoIcons.pin_slash : CupertinoIcons.pin,
+                    label: pinned ? '取消置顶' : '置顶聊天',
+                    onTap: () {
+                      _dismissChatMenu();
+                      if (entry.isGroup) {
+                        context.read<GroupChatProvider>().setPinned(
+                              entry.id,
+                              !pinned,
+                            );
+                      } else {
+                        context
+                            .read<ChatProvider>()
+                            .setPinned(entry.id, !pinned);
+                      }
+                    },
+                  ),
+                  // 群聊没有「通讯录再次进入」的入口，隐藏后将无法找回，
+                  // 因此「删除会话」只提供给私聊会话。
+                  if (!entry.isGroup) ...[
+                    Container(
+                      height: 0.5,
+                      color: context.conversationDividerColor,
+                    ),
+                    _chatMenuItem(
+                      icon: CupertinoIcons.delete,
+                      label: '删除会话',
+                      color: CupertinoColors.systemRed,
+                      onTap: () {
+                        _dismissChatMenu();
+                        _confirmHideConversation(entry);
+                      },
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -1435,6 +1467,36 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
     overlay.insert(_chatMenuEntry!);
+  }
+
+  /// 删除会话：仅从首页会话列表移除，聊天记录与会话数据都保留。
+  /// 之后从通讯录再次进入该角色仍可继续聊天，发送/收到新消息会自动回到首页。
+  Future<void> _confirmHideConversation(HomeChatEntry entry) async {
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('删除会话'),
+        content: const Text(
+          '仅从首页移除该会话，聊天记录仍会保留；'
+          '从通讯录再次进入该角色即可继续聊天。',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text('删除'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await context.read<ChatProvider>().hideConversation(entry.id);
+    if (!mounted) return;
+    showAppToast('已从首页移除会话，聊天记录已保留');
   }
 
   void _dismissChatMenu() {
@@ -1447,6 +1509,7 @@ class _HomeScreenState extends State<HomeScreen>
     required IconData icon,
     required String label,
     required VoidCallback onTap,
+    Color? color,
   }) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -1456,11 +1519,14 @@ class _HomeScreenState extends State<HomeScreen>
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: context.textSecondaryColor),
+            Icon(icon, size: 18, color: color ?? context.textSecondaryColor),
             const SizedBox(width: 10),
             Text(
               label,
-              style: TextStyle(fontSize: 15, color: context.textPrimaryColor),
+              style: TextStyle(
+                fontSize: 15,
+                color: color ?? context.textPrimaryColor,
+              ),
             ),
           ],
         ),
