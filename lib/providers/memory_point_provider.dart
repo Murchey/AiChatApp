@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/auto_memory_op.dart';
 import '../models/memory_point.dart';
 import '../models/story_package.dart';
 
@@ -216,6 +217,81 @@ class MemoryPointProvider extends ChangeNotifier {
   List<MemoryPoint> storyPointsFor(String characterId) => pointsFor(characterId)
       .where((point) => point.sourceType == 'story')
       .toList(growable: false);
+
+  /// AI 托管的剧情记录条目（sourceType == 'auto'，最新在前）。
+  List<MemoryPoint> autoPointsFor(String characterId) => pointsFor(characterId)
+      .where((point) => point.isAutoManaged)
+      .toList(growable: false);
+
+  /// 执行 AI 剧情记录返回的操作（记忆点自动托管）。
+  ///
+  /// 安全约束：update/delete 仅作用于 AI 托管（sourceType == 'auto'）条目，
+  /// 指向用户记忆或故事线记忆的请求一律忽略；add 内容与现有记忆重复时跳过。
+  /// 每次调用只持久化并通知一次。
+  Future<void> applyAutoOperations(
+      String characterId, List<AutoMemoryOp> ops) async {
+    if (ops.isEmpty) return;
+    final list = List<MemoryPoint>.from(
+      _pointsByCharacter[characterId] ?? const <MemoryPoint>[],
+    );
+    var changed = false;
+    for (final op in ops) {
+      switch (op.op) {
+        case AutoMemoryOp.opAdd:
+          final content = op.content.trim();
+          if (content.isEmpty) break;
+          if (list.any((p) => p.content.trim() == content)) break;
+          list.insert(
+            0,
+            MemoryPoint(
+              content: content,
+              sourceType: MemoryPoint.sourceTypeAuto,
+            ),
+          );
+          changed = true;
+        case AutoMemoryOp.opUpdate:
+          final index = list.indexWhere((p) => p.id == op.id);
+          if (index < 0 || !list[index].isAutoManaged) break;
+          final content = op.content.trim();
+          if (content.isEmpty) break;
+          if (list[index].content.trim() == content) break;
+          list[index] = list[index].copyWith(content: content);
+          changed = true;
+        case AutoMemoryOp.opDelete:
+          final index = list.indexWhere((p) => p.id == op.id);
+          if (index < 0 || !list[index].isAutoManaged) break;
+          list.removeAt(index);
+          changed = true;
+        default:
+          break;
+      }
+    }
+    if (!changed) return;
+    if (list.isEmpty) {
+      _pointsByCharacter.remove(characterId);
+    } else {
+      _pointsByCharacter[characterId] = list;
+    }
+    await _persist(characterId);
+    notifyListeners();
+  }
+
+  /// 批量删除记忆点（记忆点管理页多选批量删除）。
+  Future<void> removePoints(
+      String characterId, List<String> pointIds) async {
+    if (pointIds.isEmpty) return;
+    final list = _pointsByCharacter[characterId];
+    if (list == null) return;
+    final ids = pointIds.toSet();
+    final before = list.length;
+    list.removeWhere((p) => ids.contains(p.id));
+    if (list.length == before) return;
+    if (list.isEmpty) {
+      _pointsByCharacter.remove(characterId);
+    }
+    await _persist(characterId);
+    notifyListeners();
+  }
 
   Future<void> _persist(String characterId) async {
     final prefs = await SharedPreferences.getInstance();

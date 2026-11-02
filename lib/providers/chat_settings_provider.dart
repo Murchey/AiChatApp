@@ -32,6 +32,7 @@ class ChatSettingsProvider extends ChangeNotifier {
   static const _roleplayChoicesKey = 'chat_roleplay_choices_enabled';
   static const _thinkingLevelKey = 'chat_thinking_level';
   static const _showThinkingDurationKey = 'chat_show_thinking_duration';
+  static const _autoMemoryKey = 'chat_auto_memory_enabled';
 
   /// 携带上下文条数，0 表示无限制（携带全部记录）
   int _contextCount = 10;
@@ -55,6 +56,10 @@ class ChatSettingsProvider extends ChangeNotifier {
   ModelThinkingLevel _thinkingLevel = ModelThinkingLevel.defaultLevel;
   bool _showThinkingDuration = true;
 
+  /// 记忆点自动托管：开启后私聊每累计 10 条消息，AI 自动记录剧情推进
+  /// 到记忆点的「AI 托管」分区（见 AutoMemoryService）。
+  bool _autoMemoryEnabled = false;
+
   /// 记忆池按角色停用的来源（key=角色 id，value=停用的来源标题集合，
   /// 标题见 MemoryPoolBuilder 的 kPrivateSectionTitle 等常量）。
   Map<String, Set<String>> _disabledPoolSections = {};
@@ -73,6 +78,7 @@ class ChatSettingsProvider extends ChangeNotifier {
   bool get enableRoleplayChoices => _enableRoleplayChoices;
   ModelThinkingLevel get thinkingLevel => _thinkingLevel;
   bool get showThinkingDuration => _showThinkingDuration;
+  bool get autoMemoryEnabled => _autoMemoryEnabled;
 
   /// 该角色记忆池中已停用的来源标题集合（停用后不拼入提示词）
   Set<String> disabledPoolSectionsFor(String characterId) =>
@@ -115,6 +121,7 @@ class ChatSettingsProvider extends ChangeNotifier {
     // 同步到 LLM 请求层
     LLMService.thinkingLevel = _thinkingLevel;
     _showThinkingDuration = prefs.getBool(_showThinkingDurationKey) ?? true;
+    _autoMemoryEnabled = prefs.getBool(_autoMemoryKey) ?? false;
     final raw = prefs.getString(_memoryPoolDisabledKey);
     _disabledPoolSections = {};
     if (raw != null && raw.isNotEmpty) {
@@ -246,6 +253,14 @@ class ChatSettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_showThinkingDurationKey, value);
+  }
+
+  /// 设置「记忆点自动托管」开关。
+  Future<void> setAutoMemoryEnabled(bool value) async {
+    _autoMemoryEnabled = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_autoMemoryKey, value);
   }
 
   /// 设置角色记忆池某来源（标题见 MemoryPoolBuilder 常量）的启停。

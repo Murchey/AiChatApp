@@ -19,6 +19,7 @@ import 'providers/token_usage_provider.dart';
 import 'providers/workshop_provider.dart';
 import 'providers/story_provider.dart';
 import 'providers/sticker_provider.dart';
+import 'services/auto_memory_service.dart';
 import 'services/backup_schedule_service.dart';
 import 'services/notification_service.dart';
 import 'services/widget_sync_service.dart';
@@ -41,6 +42,7 @@ class _AiChatAppState extends State<AiChatApp> {
   void initState() {
     super.initState();
     _initProviders();
+    _setupAutoMemoryRecorder();
     context.read<GroupChatProvider>().init();
     context.read<MomentNotificationProvider>().init();
     context.read<MemoryPointProvider>().init();
@@ -72,6 +74,24 @@ class _AiChatAppState extends State<AiChatApp> {
     if (!mounted) return;
     await settings
         .ensureSoleModelSelected(api.models.map((m) => m.id).toList());
+  }
+
+  /// 记忆点自动托管：注册剧情记录回调（每轮回复完成后按阈值触发）。
+  /// 提前捕获各 Provider 实例，避免回调执行时再跨 async gap 取 context。
+  void _setupAutoMemoryRecorder() {
+    final chat = context.read<ChatProvider>();
+    final settings = context.read<ChatSettingsProvider>();
+    final memory = context.read<MemoryPointProvider>();
+    final api = context.read<ApiProvider>();
+    chat.autoMemoryRecorder = (conversationId) {
+      AutoMemoryService.maybeRecord(
+        chatProvider: chat,
+        conversationId: conversationId,
+        chatSettings: settings,
+        memoryPointProvider: memory,
+        apiProvider: api,
+      );
+    };
   }
 
   /// 打开 APP 时执行到期的自动备份（延迟，等 Provider 加载完再打包）

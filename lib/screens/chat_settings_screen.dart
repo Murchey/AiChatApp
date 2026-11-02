@@ -713,6 +713,35 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
             ],
           ),
+          // 记忆点自动托管
+          CupertinoListSection.insetGrouped(
+            backgroundColor: context.scaffoldColor,
+            decoration: BoxDecoration(
+              color: context.listBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            header: const Text('记忆点自动托管'),
+            children: [
+              CupertinoListTile(
+                title: const Text('自动记录剧情记忆'),
+                trailing: CupertinoSwitch(
+                  value: settings.autoMemoryEnabled,
+                  onChanged: settings.setAutoMemoryEnabled,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: Text(
+                  '开启后，对话每累计 10 条消息，AI 会自动整理剧情推进并写入记忆点的「AI 托管」分区；托管记忆会随提示词回传给模型，可在「记忆点管理」中查看、搜索或批量删除。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

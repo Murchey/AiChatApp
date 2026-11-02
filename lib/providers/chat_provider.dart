@@ -53,6 +53,10 @@ class ChatProvider extends ChangeNotifier {
       {}; // 会话 → 系统提示词 + 输出指令 token（内存态，供乐观更新）
   final Map<String, List<String>> _roleplayChoices = {};
 
+  /// 记忆点自动托管：每轮回复流程完成后触发的剧情记录回调（按会话）。
+  /// 由 app.dart 注册为 AutoMemoryService.maybeRecord；未注册时为空、无副作用。
+  void Function(String conversationId)? autoMemoryRecorder;
+
   /// 会话列表：置顶会话排最前，其余按最近消息时间倒序
   List<Conversation> get conversations {
     final list = List.of(_conversations);
@@ -595,6 +599,7 @@ class ChatProvider extends ChangeNotifier {
           clearReplying: () {
             _replyingConversationId = null;
             _runningReply = null;
+            autoMemoryRecorder?.call(conversationId);
           },
           estimateTokens: _estimateTextTokens,
           estimateInputBudget: (id, count, {systemTokens = 0}) =>
@@ -843,6 +848,7 @@ class ChatProvider extends ChangeNotifier {
       _replyingConversationId = null;
       _runningReply = null;
       notifyListeners();
+      autoMemoryRecorder?.call(conversationId);
     }
   }
 

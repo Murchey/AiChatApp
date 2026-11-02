@@ -119,6 +119,55 @@ part of 'llm_service.dart';
     );
   }
 
+  /// 记忆点自动托管：让「剧情记录员」基于最近对话与现有 AI 托管剧情记录，
+  /// 输出对该记录列表的 JSON 操作数组（add/update/delete）。
+  ///
+  /// [historyMessages] 为最近的对话历史（user/assistant）；
+  /// [existingRecords] 为现有托管记录（[{id, content}]），模型只允许引用这些 id。
+  /// 原始输出交给 AutoMemoryOp.parseList 解析，本方法不做解析。
+  Future<CompletionResult> generatePlotMemoryRecords({
+    required ApiModel model,
+    required List<Map<String, String>> historyMessages,
+    required List<Map<String, String>> existingRecords,
+  }) {
+    return LLMService._fetchWithKimiFallback(
+      model: model,
+      messages: [
+        ...historyMessages,
+        {'role': 'user', 'content': buildPlotMemoryInstruction(existingRecords)},
+      ],
+      maxTokens: 600,
+      initialTemperature: 0.3,
+    );
+  }
+
+  /// 组装剧情记录指令（纯函数，便于单测）：含现有记录的 id 与内容，
+  /// 并给出 JSON 操作数组的输出格式与约束。
+  String buildPlotMemoryInstruction(
+      List<Map<String, String>> existingRecords) {
+    final recordsText = existingRecords.isEmpty
+        ? '（暂无剧情记录）'
+        : existingRecords
+            .map((r) => '- id=${r['id']}：${r['content']}')
+            .join('\n');
+    return '【系统指令】你是剧情记录员，不是聊天角色。'
+        '请根据下方最近的对话记录，维护该角色的「剧情记录」列表'
+        '（长期记忆里的剧情推进要点）。\n'
+        '现有剧情记录（只允许引用这些 id）：\n$recordsText\n\n'
+        '输出要求：\n'
+        '1. 只输出一个 JSON 操作数组，每项只能是以下三种之一：\n'
+        '   {"op":"add","content":"新记录"}\n'
+        '   {"op":"update","id":"现有id","content":"修改后的记录"}\n'
+        '   {"op":"delete","id":"现有id"}\n'
+        '2. 每条记录是一两句精炼的剧情推进要点（不超过 60 字），'
+        '只记录已发生的事实、约定、关系变化、关键物品与线索，不要记录琐碎日常。\n'
+        '3. 新剧情与现有记录重复或已覆盖旧记录时，用 update 合并改写，不要重复 add；'
+        '已解决或过时的记录用 delete 删除。\n'
+        '4. 禁止编造 id；没有需要记录的变化时输出 []。\n'
+        '5. 不要输出任何解释、Markdown 代码块或其他文字。\n'
+        '示例：[{"op":"add","content":"与林澈约定明晚在旧码头交接账本"}]';
+  }
+
   /// 发送图片消息：以 OpenAI 兼容的视觉消息格式，把用户选择的图片
   /// （转 base64 data URL）连同输出指令作为最后一条 user 消息发给模型，
   /// 让角色"看到"图片后按 JSON 数组格式回复。

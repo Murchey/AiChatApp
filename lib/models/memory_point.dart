@@ -8,7 +8,14 @@ class MemoryPoint {
   final String content;
   final DateTime createdAt;
 
-  /// 非空时表示该记忆来自故事线社区；普通用户记忆保持为空。
+  /// AI 托管剧情记录的来源标记（sourceType 取值）。
+  static const String sourceTypeAuto = 'auto';
+
+  /// 故事线社区记忆的来源标记（sourceType 取值）。
+  static const String sourceTypeStory = 'story';
+
+  /// 非空时表示该记忆来自故事线社区（'story'）或 AI 托管（'auto'）；
+  /// 普通用户记忆保持为空。
   final String? sourceType;
   final String? sourceId;
   final int? sourceVersion;
@@ -55,6 +62,12 @@ class MemoryPoint {
         if (sourceTitle != null) 'source_title': sourceTitle,
         if (chapterId != null) 'chapter_id': chapterId,
       };
+
+  /// 是否为 AI 托管的剧情记录条目。
+  bool get isAutoManaged => sourceType == sourceTypeAuto;
+
+  /// 是否来自故事线社区安装。
+  bool get isStory => sourceType == sourceTypeStory;
 
   static const _unset = Object();
 
