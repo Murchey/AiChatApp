@@ -18,6 +18,7 @@ import '../../services/tts_playback_controller.dart';
 import '../../utils/file_picker_helper.dart';
 import '../../utils/app_toast.dart';
 import '../../widgets/chat_bubble.dart';
+import '../../widgets/chat/chat_error_banner.dart';
 import '../../widgets/chat/chat_message_chrome.dart';
 import '../../widgets/message_input.dart';
 import '../chat_detail_screen.dart';
@@ -653,29 +654,11 @@ class _DesktopChatViewState extends State<DesktopChatView> {
           selector: (_, chat) => chat.lastError,
           builder: (context, error, _) {
             if (error == null || error.isEmpty) return const SizedBox.shrink();
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: p.inputBarBg,
-              child: Row(
-                children: [
-                  Icon(CupertinoIcons.exclamationmark_triangle_fill,
-                      size: 15, color: p.danger),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(error,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 13, color: p.danger)),
-                  ),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(24, 24),
-                    onPressed: context.read<ChatProvider>().clearError,
-                    child: Icon(CupertinoIcons.xmark_circle_fill,
-                        size: 16, color: p.textSecondary),
-                  ),
-                ],
-              ),
+            return ChatErrorBanner(
+              error: error,
+              onDismiss: context.read<ChatProvider>().clearError,
+              background: p.inputBarBg,
+              foreground: p.danger,
             );
           },
         ),

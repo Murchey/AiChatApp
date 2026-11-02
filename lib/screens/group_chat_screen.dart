@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
+import '../widgets/chat/chat_error_banner.dart';
 import '../widgets/chat/group_message_input.dart';
 import '../models/character.dart';
 import '../models/conversation.dart';
@@ -1264,41 +1265,9 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (error != null && error.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            color: context.navBarColor,
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  CupertinoIcons.exclamationmark_triangle_fill,
-                                  size: 15,
-                                  color: CupertinoColors.systemRed,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    error,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: CupertinoColors.systemRed,
-                                    ),
-                                  ),
-                                ),
-                                GestureDetector(
-                                  onTap: groupProvider.clearError,
-                                  child: Icon(
-                                    CupertinoIcons.xmark_circle_fill,
-                                    size: 16,
-                                    color: context.textSecondaryColor,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          ChatErrorBanner(
+                            error: error,
+                            onDismiss: groupProvider.clearError,
                           ),
                         if (_quoteMessage != null)
                           Container(

@@ -18,6 +18,7 @@ import '../services/tts_playback_controller.dart';
 import '../utils/file_picker_helper.dart';
 import '../utils/app_toast.dart';
 import '../widgets/chat/chat_background_layer.dart';
+import '../widgets/chat/chat_error_banner.dart';
 import '../widgets/chat/chat_bubble_menu.dart';
 import '../widgets/chat/chat_select_bar.dart';
 import '../widgets/chat/chat_message_chrome.dart';
@@ -1217,44 +1218,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         final error = chatProvider.lastError;
                         return Column(
                           children: [
-                            // AI 请求失败错误提示条（可点击关闭）
+                            // AI 请求失败错误提示条
+                            // （点击查看完整报错、长按复制、右上角关闭）
                             if (error != null && error.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                color: context.navBarColor,
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      CupertinoIcons
-                                          .exclamationmark_triangle_fill,
-                                      size: 15,
-                                      color: CupertinoColors.systemRed,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        error,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: CupertinoColors.systemRed,
-                                        ),
-                                      ),
-                                    ),
-                                    GestureDetector(
-                                      onTap: chatProvider.clearError,
-                                      child: Icon(
-                                        CupertinoIcons.xmark_circle_fill,
-                                        size: 16,
-                                        color: context.textSecondaryColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              ChatErrorBanner(
+                                error: error,
+                                onDismiss: chatProvider.clearError,
                               ),
                             // 引用条（设置了引用时显示在输入框上方）
                             if (_quoteMessage != null)
