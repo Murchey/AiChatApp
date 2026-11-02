@@ -260,17 +260,14 @@ Stream<StreamCompletionChunk> streamCompletion({
     request.headers
         .set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
     request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
-    request.headers
-        .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
-    request.add(utf8.encode(jsonEncode({
-      'model': model.modelName,
-      'messages': messages,
-      'stream': true,
-      'stream_options': {'include_usage': true},
-      'max_tokens': LLMService._outputLimit(model, maxTokens),
-      'temperature': temperature,
-      ...LLMService.thinkingRequestFields(model: model),
-    })));
+    LLMService._applyAuthHeaders(request, model);
+    request.add(utf8.encode(jsonEncode(LLMService.buildChatBody(
+      model: model,
+      messages: messages,
+      temperature: temperature,
+      maxTokens: maxTokens,
+      stream: true,
+    ))));
     final response =
         await request.close().timeout(LLMService._responseTimeout(model));
     if (response.statusCode != 200) {
@@ -294,7 +291,8 @@ Stream<StreamCompletionChunk> streamCompletion({
       if (decoded is Map && decoded['error'] != null) {
         throw LLMService._apiError(200, data, apiKey: model.apiKey);
       }
-      final chunk = LLMService.parseStreamChunk(data);
+      final chunk =
+          LLMService.parseStreamChunkFor(model.apiFormat, data);
       receivedContent = receivedContent || chunk.content.trim().isNotEmpty;
       if (chunk.content.isNotEmpty ||
           chunk.reasoning.isNotEmpty ||

@@ -47,6 +47,9 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   String _ttsProtocol = 'auto';
   String _ttsCapabilityPreset = 'auto';
 
+  /// API 请求兼容格式（OpenAI Chat / Anthropic / OpenAI Responses）
+  String _apiFormat = ApiFormat.openaiChat;
+
   bool get _isEdit => widget.model != null;
 
   @override
@@ -63,6 +66,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     _contextController = TextEditingController(
       text: (widget.model?.contextLength ?? 8000).toString(),
     );
+    _apiFormat = widget.model?.apiFormat ?? ApiFormat.openaiChat;
     _ttsProtocol = widget.model?.ttsProtocol ?? 'auto';
     _ttsCapabilityPreset = _capabilityPreset(
       widget.model?.ttsCapabilities ?? const [],
@@ -161,6 +165,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
         baseUrl: _baseUrlController.text.trim(),
         apiKey: _apiKeyController.text.trim(),
         contextLength: contextLength,
+        apiFormat: _apiFormat,
         ttsProtocol: protocolForSave,
         ttsCapabilities: _capabilitiesForSave(),
       ));
@@ -172,6 +177,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
         baseUrl: _baseUrlController.text.trim(),
         apiKey: _apiKeyController.text.trim(),
         contextLength: contextLength,
+        apiFormat: _apiFormat,
         ttsProtocol: protocolForSave,
         ttsCapabilities: _capabilitiesForSave(),
       );
@@ -267,7 +273,8 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
         displayName: '',
         modelName: _modelNameController.text.trim(),
         baseUrl: _baseUrlController.text.trim(),
-        apiKey: _apiKeyController.text.trim());
+        apiKey: _apiKeyController.text.trim(),
+        apiFormat: _apiFormat);
     setState(() => _testing = true);
     try {
       await LLMService.fetchCompletion(
@@ -362,6 +369,29 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
             ),
             header: const Text('连接配置'),
             children: [
+              SettingsInlinePicker<String>(
+                value: _apiFormat,
+                options: [
+                  for (final value in ApiFormat.all)
+                    SettingsChoiceOption(
+                      value: value,
+                      label: ApiFormat.label(value),
+                    ),
+                ],
+                onChanged: (value) => setState(() => _apiFormat = value),
+                panelKey: 'model-edit-api-format',
+                rowBuilder: (context, toggle) => SettingsRow(
+                  icon: CupertinoIcons.globe,
+                  title: const Text('兼容格式'),
+                  subtitle: const Text('请求报文协议，按服务商接口选择'),
+                  trailing: settingsValueText(
+                    context,
+                    ApiFormat.label(_apiFormat),
+                  ),
+                  showChevron: true,
+                  onTap: toggle,
+                ),
+              ),
               _buildField(
                 controller: _baseUrlController,
                 label: 'API 请求地址',

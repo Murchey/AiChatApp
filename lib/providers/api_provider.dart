@@ -8,6 +8,31 @@ import '../services/llm_service.dart';
 /// 用户对模型语音协议的显式声明。auto 保持旧版本的名称/地址推断行为。
 enum TtsProtocolSetting { auto, none, openai, mimo, minimax, qwen }
 
+/// API 请求兼容格式（报文协议），按服务商接口选择。
+///
+/// - [openaiChat]：OpenAI Chat Completions（`/chat/completions`，默认）
+/// - [anthropic]：Anthropic Messages（`/messages`，x-api-key 鉴权）
+/// - [openaiResponses]：OpenAI Responses（`/responses`）
+class ApiFormat {
+  static const String openaiChat = 'openai-chat';
+  static const String anthropic = 'anthropic';
+  static const String openaiResponses = 'openai-responses';
+
+  static const List<String> all = [openaiChat, anthropic, openaiResponses];
+
+  /// 归一化存储值：非法或缺失时回退到 [openaiChat]（保持旧数据兼容）。
+  static String normalize(String? value) {
+    final v = value?.trim().toLowerCase();
+    return v != null && all.contains(v) ? v : openaiChat;
+  }
+
+  static String label(String value) => switch (value) {
+        anthropic => 'Anthropic',
+        openaiResponses => 'OpenAI Responses',
+        _ => 'OpenAI Chat Completions',
+      };
+}
+
 /// 模型可用于声音相关功能的能力标识。
 class TtsCapabilities {
   static const speech = 'speech';
@@ -27,6 +52,10 @@ class ApiModel {
   /// 语音协议覆盖：auto / none / openai / mimo / minimax / qwen。
   final String ttsProtocol;
 
+  /// API 请求兼容格式（ApiFormat.openaiChat / anthropic / openaiResponses）。
+  /// 默认 OpenAI Chat Completions，旧数据缺省时同样回退到该值。
+  final String apiFormat;
+
   /// 显式能力列表；为空时由 TtsService 根据模型自动推断。
   final List<String> ttsCapabilities;
 
@@ -39,6 +68,7 @@ class ApiModel {
     this.contextLength = 8000,
     this.ttsProtocol = 'auto',
     this.ttsCapabilities = const [],
+    this.apiFormat = ApiFormat.openaiChat,
   });
 
   Map<String, dynamic> toJson() => {
@@ -50,6 +80,7 @@ class ApiModel {
         'context_length': contextLength,
         if (ttsProtocol != 'auto') 'tts_protocol': ttsProtocol,
         if (ttsCapabilities.isNotEmpty) 'tts_capabilities': ttsCapabilities,
+        if (apiFormat != ApiFormat.openaiChat) 'api_format': apiFormat,
       };
 
   factory ApiModel.fromJson(Map<String, dynamic> json) => ApiModel(
@@ -61,6 +92,7 @@ class ApiModel {
         contextLength: json['context_length'] as int? ?? 8000,
         ttsProtocol: _validTtsProtocol(json['tts_protocol'] as String?),
         ttsCapabilities: _readTtsCapabilities(json['tts_capabilities']),
+        apiFormat: ApiFormat.normalize(json['api_format'] as String?),
       );
 
   static String _validTtsProtocol(String? value) {
@@ -88,6 +120,7 @@ class ApiModel {
     int? contextLength,
     String? ttsProtocol,
     List<String>? ttsCapabilities,
+    String? apiFormat,
   }) {
     return ApiModel(
       id: id,
@@ -98,6 +131,7 @@ class ApiModel {
       contextLength: contextLength ?? this.contextLength,
       ttsProtocol: ttsProtocol ?? this.ttsProtocol,
       ttsCapabilities: ttsCapabilities ?? this.ttsCapabilities,
+      apiFormat: apiFormat ?? this.apiFormat,
     );
   }
 }
@@ -274,6 +308,7 @@ class ApiProvider extends ChangeNotifier {
     int contextLength = 8000,
     String ttsProtocol = 'auto',
     List<String> ttsCapabilities = const [],
+    String apiFormat = ApiFormat.openaiChat,
   }) async {
     final model = ApiModel(
       id: const Uuid().v4(),
@@ -284,6 +319,7 @@ class ApiProvider extends ChangeNotifier {
       contextLength: contextLength,
       ttsProtocol: ttsProtocol,
       ttsCapabilities: ttsCapabilities,
+      apiFormat: ApiFormat.normalize(apiFormat),
     );
     _models.add(model);
     notifyListeners();

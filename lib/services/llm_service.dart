@@ -59,27 +59,51 @@ class LLMService {
 
   /// Only the official xAI host gets an implicit /v1; custom gateways keep
   /// their configured prefix and credentials are never redirected by name.
-  static String apiBaseUrl({String baseUrl = '', String modelName = ''}) {
+  static String apiBaseUrl(
+      {String baseUrl = '',
+      String modelName = '',
+      String format = ApiFormat.openaiChat}) {
     var base = baseUrl.trim();
     if (base.isEmpty) {
-      base = modelName.trim().toLowerCase().split('/').last.startsWith('grok')
-          ? 'https://api.x.ai/v1'
-          : defaultBaseUrl;
+      base = switch (format) {
+        ApiFormat.anthropic => 'https://api.anthropic.com/v1',
+        _ => modelName.trim().toLowerCase().split('/').last.startsWith('grok')
+            ? 'https://api.x.ai/v1'
+            : defaultBaseUrl,
+      };
     }
     var uri = Uri.parse(base);
     var path = uri.path.replaceAll(RegExp(r'/+$'), '');
-    if (path.endsWith('/chat/completions')) {
-      path = path.substring(0, path.length - '/chat/completions'.length);
+    // 兼容把完整接口地址填进 baseUrl 的情况：剥掉三种协议的末级路径
+    for (final suffix
+        in const ['/chat/completions', '/messages', '/responses']) {
+      if (path.endsWith(suffix)) {
+        path = path.substring(0, path.length - suffix.length);
+      }
     }
     if (uri.host.toLowerCase() == 'api.x.ai' && path.isEmpty) path = '/v1';
+    // Anthropic 官方接口固定在 /v1 前缀下，裸域名自动补全
+    if (format == ApiFormat.anthropic &&
+        uri.host.toLowerCase() == 'api.anthropic.com' &&
+        path.isEmpty) {
+      path = '/v1';
+    }
     uri = uri.replace(path: path);
     return uri.toString();
   }
 
+  /// 各兼容格式的对话接口地址（见 [ApiFormat]）。
   static String completionUrl(ApiModel model) {
-    final uri = Uri.parse(
-        apiBaseUrl(baseUrl: model.baseUrl, modelName: model.modelName));
-    return uri.replace(path: '${uri.path}/chat/completions').toString();
+    final uri = Uri.parse(apiBaseUrl(
+        baseUrl: model.baseUrl,
+        modelName: model.modelName,
+        format: model.apiFormat));
+    final suffix = switch (model.apiFormat) {
+      ApiFormat.anthropic => '/messages',
+      ApiFormat.openaiResponses => '/responses',
+      _ => '/chat/completions',
+    };
+    return uri.replace(path: '${uri.path}$suffix').toString();
   }
 
   static int _outputLimit(ApiModel model, int requested) {
@@ -138,6 +162,167 @@ class LLMService {
           'reasoning_effort': 'xhigh',
         };
     }
+  }
+
+  /// 按兼容格式设置鉴权请求头：
+  /// Anthropic 用 x-api-key + 版本头，其余格式用 Bearer。
+  static void _applyAuthHeaders(HttpClientRequest request, ApiModel model) {
+    if (model.apiFormat == ApiFormat.anthropic) {
+      request.headers.set('x-api-key', model.apiKey);
+      request.headers.set('anthropic-version', '2023-06-01');
+    } else {
+      request.headers
+          .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
+    }
+  }
+
+  /// 按模型的兼容格式构造请求体。
+  ///
+  /// [messages] 为 OpenAI 风格消息（content 可为字符串或多模态 part 数组
+  /// [{type:text},{type:image_url}]），由本方法映射到目标协议报文：
+  /// - openai-chat：原样透传（含思考兼容字段与 response_format）
+  /// - anthropic：system 提到顶层，图片转 base64 image block，max_tokens 必填
+  /// - openai-responses：system 转 instructions，文本/图片转 input_text/input_image
+  static Map<String, Object> buildChatBody({
+    required ApiModel model,
+    required List<Map<String, Object>> messages,
+    double? temperature = 0.9,
+    int maxTokens = 512,
+    bool jsonMode = false,
+    bool stream = false,
+    ModelThinkingLevel? thinkingOverride,
+  }) {
+    switch (model.apiFormat) {
+      case ApiFormat.anthropic:
+        final systemParts = <String>[];
+        final converted = <Map<String, Object>>[];
+        for (final m in messages) {
+          final role = m['role']?.toString() ?? 'user';
+          if (role == 'system') {
+            systemParts.add(_contentToPlainText(m['content']));
+            continue;
+          }
+          converted.add({
+            'role': role == 'assistant' ? 'assistant' : 'user',
+            'content': _toAnthropicContent(m['content']),
+          });
+        }
+        final system = systemParts.join('\n\n').trim();
+        return {
+          'model': model.modelName,
+          if (system.isNotEmpty) 'system': system,
+          'messages': converted,
+          'max_tokens': _outputLimit(model, maxTokens),
+          if (temperature != null) 'temperature': temperature,
+          if (stream) 'stream': true,
+        };
+      case ApiFormat.openaiResponses:
+        final instructionParts = <String>[];
+        final input = <Map<String, Object>>[];
+        for (final m in messages) {
+          final role = m['role']?.toString() ?? 'user';
+          if (role == 'system') {
+            instructionParts.add(_contentToPlainText(m['content']));
+            continue;
+          }
+          input.add({
+            'role': role == 'assistant' ? 'assistant' : 'user',
+            'content': _toResponsesContent(m['content']),
+          });
+        }
+        final instructions = instructionParts.join('\n\n').trim();
+        return {
+          'model': model.modelName,
+          if (instructions.isNotEmpty) 'instructions': instructions,
+          'input': input,
+          'max_output_tokens': _outputLimit(model, maxTokens),
+          if (temperature != null) 'temperature': temperature,
+          if (jsonMode) 'text': {
+            'format': {'type': 'json_object'}
+          },
+          if (stream) 'stream': true,
+        };
+      case ApiFormat.openaiChat:
+      default:
+        return {
+          'model': model.modelName,
+          'messages': messages,
+          'stream': stream,
+          if (stream) 'stream_options': {'include_usage': true},
+          'max_tokens': _outputLimit(model, maxTokens),
+          if (temperature != null) 'temperature': temperature,
+          if (jsonMode) 'response_format': {'type': 'json_object'},
+          ...thinkingRequestFields(model: model, level: thinkingOverride),
+        };
+    }
+  }
+
+  /// content（字符串或多模态 part 数组）→ 纯文本拼接。
+  static String _contentToPlainText(Object? content) {
+    if (content is String) return content;
+    if (content is List) {
+      final parts = <String>[];
+      for (final p in content) {
+        if (p is Map && p['type'] == 'text') {
+          parts.add(p['text']?.toString() ?? '');
+        }
+      }
+      return parts.join('\n');
+    }
+    return content?.toString() ?? '';
+  }
+
+  /// OpenAI 多模态 content → Anthropic content blocks。
+  static Object _toAnthropicContent(Object? content) {
+    if (content is! List) return content?.toString() ?? '';
+    final blocks = <Map<String, Object>>[];
+    for (final p in content) {
+      if (p is! Map) continue;
+      if (p['type'] == 'text') {
+        blocks.add({'type': 'text', 'text': p['text']?.toString() ?? ''});
+      } else if (p['type'] == 'image_url') {
+        final url = _imagePartUrl(p);
+        final source = _dataUrlToImageSource(url);
+        if (source != null) blocks.add({'type': 'image', 'source': source});
+      }
+    }
+    return blocks;
+  }
+
+  /// OpenAI 多模态 content → Responses input content parts。
+  static Object _toResponsesContent(Object? content) {
+    if (content is! List) return content?.toString() ?? '';
+    final parts = <Map<String, Object>>[];
+    for (final p in content) {
+      if (p is! Map) continue;
+      if (p['type'] == 'text') {
+        parts.add({'type': 'input_text', 'text': p['text']?.toString() ?? ''});
+      } else if (p['type'] == 'image_url') {
+        final url = _imagePartUrl(p);
+        if (url.isNotEmpty) {
+          parts.add({'type': 'input_image', 'image_url': url});
+        }
+      }
+    }
+    return parts;
+  }
+
+  static String _imagePartUrl(Map part) {
+    final image = part['image_url'];
+    if (image is Map) return image['url']?.toString() ?? '';
+    return image?.toString() ?? '';
+  }
+
+  /// data URL → Anthropic base64 图片 source；非 data URL（外链等）返回 null。
+  static Map<String, Object>? _dataUrlToImageSource(String url) {
+    final match =
+        RegExp(r'^data:([^;]+);base64,(.*)', dotAll: true).firstMatch(url.trim());
+    if (match == null) return null;
+    return {
+      'type': 'base64',
+      'media_type': match.group(1)!,
+      'data': match.group(2)!,
+    };
   }
 
   /// 会话压缩的 System Prompt：将较早的聊天记录压缩为一段摘要
@@ -242,6 +427,94 @@ class LLMService {
     }
   }
 
+  /// 按兼容格式解析一条 SSE data（流式输出），见 [ApiFormat]。
+  static StreamCompletionChunk parseStreamChunkFor(String format, String data) {
+    switch (format) {
+      case ApiFormat.anthropic:
+        return _parseAnthropicStreamEvent(data);
+      case ApiFormat.openaiResponses:
+        return _parseResponsesStreamEvent(data);
+      default:
+        return parseStreamChunk(data);
+    }
+  }
+
+  /// Anthropic Messages 流式事件：message_start（用量）/
+  /// content_block_delta（text_delta 正文、thinking_delta 思考）/
+  /// message_delta（增量用量与停止原因）。
+  static StreamCompletionChunk _parseAnthropicStreamEvent(String data) {
+    try {
+      final decoded = jsonDecode(data) as Map<String, dynamic>;
+      final type = decoded['type']?.toString() ?? '';
+      switch (type) {
+        case 'message_start':
+          final message = decoded['message'];
+          return StreamCompletionChunk(
+            usage: message is Map<String, dynamic>
+                ? _parseUsage(message)
+                : const ChatUsage(),
+          );
+        case 'content_block_delta':
+          final delta = decoded['delta'];
+          if (delta is Map<String, dynamic>) {
+            if (delta['type'] == 'thinking_delta') {
+              return StreamCompletionChunk(
+                  reasoning: delta['thinking']?.toString() ?? '');
+            }
+            return StreamCompletionChunk(
+                content: delta['text']?.toString() ?? '');
+          }
+          return const StreamCompletionChunk();
+        case 'message_delta':
+          final usage = decoded['usage'];
+          final input =
+              usage is Map<String, dynamic> ? _usageInt(usage['input_tokens']) : null;
+          final output =
+              usage is Map<String, dynamic> ? _usageInt(usage['output_tokens']) : null;
+          return StreamCompletionChunk(
+            usage: ChatUsage(
+              promptTokens: input,
+              completionTokens: output,
+              totalTokens:
+                  (input != null || output != null) ? (input ?? 0) + (output ?? 0) : null,
+            ),
+          );
+        default:
+          return const StreamCompletionChunk();
+      }
+    } catch (_) {
+      return const StreamCompletionChunk();
+    }
+  }
+
+  /// OpenAI Responses 流式事件：response.output_text.delta（正文）/
+  /// response.reasoning_*_delta（思考）/ response.completed（用量）。
+  static StreamCompletionChunk _parseResponsesStreamEvent(String data) {
+    try {
+      final decoded = jsonDecode(data) as Map<String, dynamic>;
+      final type = decoded['type']?.toString() ?? '';
+      switch (type) {
+        case 'response.output_text.delta':
+          return StreamCompletionChunk(content: decoded['delta']?.toString() ?? '');
+        case 'response.reasoning_text.delta':
+        case 'response.reasoning_summary_text.delta':
+          return StreamCompletionChunk(reasoning: decoded['delta']?.toString() ?? '');
+        case 'response.completed':
+        case 'response.incomplete':
+          final response = decoded['response'];
+          return StreamCompletionChunk(
+            usage: response is Map<String, dynamic>
+                ? _parseUsage(response)
+                : const ChatUsage(),
+          );
+        default:
+          return const StreamCompletionChunk();
+      }
+    } catch (_) {
+      return const StreamCompletionChunk();
+    }
+  }
+
   /// 从 message/delta 中提取思考过程（DeepSeek reasoning_content，部分网关 reasoning / thinking）。
   /// 取第一个非空字符串，避免空串字段挡住其它真实思考字段。
   static String? _extractReasoning(Map<String, dynamic>? map) {
@@ -303,6 +576,7 @@ class LLMService {
   }
 
   /// 发起一次对话补全请求，返回回复内容与真实 token 用量。
+  /// 请求体按模型兼容格式构造，响应容错解析三种报文。
   /// 非 200 状态码或网络异常时抛出 [LLMException]。
   static Future<CompletionResult> _requestOnce({
     required String url,
@@ -321,17 +595,14 @@ class LLMService {
       request.headers.set(
           HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
-      request.add(utf8.encode(jsonEncode({
-        'model': model.modelName,
-        'messages': messages,
-        'stream': false,
-        'max_tokens': _outputLimit(model, maxTokens),
-        if (temperature != null) 'temperature': temperature,
-        if (jsonMode) 'response_format': {'type': 'json_object'},
-        ...thinkingRequestFields(model: model),
-      })));
+      _applyAuthHeaders(request, model);
+      request.add(utf8.encode(jsonEncode(buildChatBody(
+        model: model,
+        messages: messages,
+        temperature: temperature,
+        maxTokens: maxTokens,
+        jsonMode: jsonMode,
+      ))));
 
       final response = await request.close().timeout(_responseTimeout(model));
       // 响应头到达后，正文读取同样设置超时，
@@ -343,16 +614,9 @@ class LLMService {
       stopwatch.stop();
 
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(body) as Map<String, dynamic>;
-        final choices = decoded['choices'] as List<dynamic>? ?? const [];
-        if (choices.isEmpty) {
-          throw const LLMException('API 返回异常：未包含任何回复内容');
-        }
-        final message = (choices.first as Map<String, dynamic>)['message']
-            as Map<String, dynamic>?;
-        final reasoning = _extractReasoning(message) ?? '';
-        final content = message?['content'] as String? ?? '';
-        final usage = _parseUsage(decoded);
+        final reply = parseChatReply(body);
+        final usage = _parseUsage(jsonDecode(body) as Map<String, dynamic>);
+        final reasoning = reply.reasoning;
         final reasoningTokens =
             usage.reasoningTokens ?? estimateReasoningTokens(reasoning);
         // 有思考正文，或网关返回了思考 token 时记录时长；
@@ -360,12 +624,11 @@ class LLMService {
         final hasThinking = reasoning.trim().isNotEmpty || reasoningTokens > 0;
         final durationMs = hasThinking ? stopwatch.elapsedMilliseconds : null;
         return CompletionResult(
-          content,
+          reply.content,
           usage,
           reasoningContent: reasoning,
           reasoningDurationMs: durationMs,
-          finishReason: (choices.first as Map<String, dynamic>)['finish_reason']
-              as String?,
+          finishReason: reply.finishReason,
         );
       }
 
@@ -443,11 +706,10 @@ class LLMService {
       request.headers.set(
           HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
-      request.add(utf8.encode(jsonEncode({
-        'model': model.modelName,
-        'messages': [
+      _applyAuthHeaders(request, model);
+      request.add(utf8.encode(jsonEncode(buildChatBody(
+        model: model,
+        messages: [
           {
             'role': 'user',
             'content': [
@@ -464,14 +726,13 @@ class LLMService {
             ],
           },
         ],
-        'stream': false,
-        'max_tokens': _outputLimit(model, 16),
-        'temperature': 0,
+        temperature: 0,
+        maxTokens: 16,
         // 部分百炼模型（qwen3.7-plus 等）默认开启思考，回复可能只有
         // reasoning_content 而 content 为空，无法据此判断是否看到图片，
         // 检测时显式关闭思考，让模型直接回答颜色。
-        ...thinkingRequestFields(model: model, level: ModelThinkingLevel.off),
-      })));
+        thinkingOverride: ModelThinkingLevel.off,
+      ))));
 
       final response = await request.close().timeout(_responseTimeout(model));
       final body = await response.transform(utf8.decoder).join();
@@ -519,11 +780,10 @@ class LLMService {
       request.headers.set(
           HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer ${model.apiKey}');
-      request.add(utf8.encode(jsonEncode({
-        'model': model.modelName,
-        'messages': [
+      _applyAuthHeaders(request, model);
+      request.add(utf8.encode(jsonEncode(buildChatBody(
+        model: model,
+        messages: [
           {
             'role': 'user',
             'content': [
@@ -544,10 +804,9 @@ class LLMService {
             ],
           },
         ],
-        'stream': false,
-        'max_tokens': _outputLimit(model, 300),
-        'temperature': 0.3,
-      })));
+        temperature: 0.3,
+        maxTokens: 300,
+      ))));
 
       final response = await request.close().timeout(_responseTimeout(model));
       if (response.statusCode != 200) return null;
@@ -586,18 +845,98 @@ class LLMService {
     }
   }
 
-  /// 从 OpenAI 兼容响应中提取回复文本（choices[0].message.content）
+  /// 从响应中提取回复文本（容错兼容三种格式）。
   static String? _extractReplyText(String body) {
+    final reply = parseChatReply(body);
+    return reply.content.isEmpty ? null : reply.content;
+  }
+
+  /// 解析对话补全响应正文（容错兼容三种格式，网关混用报文也能解析）：
+  /// - OpenAI Chat：choices[0].message.content
+  /// - Anthropic：content blocks（text 拼接，thinking 记入思考）
+  /// - OpenAI Responses：output 数组（message 的 output_text 拼接，
+  ///   reasoning 摘要记入思考）
+  /// 停止原因统一映射为 OpenAI 口径（max_tokens / incomplete → length）。
+  static ChatReplyBody parseChatReply(String body) {
     try {
-      final decoded = jsonDecode(body) as Map<String, dynamic>;
+      final decoded = jsonDecode(body);
+      if (decoded is! Map<String, dynamic>) return const ChatReplyBody();
+
+      // 1. OpenAI Chat Completions
       final choices = decoded['choices'] as List<dynamic>? ?? const [];
-      if (choices.isEmpty) return null;
-      final message = (choices.first as Map<String, dynamic>)['message']
-          as Map<String, dynamic>?;
-      return message?['content'] as String?;
-    } catch (_) {
-      return null;
-    }
+      if (choices.isNotEmpty) {
+        final first = choices.first as Map<String, dynamic>;
+        final message = first['message'] as Map<String, dynamic>?;
+        return ChatReplyBody(
+          content: message?['content'] as String? ?? '',
+          reasoning: (_extractReasoning(message) ??
+                  _extractReasoning(first) ??
+                  _extractReasoning(decoded) ??
+                  '')
+              .trim(),
+          finishReason: first['finish_reason'] as String?,
+        );
+      }
+
+      // 2. Anthropic Messages
+      final blocks = decoded['content'];
+      if (blocks is List) {
+        final texts = <String>[];
+        final thinks = <String>[];
+        for (final b in blocks) {
+          if (b is! Map) continue;
+          final type = b['type'];
+          if (type == 'text') texts.add(b['text']?.toString() ?? '');
+          if (type == 'thinking') thinks.add(b['thinking']?.toString() ?? '');
+        }
+        final stop = decoded['stop_reason'] as String?;
+        return ChatReplyBody(
+          content: texts.join(),
+          reasoning: thinks.join().trim(),
+          finishReason: stop == 'max_tokens' ? 'length' : stop,
+        );
+      }
+
+      // 3. OpenAI Responses
+      final output = decoded['output'];
+      if (output is List) {
+        final texts = <String>[];
+        final thinks = <String>[];
+        for (final item in output) {
+          if (item is! Map) continue;
+          final type = item['type'];
+          if (type == 'message') {
+            final content = item['content'];
+            if (content is List) {
+              for (final c in content) {
+                if (c is Map &&
+                    (c['type'] == 'output_text' || c['type'] == 'text')) {
+                  texts.add(c['text']?.toString() ?? '');
+                }
+              }
+            }
+          } else if (type == 'reasoning') {
+            final summary = item['summary'];
+            if (summary is List) {
+              for (final s in summary) {
+                if (s is Map) thinks.add(s['text']?.toString() ?? '');
+              }
+            }
+          }
+        }
+        final status = decoded['status'] as String?;
+        return ChatReplyBody(
+          content: texts.join(),
+          reasoning: thinks.join().trim(),
+          finishReason: switch (status) {
+            'incomplete' => 'length',
+            'completed' => 'stop',
+            _ => status,
+          },
+        );
+      }
+    } catch (_) {}
+    return const ChatReplyBody();
   }
 
   /// 依据回复内容判定模型是否看到了图片。
@@ -691,8 +1030,10 @@ class LLMService {
     if (local != null) return local;
 
     // 2. 请求 GET /models 探测（仅注册表未命中的模型）
-    final base = Uri.parse(
-        apiBaseUrl(baseUrl: model.baseUrl, modelName: model.modelName));
+    final base = Uri.parse(apiBaseUrl(
+        baseUrl: model.baseUrl,
+        modelName: model.modelName,
+        format: model.apiFormat));
     final url = base.replace(path: '${base.path}/models').toString();
 
     final client = HttpClient();
@@ -889,18 +1230,28 @@ class LLMService {
   static ChatUsage _parseUsage(Map<String, dynamic> decoded) {
     final usage = decoded['usage'];
     if (usage is! Map<String, dynamic>) return const ChatUsage();
+    final prompt =
+        _usageInt(usage['prompt_tokens']) ?? _usageInt(usage['input_tokens']);
+    final completion = _usageInt(usage['completion_tokens']) ??
+        _usageInt(usage['output_tokens']);
+    final total = _usageInt(usage['total_tokens']) ??
+        ((prompt != null || completion != null)
+            ? (prompt ?? 0) + (completion ?? 0)
+            : null);
     return ChatUsage(
-      promptTokens: _usageInt(usage['prompt_tokens']),
-      completionTokens: _usageInt(usage['completion_tokens']),
-      totalTokens: _usageInt(usage['total_tokens']),
+      promptTokens: prompt,
+      completionTokens: completion,
+      totalTokens: total,
       reasoningTokens: parseReasoningTokens(usage),
     );
   }
 
-  /// 从 usage 中解析思考 token（OpenAI: completion_tokens_details.reasoning_tokens）。
+  /// 从 usage 中解析思考 token（OpenAI: completion_tokens_details.reasoning_tokens，
+  /// Responses: output_tokens_details.reasoning_tokens）。
   /// 字段缺失或无法解析时返回 null，由调用方按正文估算。
   static int? parseReasoningTokens(Map<String, dynamic> usage) {
-    final details = usage['completion_tokens_details'];
+    final details = usage['completion_tokens_details'] ??
+        usage['output_tokens_details'];
     if (details is Map<String, dynamic>) {
       return _usageInt(details['reasoning_tokens']);
     }
@@ -1042,6 +1393,19 @@ class LLMException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// 一次对话补全响应的解析结果（正文 / 思考 / 停止原因），见 [LLMService.parseChatReply]。
+class ChatReplyBody {
+  final String content;
+  final String reasoning;
+  final String? finishReason;
+
+  const ChatReplyBody({
+    this.content = '',
+    this.reasoning = '',
+    this.finishReason,
+  });
 }
 
 /// 流式补全中的一个事件：可能只有正文片段，也可能只带最后的 usage。
