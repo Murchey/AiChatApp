@@ -4,6 +4,9 @@ import 'package:uuid/uuid.dart';
 
 import '../models/message.dart';
 import 'api_provider.dart';
+import 'chat_compress.dart';
+import 'chat_history_builder.dart';
+import 'chat_token_estimator.dart';
 import '../providers/token_usage_provider.dart';
 import '../services/llm_service.dart';
 import '../services/prompt_builder.dart';
@@ -22,12 +25,13 @@ class ChatStreamHooks {
   final void Function(String? error) setLastError;
   final void Function() clearReplying;
   final int Function(String text) estimateTokens;
-  final int Function(String conversationId, int contextCount, {int systemTokens})
-      estimateInputBudget;
+  final int Function(String conversationId, int contextCount,
+      {int systemTokens}) estimateInputBudget;
   final String Function(String conversationId) conversationAvatar;
   final Future<void> Function(String conversationId, List<String> choices)
       setRoleplayChoices;
   final void Function(String conversationId, String content) updateLastMessage;
+  final Future<void> Function(int systemPromptTokens)? compress;
 
   const ChatStreamHooks({
     required this.getMessages,
@@ -45,6 +49,7 @@ class ChatStreamHooks {
     required this.conversationAvatar,
     required this.setRoleplayChoices,
     required this.updateLastMessage,
+    this.compress,
   });
 }
 
@@ -79,11 +84,39 @@ Future<List<String>> runRoleplayStreamWithHooks({
     roleplayMode: true,
     includeRoleplayChoices: includeChoices,
   );
-  final history = _buildHistoryFromHooks(hooks, conversationId, contextCount);
+
   final systemPromptTokens = hooks.estimateTokens(prompt) +
       hooks.estimateTokens(instruction) +
       kPerMessageJsonTokens * 2;
   hooks.setSystemTokens(conversationId, systemPromptTokens);
+  final reserve = ChatTokenEstimator.requestBudget(
+    model: model,
+    messages: const [],
+    requestedOutputTokens: 1024,
+    contextLength: model.contextLength,
+  ).reservedTokens;
+  await hooks.compress?.call(systemPromptTokens + reserve);
+  final history = buildChatHistory(
+      hooks.getMessages(conversationId), contextCount,
+      describe: describeMessageForModel);
+  final requestMessages = <Map<String, Object>>[
+    {'role': 'system', 'content': prompt},
+    ...history,
+    {'role': 'user', 'content': instruction},
+  ];
+  try {
+    ChatTokenEstimator.requestBudget(
+      model: model,
+      messages: requestMessages,
+      requestedOutputTokens: 1024,
+      contextLength: model.contextLength,
+    ).ensureFits();
+  } on LLMException catch (e) {
+    hooks.setLastError(e.message);
+    hooks.clearReplying();
+    hooks.notify();
+    return const [];
+  }
   final message = Message(
     id: const Uuid().v4(),
     conversationId: conversationId,
@@ -95,15 +128,20 @@ Future<List<String>> runRoleplayStreamWithHooks({
   var content = '';
   var reasoning = '';
   ChatUsage streamUsage = const ChatUsage();
+  var usageRecorded = false;
   final streamWatch = Stopwatch()..start();
   try {
     await for (final chunk in streamCompletion(
       model: model,
-      messages: [
-        {'role': 'system', 'content': prompt},
-        ...history,
-        {'role': 'user', 'content': instruction},
-      ],
+      messages: requestMessages,
+      onUsage: (usage) async {
+        await TokenUsageProvider.instance.addUsage(
+          conversationId, usage,
+          label: characterName,
+          avatar: hooks.conversationAvatar(conversationId),
+        );
+        usageRecorded = true;
+      },
     )) {
       content += chunk.content;
       reasoning += chunk.reasoning;
@@ -121,8 +159,8 @@ Future<List<String>> runRoleplayStreamWithHooks({
     if (reply.choices.isNotEmpty) {
       await hooks.setRoleplayChoices(conversationId, reply.choices);
     }
-    final reasoningTokens =
-        streamUsage.reasoningTokens ?? LLMService.estimateReasoningTokens(reasoning);
+    final reasoningTokens = streamUsage.reasoningTokens ??
+        LLMService.estimateReasoningTokens(reasoning);
     final hasThinking = reasoning.trim().isNotEmpty || reasoningTokens > 0;
     hooks.replaceMessage(
       conversationId,
@@ -148,17 +186,21 @@ Future<List<String>> runRoleplayStreamWithHooks({
             );
     final completionTokens = streamUsage.completionTokens ??
         hooks.estimateTokens(content) + reasoningTokens;
-    await TokenUsageProvider.instance.addUsage(
-      conversationId,
-      ChatUsage(
-        promptTokens: promptTokens,
-        completionTokens: completionTokens,
-        totalTokens: promptTokens + completionTokens,
-        reasoningTokens: reasoningTokens,
-      ),
-      label: characterName,
-      avatar: hooks.conversationAvatar(conversationId),
-    );
+    if (!usageRecorded) {
+      await TokenUsageProvider.instance.addUsage(
+        conversationId,
+        ChatUsage(
+          promptTokens: promptTokens,
+          completionTokens: completionTokens,
+          totalTokens: promptTokens + completionTokens,
+          reasoningTokens: reasoningTokens,
+          cacheReadTokens: streamUsage.cacheReadTokens,
+          cacheCreationTokens: streamUsage.cacheCreationTokens,
+        ),
+        label: characterName,
+        avatar: hooks.conversationAvatar(conversationId),
+      );
+    }
     hooks.setContextTokens(
       conversationId,
       hooks.estimateInputBudget(
@@ -181,26 +223,6 @@ Future<List<String>> runRoleplayStreamWithHooks({
     hooks.clearReplying();
     hooks.notify();
   }
-}
-
-/// 与 ChatProvider._buildHistory 相同规则：取最近 N 条文本消息。
-List<Map<String, Object>> _buildHistoryFromHooks(
-  ChatStreamHooks hooks,
-  String conversationId,
-  int contextCount,
-) {
-  final all = hooks.getMessages(conversationId);
-  final texts =
-      all.where((m) => m.type == MessageType.text && m.content.trim().isNotEmpty);
-  final list = texts.toList();
-  final start = contextCount <= 0 ? 0 : (list.length - contextCount).clamp(0, list.length);
-  return list
-      .sublist(start)
-      .map((m) => <String, Object>{
-            'role': m.isFromUser ? 'user' : 'assistant',
-            'content': m.content,
-          })
-      .toList();
 }
 
 /// 与 ChatProvider.kPerMessageJsonTokens 保持一致

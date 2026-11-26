@@ -17,6 +17,7 @@ import 'chat_token_estimator.dart';
 import 'chat_reply_builder.dart';
 import 'chat_reply_runner.dart';
 import 'chat_roleplay_stream.dart';
+import 'token_usage_provider.dart';
 import '../services/widget_sync_service.dart';
 import '../services/sticker_search_service.dart';
 import 'api_provider.dart';
@@ -45,8 +46,8 @@ class ChatProvider extends ChangeNotifier {
   final List<Conversation> _conversations = [];
   String? _lastError; // 最近一次 AI 请求失败的错误提示（界面展示用）
   String? _activeConversationId; // 当前打开的聊天会话（其内新增角色消息不记未读）
-  String? _replyingConversationId; // 正在生成/逐条渲染回复的会话（防止重复触发）
-  Future<List<String>>? _runningReply; // 进行中的回复流程（重复触发时复用）
+  final Map<String, Future<List<String>>> _runningReplies = {};
+  final Map<String, Future<bool>> _runningCompressions = {};
   final Map<String, int> _contextTokens =
       {}; // 会话 → 上下文 token 用量（输入侧，API usage 优先）
   final Map<String, int> _systemTokens =
@@ -56,6 +57,14 @@ class ChatProvider extends ChangeNotifier {
   /// 记忆点自动托管：每轮回复流程完成后触发的剧情记录回调（按会话）。
   /// 由 app.dart 注册为 AutoMemoryService.maybeRecord；未注册时为空、无副作用。
   void Function(String conversationId)? autoMemoryRecorder;
+
+  /// 自动托管生命周期桥接：由 app.dart 注册，避免 Provider 与服务互相依赖。
+  void Function(String conversationId)? autoMemoryCancel;
+  VoidCallback? autoMemoryCancelAll;
+
+  void _cancelAutoMemory(String conversationId) {
+    autoMemoryCancel?.call(conversationId);
+  }
 
   /// 会话列表：置顶会话排最前，其余按最近消息时间倒序
   List<Conversation> get conversations {
@@ -127,7 +136,7 @@ class ChatProvider extends ChangeNotifier {
 
   /// 是否正在为该会话生成回复（聊天标题据此显示"对方正在输入……"）
   bool isReplying(String conversationId) =>
-      _replyingConversationId == conversationId;
+      _runningReplies.containsKey(conversationId);
 
   /// 聊天界面打开时调用：记录当前会话并清除其未读
   void markConversationActive(String conversationId) {
@@ -531,25 +540,31 @@ class ChatProvider extends ChangeNotifier {
     required int contextCount,
     String progressionStyle = 'free',
     bool includeChoices = true,
+    ApiModel? compressModel,
+    bool enableCompression = false,
+    int contextLength = 8000,
+    double compressThreshold = 0.7,
   }) {
-    if (_runningReply != null && _replyingConversationId == conversationId) {
-      return _runningReply!;
-    }
-    _replyingConversationId = conversationId;
+    final running = _runningReplies[conversationId];
+    if (running != null) return running;
+    final future = Future<List<String>>.microtask(() => _doRunRoleplayStream(
+          conversationId: conversationId,
+          model: model,
+          characterName: characterName,
+          characterSystemPrompt: characterSystemPrompt,
+          userRelationship: userRelationship,
+          userNickname: userNickname,
+          memoryPoints: memoryPoints,
+          contextCount: contextCount,
+          progressionStyle: progressionStyle,
+          includeChoices: includeChoices,
+          compressModel: compressModel,
+          enableCompression: enableCompression,
+          contextLength: contextLength,
+          compressThreshold: compressThreshold,
+        ));
+    _runningReplies[conversationId] = future;
     notifyListeners();
-    final future = _doRunRoleplayStream(
-      conversationId: conversationId,
-      model: model,
-      characterName: characterName,
-      characterSystemPrompt: characterSystemPrompt,
-      userRelationship: userRelationship,
-      userNickname: userNickname,
-      memoryPoints: memoryPoints,
-      contextCount: contextCount,
-      progressionStyle: progressionStyle,
-      includeChoices: includeChoices,
-    );
-    _runningReply = future;
     return future;
   }
 
@@ -564,6 +579,10 @@ class ChatProvider extends ChangeNotifier {
     required int contextCount,
     required String progressionStyle,
     required bool includeChoices,
+    ApiModel? compressModel,
+    bool enableCompression = false,
+    int contextLength = 8000,
+    double compressThreshold = 0.7,
   }) =>
       runRoleplayStreamWithHooks(
         hooks: ChatStreamHooks(
@@ -597,8 +616,7 @@ class ChatProvider extends ChangeNotifier {
           setContextTokens: (id, tokens) => _contextTokens[id] = tokens,
           setLastError: (v) => _lastError = v,
           clearReplying: () {
-            _replyingConversationId = null;
-            _runningReply = null;
+            _runningReplies.remove(conversationId);
             autoMemoryRecorder?.call(conversationId);
           },
           estimateTokens: _estimateTextTokens,
@@ -608,6 +626,21 @@ class ChatProvider extends ChangeNotifier {
           conversationAvatar: _conversationAvatar,
           setRoleplayChoices: setRoleplayChoices,
           updateLastMessage: _updateConversationLastMessage,
+          compress: (systemPromptTokens) async {
+            if (!enableCompression ||
+                compressModel == null ||
+                contextLength <= 0) {
+              return;
+            }
+            await _maybeCompressConversation(
+              conversationId: conversationId,
+              compressModel: compressModel,
+              contextLength: contextLength,
+              threshold: compressThreshold,
+              systemPromptTokens: systemPromptTokens,
+              contextCount: contextCount,
+            );
+          },
         ),
         conversationId: conversationId,
         model: model,
@@ -734,35 +767,32 @@ class ChatProvider extends ChangeNotifier {
     debugPrint(
         '[ChatProvider] runProactiveReply 被调用: $conversationId replyToUser=$replyToUser');
     // 同一会话的回复进行中：直接复用同一次流程（防止重复触发/误报空回复）
-    if (_runningReply != null && _replyingConversationId == conversationId) {
-      debugPrint('[ChatProvider] 复用进行中的回复流程: $conversationId');
-      return _runningReply!;
-    }
-    _replyingConversationId = conversationId;
-    notifyListeners(); // 聊天标题立即显示"对方正在输入……"
-    final future = _doRunProactiveReply(
-      conversationId: conversationId,
-      model: model,
-      characterName: characterName,
-      characterSystemPrompt: characterSystemPrompt,
-      userRelationship: userRelationship,
-      userNickname: userNickname,
-      replyToUser: replyToUser,
-      roleplayMode: roleplayMode,
-      roleplayProgressionStyle: roleplayProgressionStyle,
-      contextCount: contextCount,
-      compressModel: compressModel,
-      enableCompression: enableCompression,
-      contextLength: contextLength,
-      compressThreshold: compressThreshold,
-      imagePath: imagePath,
-      activeStart: activeStart,
-      activeEnd: activeEnd,
-      memoryPoints: memoryPoints,
-      extraSystemContext: extraSystemContext,
-      findSticker: findSticker,
-    );
-    _runningReply = future;
+    final running = _runningReplies[conversationId];
+    if (running != null) return running;
+    final future = Future<List<String>>.microtask(() => _doRunProactiveReply(
+          conversationId: conversationId,
+          model: model,
+          characterName: characterName,
+          characterSystemPrompt: characterSystemPrompt,
+          userRelationship: userRelationship,
+          userNickname: userNickname,
+          replyToUser: replyToUser,
+          roleplayMode: roleplayMode,
+          roleplayProgressionStyle: roleplayProgressionStyle,
+          contextCount: contextCount,
+          compressModel: compressModel,
+          enableCompression: enableCompression,
+          contextLength: contextLength,
+          compressThreshold: compressThreshold,
+          imagePath: imagePath,
+          activeStart: activeStart,
+          activeEnd: activeEnd,
+          memoryPoints: memoryPoints,
+          extraSystemContext: extraSystemContext,
+          findSticker: findSticker,
+        ));
+    _runningReplies[conversationId] = future;
+    notifyListeners();
     return future;
   }
 
@@ -828,8 +858,7 @@ class ChatProvider extends ChangeNotifier {
               _estimateRequestInputBudget(id, contextCount: count),
           setContextTokens: (id, tokens) => _contextTokens[id] = tokens,
           clearReplying: () {
-            _replyingConversationId = null;
-            _runningReply = null;
+            _runningReplies.remove(conversationId);
           },
           notify: notifyListeners,
         ),
@@ -845,8 +874,7 @@ class ChatProvider extends ChangeNotifier {
       );
     } finally {
       debugPrint('[ChatProvider] _doRunProactiveReply 结束: $conversationId');
-      _replyingConversationId = null;
-      _runningReply = null;
+      _runningReplies.remove(conversationId);
       notifyListeners();
       autoMemoryRecorder?.call(conversationId);
     }
@@ -867,30 +895,46 @@ class ChatProvider extends ChangeNotifier {
     int systemPromptTokens = 0,
     int contextCount = 0,
     bool force = false,
-  }) =>
-      maybeCompressConversationWithHooks(
-        hooks: ChatCompressHooks(
-          getMessages: (id) => getMessages(id),
-          insertMessage: (id, msg, index) {
-            _messagesMap[id] ??= [];
-            _messagesMap[id]!.insert(index, msg);
-          },
-          setContextTokens: (id, tokens) => _contextTokens[id] = tokens,
-          updateLastMessage: _updateConversationLastMessage,
-          notify: notifyListeners,
-          persist: _persist,
-          estimateInputBudget: (id, count, {systemTokens = 0}) =>
-              _estimateRequestInputBudget(id,
-                  contextCount: count, systemTokens: systemTokens),
-        ),
-        conversationId: conversationId,
-        compressModel: compressModel,
-        contextLength: contextLength,
-        threshold: threshold,
-        systemPromptTokens: systemPromptTokens,
-        contextCount: contextCount,
-        force: force,
-      );
+  }) {
+    final running = _runningCompressions[conversationId];
+    if (running != null) return running;
+    final future =
+        Future<bool>.microtask(() => maybeCompressConversationWithHooks(
+              hooks: ChatCompressHooks(
+                getMessages: (id) => getMessages(id),
+                insertMessage: (id, msg, index) {
+                  _messagesMap[id] ??= [];
+                  _messagesMap[id]!.insert(index, msg);
+                },
+                removeMessage: (id, messageId) => _messagesMap[id]
+                    ?.removeWhere((message) => message.id == messageId),
+                onError: (error) {
+                  if (force) _lastError = LLMService.describeException(error);
+                },
+                setContextTokens: (id, tokens) => _contextTokens[id] = tokens,
+                updateLastMessage: _updateConversationLastMessage,
+                notify: notifyListeners,
+                persist: () => _persist(requireSuccess: true),
+                onUsage: (usage) async {
+                  await TokenUsageProvider.instance.addUsage(
+                      conversationId, usage,
+                      avatar: _conversationAvatar(conversationId));
+                },
+                estimateInputBudget: (id, count, {systemTokens = 0}) =>
+                    _estimateRequestInputBudget(id,
+                        contextCount: count, systemTokens: systemTokens),
+              ),
+              conversationId: conversationId,
+              compressModel: compressModel,
+              contextLength: contextLength,
+              threshold: threshold,
+              systemPromptTokens: systemPromptTokens,
+              contextCount: contextCount,
+              force: force,
+            )).whenComplete(() => _runningCompressions.remove(conversationId));
+    _runningCompressions[conversationId] = future;
+    return future;
+  }
 
   /// 手动压缩会话（聊天设置页「压缩对话」按钮）：
   /// 忽略阈值判断，直接压缩更早的历史消息。
@@ -900,6 +944,7 @@ class ChatProvider extends ChangeNotifier {
     required ApiModel compressModel,
     int contextLength = 8000,
   }) {
+    _lastError = null;
     return _maybeCompressConversation(
       conversationId: conversationId,
       compressModel: compressModel,
@@ -1141,11 +1186,35 @@ class ChatProvider extends ChangeNotifier {
     await _persist();
   }
 
+  /// Remove summaries made stale by changing an earlier source message.
+  void _invalidateCompressionSummariesFrom(String conversationId, int index) {
+    final messages = _messagesMap[conversationId];
+    if (messages == null) return;
+    final staleSummaryIds = messages
+        .asMap()
+        .entries
+        .where(
+            (entry) => entry.key >= index && entry.value.isCompressionSummary)
+        .map((entry) => entry.value.id)
+        .toSet();
+    messages.removeWhere((message) => staleSummaryIds.contains(message.id));
+  }
+
   /// 通用删除单条消息（用于重新回复等场景）
   void deleteMessage(String conversationId, String messageId) {
     final messages = _messagesMap[conversationId];
     if (messages == null) return;
+    final changedIndex =
+        messages.indexWhere((message) => message.id == messageId);
+    final before = messages.length;
+    if (changedIndex >= 0) {
+      _cancelAutoMemory(conversationId);
+      _invalidateCompressionSummariesFrom(conversationId, changedIndex);
+    }
     messages.removeWhere((m) => m.id == messageId);
+    if (messages.length != before) {
+      _markMessageChanged(conversationId, messageId);
+    }
     // 删除消息后按剩余消息重新估算上下文 token
     _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
     if (messages.isNotEmpty) {
@@ -1173,9 +1242,18 @@ class ChatProvider extends ChangeNotifier {
     if (ids.isEmpty) return;
     final messages = _messagesMap[conversationId];
     if (messages == null) return;
+    final changedIndex =
+        messages.indexWhere((message) => ids.contains(message.id));
     final before = messages.length;
+    if (changedIndex >= 0) {
+      _cancelAutoMemory(conversationId);
+      _invalidateCompressionSummariesFrom(conversationId, changedIndex);
+    }
     messages.removeWhere((m) => ids.contains(m.id));
     if (messages.length == before) return;
+    for (final id in ids) {
+      _markMessageChanged(conversationId, id);
+    }
     _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
     if (messages.isNotEmpty) {
       _updateConversationLastMessage(conversationId, messages.last.content);
@@ -1204,7 +1282,9 @@ class ChatProvider extends ChangeNotifier {
     if (messages == null) return;
     final index = messages.indexWhere((m) => m.id == messageId);
     if (index == -1) return;
+    _cancelAutoMemory(conversationId);
     messages[index] = messages[index].copyWith(content: text);
+    _invalidateCompressionSummariesFrom(conversationId, index);
     _markMessageChanged(conversationId, messageId);
     _contextTokens[conversationId] = _estimateSendInputBudget(conversationId);
     _updateConversationLastMessage(conversationId, text);
@@ -1217,7 +1297,13 @@ class ChatProvider extends ChangeNotifier {
     final messages = _messagesMap[conversationId];
     if (messages == null) return;
 
+    final changedIndex =
+        messages.indexWhere((message) => message.id == messageId);
     final before = messages.length;
+    if (changedIndex >= 0) {
+      _cancelAutoMemory(conversationId);
+      _invalidateCompressionSummariesFrom(conversationId, changedIndex);
+    }
     messages.removeWhere((m) => m.id == messageId);
     if (messages.length != before) {
       _markMessageChanged(conversationId, messageId);
@@ -1433,6 +1519,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void deleteConversation(String conversationId) {
+    _cancelAutoMemory(conversationId);
     ChatDraftService.instance.remove(conversationId).catchError((Object e) {
       debugPrint('删除草稿失败: $e');
     });
@@ -1448,6 +1535,7 @@ class ChatProvider extends ChangeNotifier {
   /// 清空全部聊天数据（管理占用空间页使用）：
   /// 清空内存中的会话/消息/上下文统计，并删除本地存储键。
   Future<void> clearAllData() async {
+    autoMemoryCancelAll?.call();
     await ChatDraftService.instance.clearAll();
     _conversations.clear();
     _messagesMap.clear();
@@ -1456,8 +1544,7 @@ class ChatProvider extends ChangeNotifier {
     _systemTokens.clear();
     _roleplayChoices.clear();
     _activeConversationId = null;
-    _replyingConversationId = null;
-    _runningReply = null;
+    _runningReplies.clear();
     _lastError = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_conversationsKey);
@@ -1487,6 +1574,7 @@ class ChatProvider extends ChangeNotifier {
   /// 再次打开该聊天不会显示任何记录，AI 也不会继承此前的上下文。
   /// 消息数据会被完全抹除（存储中不再保留该会话的任何消息）。
   void clearMessages(String conversationId) {
+    _cancelAutoMemory(conversationId);
     _messagesMap.remove(conversationId);
     _contextTokens.remove(conversationId);
     setRoleplayChoices(conversationId, const []);

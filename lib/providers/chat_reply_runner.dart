@@ -22,7 +22,8 @@ class ProactiveReplyHooks {
   }) addSticker;
   final int Function(String conversationId) messageCount;
   final String Function(String conversationId) conversationAvatar;
-  final int Function(String conversationId, int contextCount) estimateInputBudget;
+  final int Function(String conversationId, int contextCount)
+      estimateInputBudget;
   final void Function(String conversationId, int tokens) setContextTokens;
   final void Function() clearReplying;
   final void Function() notify;
@@ -52,6 +53,9 @@ Future<List<String>> processProactiveReplyMessages({
   required ChatUsage usage,
   StickerMatch? Function(String query)? findSticker,
 }) async {
+  // Capture the request projection before generated replies enter history.
+  final estimatedInput =
+      hooks.estimateInputBudget(conversationId, contextCount);
   var usageAdj = usage;
   if (usageAdj.reasoningTokens == null && reasoningContent.trim().isNotEmpty) {
     usageAdj = ChatUsage(
@@ -59,6 +63,8 @@ Future<List<String>> processProactiveReplyMessages({
       completionTokens: usageAdj.completionTokens,
       totalTokens: usageAdj.totalTokens,
       reasoningTokens: LLMService.estimateReasoningTokens(reasoningContent),
+      cacheReadTokens: usageAdj.cacheReadTokens,
+      cacheCreationTokens: usageAdj.cacheCreationTokens,
     );
   }
   await TokenUsageProvider.instance.addUsage(
@@ -104,10 +110,9 @@ Future<List<String>> processProactiveReplyMessages({
     await Future.delayed(Duration(milliseconds: delay.round() + 600));
   }
   final prompt = usage.promptTokens;
-  final estimated = hooks.estimateInputBudget(conversationId, contextCount);
   hooks.setContextTokens(
     conversationId,
-    prompt != null && prompt > estimated ? prompt : estimated,
+    prompt != null && prompt > estimatedInput ? prompt : estimatedInput,
   );
   return displayedMessages;
 }

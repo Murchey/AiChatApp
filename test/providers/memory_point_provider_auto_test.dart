@@ -62,9 +62,11 @@ void main() {
     final storyPoint =
         provider.pointsFor('character-1').firstWhere((p) => p.isStory);
     await provider.applyAutoOperations('character-1', [
-      AutoMemoryOp(op: AutoMemoryOp.opUpdate, id: userPoint.id, content: '恶意改写'),
+      AutoMemoryOp(
+          op: AutoMemoryOp.opUpdate, id: userPoint.id, content: '恶意改写'),
       AutoMemoryOp(op: AutoMemoryOp.opDelete, id: userPoint.id),
-      AutoMemoryOp(op: AutoMemoryOp.opUpdate, id: storyPoint.id, content: '恶意改写'),
+      AutoMemoryOp(
+          op: AutoMemoryOp.opUpdate, id: storyPoint.id, content: '恶意改写'),
       AutoMemoryOp(op: AutoMemoryOp.opDelete, id: storyPoint.id),
     ]);
     expect(
@@ -87,6 +89,27 @@ void main() {
     expect(reloaded.first.content, '剧情记录二（改写）');
   });
 
+  test('人工编辑后旧快照不能覆盖或删除记忆', () async {
+    SharedPreferences.setMockInitialValues({});
+    final provider = MemoryPointProvider();
+    await provider.init();
+    await provider.applyAutoOperations('c', [
+      const AutoMemoryOp(op: AutoMemoryOp.opAdd, content: '原内容'),
+    ]);
+    final original = provider.autoPointsFor('c').single;
+    await provider.updatePoint('c', original.id, '人工修改');
+    await provider.applyAutoOperations('c', [
+      AutoMemoryOp(
+          op: AutoMemoryOp.opUpdate, id: original.id, content: 'AI 修改'),
+      AutoMemoryOp(op: AutoMemoryOp.opDelete, id: original.id),
+    ], expectedRevisions: {
+      original.id: original.revision
+    });
+    expect(provider.autoPointsFor('c').single.content, '人工修改');
+    await provider.reload();
+    expect(provider.autoPointsFor('c').single.content, '人工修改');
+  });
+
   test('removePoints 批量删除跨分区生效', () async {
     SharedPreferences.setMockInitialValues({});
     final provider = MemoryPointProvider();
@@ -98,10 +121,8 @@ void main() {
     final all = provider.pointsFor('character-1');
     expect(all.length, 3);
 
-    final targets = all
-        .where((p) => p.content != '用户记忆乙')
-        .map((p) => p.id)
-        .toList();
+    final targets =
+        all.where((p) => p.content != '用户记忆乙').map((p) => p.id).toList();
     await provider.removePoints('character-1', targets);
     expect(
       provider.pointsFor('character-1').map((p) => p.content).toList(),

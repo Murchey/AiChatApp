@@ -22,7 +22,6 @@ class TokenUsageProvider extends ChangeNotifier {
   static final TokenUsageProvider instance = TokenUsageProvider._();
 
   static const _storageKey = 'chat_token_usage_v1';
-  static const _maxEntries = 500; // 防止会话无限增长导致存储膨胀
 
   /// 朋友圈互动（浏览点赞/评论回复/自动发帖）的聚合统计 id，
   /// 朋友圈不归属某个私聊/群聊会话，统一归入该固定 id 便于展示页分类。
@@ -48,15 +47,22 @@ class TokenUsageProvider extends ChangeNotifier {
 
   /// 备份恢复后强制从磁盘重新加载（忽略已加载标记）。
   Future<void> reload() {
-    _loaded = false;
-    _loading = null;
-    return init();
+    final task = _mutationQueue.then((_) async {
+      await _loading;
+      _loaded = false;
+      _loading = null;
+      await init();
+      await _syncToWidget();
+    });
+    _mutationQueue = task.then<void>((_) {}, onError: (_) {});
+    return task;
   }
 
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_storageKey);
+      _usages = {};
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw) as Map<String, dynamic>;
         _usages = decoded.map((k, v) {
@@ -86,6 +92,7 @@ class TokenUsageProvider extends ChangeNotifier {
     ChatUsage usage, {
     String? label,
     String? avatar,
+    TokenUsageKind? kind,
   }) {
     if (usage.isEmpty) return Future.value(usageFor(conversationId));
     final task = _mutationQueue.then((_) async {
@@ -95,22 +102,21 @@ class TokenUsageProvider extends ChangeNotifier {
         sentTokens: prev.sentTokens + (usage.promptTokens ?? 0),
         receivedTokens: prev.receivedTokens + (usage.completionTokens ?? 0),
         reasoningTokens: prev.reasoningTokens + (usage.reasoningTokens ?? 0),
+        cacheReadTokens: prev.cacheReadTokens + (usage.cacheReadTokens ?? 0),
+        cacheCreationTokens:
+            prev.cacheCreationTokens + (usage.cacheCreationTokens ?? 0),
+        kind: kind ?? prev.kind ?? _kindFromId(conversationId),
         label: (label != null && label.trim().isNotEmpty)
             ? label.trim()
             : prev.label,
         avatar: (avatar != null && avatar.isNotEmpty) ? avatar : prev.avatar,
       );
       _usages[conversationId] = next;
-      if (_usages.length > _maxEntries) {
-        // 只保留消耗最大的会话，避免无限膨胀
-        final entries = _usages.entries.toList()
-          ..sort(
-              (a, b) => b.value.totalTokens.compareTo(a.value.totalTokens));
-        _usages = Map.fromEntries(entries.take(_maxEntries));
-      }
+      // Keep every billed entry. Trimming conversation rows would also erase
+      // their contribution to all-time totals.
       notifyListeners();
       await _persist();
-      _syncToWidget();
+      await _syncToWidget();
       return next;
     });
     // 即使一次持久化失败，也让后续累计继续执行，不让队列永久中断。
@@ -118,35 +124,43 @@ class TokenUsageProvider extends ChangeNotifier {
     return task;
   }
 
-  /// 同步数据到小组件
-  void _syncToWidget() {
-    // 异步同步，不阻塞主流程
-    Future.microtask(() async {
-      try {
-        // 计算各分类统计
-        int privateChat = 0, groupChat = 0, moment = 0;
-        _usages.forEach((id, usage) {
-          if (id == kMomentUsageId) {
-            moment = usage.totalTokens;
-          } else if (id.startsWith('group_')) {
-            groupChat += usage.totalTokens;
-          } else {
-            privateChat += usage.totalTokens;
-          }
-        });
+  static TokenUsageKind? _kindFromId(String id) {
+    if (id == kMomentUsageId) return TokenUsageKind.moment;
+    if (id.startsWith('group_')) return TokenUsageKind.groupChat;
+    return TokenUsageKind.privateChat;
+  }
 
-        await WidgetSyncService.syncTokenUsage(
-          total: total,
-          sent: sentTotal,
-          received: receivedTotal,
-          privateChat: privateChat,
-          groupChat: groupChat,
-          moment: moment,
-        );
-      } catch (e) {
-        debugPrint('[TokenUsageProvider] Widget sync failed: $e');
-      }
-    });
+  /// Sync usage by explicit persisted kind, with ID-based compatibility fallback.
+  TokenUsageKind _kindFor(String id, TokenUsage usage) =>
+      usage.kind ?? _kindFromId(id) ?? TokenUsageKind.privateChat;
+
+  /// 同步数据到小组件
+  Future<void> _syncToWidget() async {
+    try {
+      // 计算各分类统计
+      int privateChat = 0, groupChat = 0, moment = 0;
+      _usages.forEach((id, usage) {
+        final kind = _kindFor(id, usage);
+        if (kind == TokenUsageKind.moment) {
+          moment += usage.totalTokens;
+        } else if (kind == TokenUsageKind.groupChat) {
+          groupChat += usage.totalTokens;
+        } else {
+          privateChat += usage.totalTokens;
+        }
+      });
+
+      await WidgetSyncService.syncTokenUsage(
+        total: total,
+        sent: sentTotal,
+        received: receivedTotal,
+        privateChat: privateChat,
+        groupChat: groupChat,
+        moment: moment,
+      );
+    } catch (e) {
+      debugPrint('[TokenUsageProvider] Widget sync failed: $e');
+    }
   }
 
   /// 某会话的累计用量（无记录返回空用量）
@@ -168,6 +182,12 @@ class TokenUsageProvider extends ChangeNotifier {
   int get reasoningTotal =>
       _usages.values.fold<int>(0, (sum, u) => sum + u.reasoningTokens);
 
+  int get cacheReadTotal =>
+      _usages.values.fold<int>(0, (sum, u) => sum + u.cacheReadTokens);
+
+  int get cacheCreationTotal =>
+      _usages.values.fold<int>(0, (sum, u) => sum + u.cacheCreationTokens);
+
   /// 全部会话累计消耗（发送 + 接收；接收已含思考）
   int get total => sentTotal + receivedTotal;
 
@@ -175,12 +195,17 @@ class TokenUsageProvider extends ChangeNotifier {
   bool get hasAny => _usages.values.any((u) => !u.isEmpty);
 
   /// 一键重置全部会话的 token 计数
-  Future<void> resetAll() async {
-    await init();
-    if (_usages.isEmpty) return;
-    _usages = {};
-    notifyListeners();
-    await _persist();
+  Future<void> resetAll() {
+    final task = _mutationQueue.then((_) async {
+      await init();
+      if (_usages.isEmpty) return;
+      _usages = {};
+      notifyListeners();
+      await _persist();
+      await _syncToWidget();
+    });
+    _mutationQueue = task.then<void>((_) {}, onError: (_) {});
+    return task;
   }
 
   Future<void> _persist() async {

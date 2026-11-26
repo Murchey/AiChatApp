@@ -58,9 +58,12 @@ class StorageMigrationService {
 
   /// Restores the core tables from a SQLite snapshot. The current connection
   /// stays open, so providers can continue using the same database instance.
-  static Future<void> importSqlite(File source) async {
+  static Future<void> importSqlite(
+    File source, {
+    Future<void> Function()? beforeCommit,
+  }) async {
     if (!await source.exists()) throw StateError('SQLite 备份文件不存在');
-    final path = source.path.replaceAll("'", "''");
+    final path = source.path;
     await database.customStatement('ATTACH DATABASE ? AS backup_db', [path]);
     try {
       const tables = [
@@ -70,14 +73,22 @@ class StorageMigrationService {
         'messages',
         'chat_metas',
       ];
-      for (final table in tables) {
-        await database.customStatement('DELETE FROM main.$table');
-        await database.customStatement(
-          'INSERT INTO main.$table SELECT * FROM backup_db.$table',
-        );
-      }
+      await database.transaction(() async {
+        for (final table in tables) {
+          await database.customStatement('DELETE FROM main.$table');
+          await database.customStatement(
+            'INSERT INTO main.$table SELECT * FROM backup_db.$table',
+          );
+        }
+        await beforeCommit?.call();
+      });
     } finally {
-      await database.customStatement('DETACH DATABASE backup_db');
+      // Cleanup must not turn a committed import into a reported failure.
+      try {
+        await database.customStatement('DETACH DATABASE backup_db');
+      } catch (e) {
+        debugPrint('[StorageMigration] SQLite 备份连接清理失败: $e');
+      }
     }
   }
 

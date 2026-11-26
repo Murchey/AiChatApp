@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -41,8 +42,14 @@ class BackupCrypto {
       true,
       AEADParameters(KeyParameter(key), _gcmTagBits, iv, Uint8List(0)),
     );
-    final ct = cipher.process(plain);
-    return Uint8List.fromList([..._magic, ...salt, ...iv, ...ct]);
+    final headerLength = _magic.length + _saltLen + _ivLen;
+    final ciphertext = cipher.process(plain);
+    final output = Uint8List(headerLength + ciphertext.length);
+    output.setRange(0, _magic.length, _magic);
+    output.setRange(_magic.length, _magic.length + _saltLen, salt);
+    output.setRange(_magic.length + _saltLen, headerLength, iv);
+    output.setRange(headerLength, output.length, ciphertext);
+    return output;
   }
 
   /// 解密；密码错误或数据损坏时抛出 [ArgumentError]。
@@ -54,11 +61,8 @@ class BackupCrypto {
     final offset = _magic.length;
     final salt = Uint8List.fromList(data.sublist(offset, offset + _saltLen));
     final iv = Uint8List.fromList(
-      data.sublist(offset + _saltLen, offset + _saltLen + _ivLen),
-    );
-    final ct = Uint8List.fromList(
-      data.sublist(offset + _saltLen + _ivLen),
-    );
+        data.sublist(offset + _saltLen, offset + _saltLen + _ivLen));
+    final ct = Uint8List.sublistView(data, offset + _saltLen + _ivLen);
     final key = _deriveKey(password, salt);
     try {
       final cipher = GCMBlockCipher(AESEngine());
@@ -70,6 +74,20 @@ class BackupCrypto {
     } catch (_) {
       throw ArgumentError('密码错误或备份文件已损坏');
     }
+  }
+
+  /// Runs decryption away from the UI isolate. Plaintext input is returned as-is.
+  static Future<Uint8List> decryptInIsolate(
+      Uint8List data, String password) async {
+    if (!isEncrypted(data)) return data;
+    final input = TransferableTypedData.fromList([data]);
+    return Isolate.run(() => _decryptTransfer(input, password));
+  }
+
+  static Uint8List _decryptTransfer(
+      TransferableTypedData input, String password) {
+    final data = input.materialize().asUint8List();
+    return decrypt(data, password);
   }
 
   static Uint8List _deriveKey(String password, Uint8List salt) {

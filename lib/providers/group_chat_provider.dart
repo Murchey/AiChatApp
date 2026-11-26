@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -6,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/group_chat.dart';
 import '../models/message.dart';
+import '../models/token_usage.dart';
 import '../services/llm_service.dart';
 import '../services/notification_service.dart';
 import '../services/prompt_builder.dart';
@@ -151,7 +153,17 @@ class GroupChatProvider extends ChangeNotifier {
     }
   }
 
-  List<Message> getMessages(String groupId) => _messages[groupId] ?? const [];
+  List<Message> getMessages(String groupId) =>
+      UnmodifiableListView(_messages[groupId] ?? const <Message>[]);
+
+  // Any change to model-visible inputs invalidates pending replies.
+  void _invalidateReply(String groupId) {
+    if (_replyingGroupId != groupId) return;
+    _replyGeneration++;
+    _replyingGroupId = null;
+    _replyDone = 0;
+    _replyTotal = 0;
+  }
 
   Message? messageFor(String groupId, String messageId) {
     final messages = _messages[groupId];
@@ -261,6 +273,7 @@ class GroupChatProvider extends ChangeNotifier {
   void updateGroupName(String groupId, String name) {
     final index = _groups.indexWhere((g) => g.id == groupId);
     if (index == -1) return;
+    _invalidateReply(groupId);
     _groups[index] = _groups[index].copyWith(name: name.trim());
     notifyListeners();
     _persist();
@@ -282,6 +295,7 @@ class GroupChatProvider extends ChangeNotifier {
   ) async {
     final index = _groups.indexWhere((g) => g.id == groupId);
     if (index == -1) return;
+    _invalidateReply(groupId);
     _groups[index] = _groups[index].copyWith(description: description.trim());
     notifyListeners();
     await _persist();
@@ -296,6 +310,7 @@ class GroupChatProvider extends ChangeNotifier {
   }) {
     final index = _groups.indexWhere((g) => g.id == groupId);
     if (index == -1 || characterIds.isEmpty) return;
+    _invalidateReply(groupId);
     final cur = _groups[index].memberCharacterIds;
     final merged = <String>[...cur];
     for (final id in characterIds) {
@@ -323,6 +338,7 @@ class GroupChatProvider extends ChangeNotifier {
   }) {
     final index = _groups.indexWhere((g) => g.id == groupId);
     if (index == -1 || characterIds.isEmpty) return;
+    _invalidateReply(groupId);
     final removed = characterIds.toSet();
     final before = _groups[index].memberCharacterIds;
     _groups[index] = _groups[index].copyWith(
@@ -382,6 +398,7 @@ class GroupChatProvider extends ChangeNotifier {
   Future<void> setContextCount(String groupId, int? count) async {
     final index = _groups.indexWhere((g) => g.id == groupId);
     if (index == -1 || _groups[index].contextCount == count) return;
+    _invalidateReply(groupId);
     final g = _groups[index];
     _groups[index] = GroupChat(
       id: g.id,
@@ -460,6 +477,7 @@ class GroupChatProvider extends ChangeNotifier {
     String quoteContent = '',
     String quoteSender = '',
   }) async {
+    _invalidateReply(groupId);
     final msg = Message(
       id: const Uuid().v4(),
       conversationId: groupId,
@@ -483,6 +501,7 @@ class GroupChatProvider extends ChangeNotifier {
     required List<Message> messages,
   }) async {
     if (messages.isEmpty) return;
+    _invalidateReply(groupId);
     _messages[groupId] ??= [];
     _messages[groupId]!.addAll(messages);
     _refreshLastMessage(groupId);
@@ -496,6 +515,7 @@ class GroupChatProvider extends ChangeNotifier {
     required String groupId,
     required String imagePath,
   }) async {
+    _invalidateReply(groupId);
     final msg = Message(
       id: const Uuid().v4(),
       conversationId: groupId,
@@ -517,6 +537,7 @@ class GroupChatProvider extends ChangeNotifier {
     required String filePath,
     required String fileName,
   }) async {
+    _invalidateReply(groupId);
     final msg = Message(
       id: const Uuid().v4(),
       conversationId: groupId,
@@ -539,6 +560,7 @@ class GroupChatProvider extends ChangeNotifier {
     final before = messages.length;
     messages.removeWhere((m) => m.id == messageId);
     if (messages.length != before) {
+      _invalidateReply(groupId);
       _markMessageChanged(groupId, messageId);
     }
     _refreshLastMessage(groupId);
@@ -549,8 +571,7 @@ class GroupChatProvider extends ChangeNotifier {
   /// 撤回用户消息：删除该消息并中断进行中的回复轮（消息已被撤走，
   /// 旧轮的回复不应再落到群里）。
   void withdrawMessage(String groupId, String messageId) {
-    _replyGeneration++; // 中断进行中的回复轮
-    _replyingGroupId = null;
+    _invalidateReply(groupId);
     final messages = _messages[groupId];
     if (messages == null) return;
     final before = messages.length;
@@ -620,6 +641,7 @@ class GroupChatProvider extends ChangeNotifier {
     // 表情包检索器：角色可按需发送用户保存的表情包（null=关闭该能力）
     StickerMatch? Function(String query)? findSticker,
   }) async {
+    if (getGroupById(groupId) == null) return;
     final generation = ++_replyGeneration;
     _replyingGroupId = groupId;
     _lastError = null;
@@ -649,14 +671,21 @@ class GroupChatProvider extends ChangeNotifier {
     _replyTotal = speakers.length;
     notifyListeners();
 
-    // 群历史对所有发言成员相同，循环外构建一次（含最近图片的视觉上下文）
-    final historyForAll = _buildGroupHistory(groupId, contextCount);
-
     for (final member in speakers) {
       if (generation != _replyGeneration) break; // 被打断
+      if (getGroupById(groupId)
+              ?.memberCharacterIds
+              .contains(member.characterId) !=
+          true) {
+        continue;
+      }
       try {
-        final systemPrompt = _buildGroupSystemPrompt(
-            groupId, member, userNickname, roleplayMode);
+        final history =
+            _buildGroupHistory(groupId, contextCount, member.characterId);
+        final systemPrompt =
+            '${_buildGroupSystemPrompt(groupId, member, userNickname, roleplayMode)}\n'
+            '你在此群的身份是 ${member.name}，角色 ID 为 ${member.characterId}。'
+            '历史消息中的角色 ID 标记用于区分同名成员。';
 
         final isMentioned = mentionedSet.contains(member.characterId);
         // 沉默成员已在外层过滤，speakers 均为本轮实际发言者
@@ -678,7 +707,7 @@ class GroupChatProvider extends ChangeNotifier {
         );
         // 群聊中只允许输出自己的新内容：防止模型复述/转述其他成员的发言
         outputInstruction =
-            '只输出 $member.name 自己的新内容，不要复述或转述群内其他人刚说过的话。$outputInstruction';
+            '只输出 ${member.name} 自己的新内容，不要复述或转述群内其他人刚说过的话。$outputInstruction';
         if (isMentioned) {
           outputInstruction = '用户刚在群里 @了你，请立刻回应 ta。$outputInstruction';
         }
@@ -687,22 +716,24 @@ class GroupChatProvider extends ChangeNotifier {
               '"${quote.content}"，请围绕这条消息回复。$outputInstruction';
         }
 
+        _checkRequestBudget(member, systemPrompt, history, outputInstruction);
+        if (generation != _replyGeneration) break;
+        final group = getGroupById(groupId);
         final result = await generateMessages(
           model: member.model,
           systemPrompt: systemPrompt,
-          historyMessages: historyForAll,
+          historyMessages: history,
           outputInstruction: outputInstruction,
           roleplayMode: roleplayMode,
+          onUsage: (usage) => TokenUsageProvider.instance.addUsage(
+            groupId,
+            usage,
+            label: group?.name,
+            avatar: group?.avatar,
+            kind: TokenUsageKind.groupChat,
+          ),
         );
         if (generation != _replyGeneration) break;
-        // 累计该群真实 token 用量（发送 = prompt_tokens，接收 = completion_tokens）
-        final g = getGroupById(groupId);
-        TokenUsageProvider.instance.addUsage(
-          groupId,
-          result.usage,
-          label: g?.name,
-          avatar: g?.avatar,
-        );
 
         var visibleMessageIndex = 0;
         var stickerSent = false;
@@ -766,13 +797,82 @@ class GroupChatProvider extends ChangeNotifier {
       }
     }
 
-    _replyingGroupId = null;
-    _replyDone = 0;
-    _replyTotal = 0;
-    notifyListeners();
+    if (generation == _replyGeneration) {
+      _replyingGroupId = null;
+      _replyDone = 0;
+      _replyTotal = 0;
+      notifyListeners();
+    }
     // 整个回复轮合并为一次落盘：避免长聊天下每条角色消息都触发
     // 全量 JSON 序列化（上千条消息时尤其明显），从而减少 UI 卡顿
     await _persist();
+  }
+
+  /// Edit a source message and cancel responses based on its previous contents.
+  Future<void> editMessage({
+    required String groupId,
+    required String messageId,
+    required String content,
+  }) async {
+    final messages = _messages[groupId];
+    if (messages == null) return;
+    final index = messages.indexWhere((message) => message.id == messageId);
+    if (index == -1 || messages[index].content == content) return;
+    _invalidateReply(groupId);
+    messages[index] = messages[index].copyWith(content: content);
+    _markMessageChanged(groupId, messageId);
+    _refreshLastMessage(groupId);
+    notifyListeners();
+    await _persist();
+  }
+
+  /// Count the complete request, including multimodal inputs and framing.
+  /// This is an estimate, so leave headroom below the configured context limit.
+  void _checkRequestBudget(
+    GroupMemberReply member,
+    String systemPrompt,
+    List<Map<String, Object>> history,
+    String outputInstruction,
+  ) {
+    final contextLength = member.model.contextLength;
+    if (contextLength <= 0) {
+      throw LLMException('「${member.name}」的模型上下文长度无效，请先设置上下文长度。');
+    }
+    var inputTokens = LLMService.estimateTokens(systemPrompt) +
+        LLMService.estimateTokens(outputInstruction) +
+        32;
+    for (final message in history) {
+      inputTokens += 8;
+      final content = message['content'];
+      if (content is String) {
+        inputTokens += LLMService.estimateTokens(content);
+      } else if (content is List) {
+        for (final part in content.whereType<Map>()) {
+          if (part['type'] == 'text') {
+            inputTokens +=
+                LLMService.estimateTokens(part['text'] as String? ?? '');
+          } else if (part['type'] == 'image_url') {
+            // Provider visual token costs depend on resolution and detail.
+            // Use a moderate per-image estimate until provider-specific usage
+            // is available. Encoded byte length does not measure visual tokens.
+            inputTokens += 1024;
+          }
+        }
+      }
+    }
+    // generateMessages requests 1024 output tokens. The service raises this
+    // to 4096 for Grok reasoning models, including provider-prefixed names.
+    final modelName =
+        member.model.modelName.trim().toLowerCase().split('/').last;
+    final reasoning = !modelName.contains('non-reasoning') &&
+        (modelName.startsWith('grok-4') || modelName.startsWith('grok-3-mini'));
+    final outputReserve = reasoning ? 4096 : 1024;
+    final safeLimit = (contextLength * 0.9).floor();
+    if (inputTokens + outputReserve > safeLimit) {
+      throw LLMException('「${member.name}」群聊上下文超限（估算输入 $inputTokens + '
+          '输出预留 $outputReserve / 模型上限 $contextLength token）。'
+          '请减少群聊上下文条数、缩短角色提示词或记忆，或选择更大上下文模型后重试。');
+    }
   }
 
   /// 从群内最近消息中随机选一条「其他成员」的文本消息作为引用目标。
@@ -813,7 +913,11 @@ class GroupChatProvider extends ChangeNotifier {
     String avatarBase64 = '',
     bool persist = true,
   }) {
-    if (content.trim().isEmpty) return;
+    if (content.trim().isEmpty ||
+        getGroupById(groupId)?.memberCharacterIds.contains(characterId) !=
+            true) {
+      return;
+    }
     _messages[groupId] ??= [];
     final message = Message(
       id: const Uuid().v4(),
@@ -929,14 +1033,14 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
   static const _kMaxVisionImages = 3;
 
   /// 构建群聊上下文（供模型理解语境）：用户消息 role=user，
-  /// 角色消息 role=assistant 并带发送者名前缀，便于区分是谁说的。
+  /// 当前成员消息 role=assistant，其余成员 role=user，携带发送者姓名与 ID。
   ///
   /// 历史里的图片消息不再只塞文字占位：最近若干张可读图片会按
   /// OpenAI 视觉格式（content 为 [{type:text},{type:image_url}]）附带
   /// 真实图片字节，与私聊 generateVisionReply 同一套多模态约定；
   /// 更早或读不到的图片仍退化为占位文案，避免请求体过大。
   List<Map<String, Object>> _buildGroupHistory(
-      String groupId, int contextCount) {
+      String groupId, int contextCount, String selfCharacterId) {
     final messages = _messages[groupId] ?? const <Message>[];
     final start = contextCount > 0 && messages.length > contextCount
         ? messages.length - contextCount
@@ -955,6 +1059,13 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
 
     for (int i = start; i < messages.length; i++) {
       final m = messages[i];
+      // Only this member's own messages may use the assistant role. Legacy
+      // messages without a stable sender id stay attributed as other speakers.
+      final role = !m.isFromUser &&
+              m.senderCharacterId.isNotEmpty &&
+              m.senderCharacterId == selfCharacterId
+          ? 'assistant'
+          : 'user';
       // 系统事件（成员加入/移除）：以「群通知」形式进入上下文，
       // 让角色感知群成员变化（如新人入群、有人退群）
       if (m.type == MessageType.system) {
@@ -969,7 +1080,7 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
         if (part != null) {
           // 视觉消息：文本占位 + 图片字节，模型可真正「看到」图
           result.add({
-            'role': m.isFromUser ? 'user' : 'assistant',
+            'role': role,
             'content': [
               {'type': 'text', 'text': placeholder},
               part,
@@ -977,7 +1088,7 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
           });
         } else {
           result.add({
-            'role': m.isFromUser ? 'user' : 'assistant',
+            'role': role,
             'content': placeholder,
           });
         }
@@ -1009,7 +1120,7 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
         final name = m.senderName.isEmpty ? '角色' : m.senderName;
         final label = m.stickerLabel?.trim() ?? '';
         result.add({
-          'role': 'assistant',
+          'role': role,
           'content':
               label.isEmpty ? '[$name发送了一张表情包]' : '[$name发送了一张表情包（备注：$label）]',
         });
@@ -1017,12 +1128,29 @@ ${extra.isEmpty ? '' : '\n$extra\n'}
         // 角色发送的文件：只给文件名，绝不暴露本地路径。
         final name = m.senderName.isEmpty ? '角色' : m.senderName;
         result.add({
-          'role': 'assistant',
+          'role': role,
           'content': '[$name发送了一个文件：${m.content.split('/').last}]',
         });
       } else {
         final name = m.senderName.isEmpty ? '角色' : m.senderName;
-        result.add({'role': 'assistant', 'content': '$name：${m.content}'});
+        result.add({'role': role, 'content': '$name：${m.content}'});
+      }
+    }
+    // Keep stable identity alongside names for same-name and renamed members.
+    for (var i = 0; i < result.length; i++) {
+      final source = messages[start + i];
+      if (source.isFromUser || source.type == MessageType.system) continue;
+      final identity = source.senderCharacterId.isEmpty
+          ? '【角色 ID 未知】'
+          : '【角色 ID=${source.senderCharacterId}】';
+      final content = result[i]['content'];
+      if (content is String) {
+        result[i]['content'] = '$identity$content';
+      } else if (content is List) {
+        result[i]['content'] = [
+          {'type': 'text', 'text': identity},
+          ...content,
+        ];
       }
     }
     return result;

@@ -299,7 +299,7 @@ class ChatSettingsScreen extends StatelessWidget {
       contextLength: contextLength > 0 ? contextLength : 8000,
     );
     if (!context.mounted) return;
-    _showTip(context, ok ? '已压缩对话' : '暂无可压缩的消息');
+    _showTip(context, ok ? '已压缩对话' : chat.lastError ?? '暂无可压缩的消息');
   }
 
   /// 弹出轻提示对话框

@@ -391,7 +391,7 @@ class CloudBackupService {
     Uint8List zipBytes;
     if (BackupCrypto.isEncrypted(raw)) {
       report(0.35, '解密备份包');
-      zipBytes = BackupCrypto.decrypt(raw, password ?? '');
+      zipBytes = await BackupCrypto.decryptInIsolate(raw, password ?? '');
     } else {
       zipBytes = raw;
     }
@@ -436,12 +436,15 @@ class CloudBackupService {
   /// 返回成功删除数量；不影响手动备份文件。
   static Future<int> deleteBackupsByFileNamePrefix(
     CloudBackupConfig config,
-    String fileNamePrefix,
-  ) async {
+    String fileNamePrefix, {
+    String? exceptKey,
+  }) async {
     final items = await listBackups(config);
     var deleted = 0;
     for (final item in items) {
-      if (!item.fileName.startsWith(fileNamePrefix)) continue;
+      if (item.key == exceptKey || !item.fileName.startsWith(fileNamePrefix)) {
+        continue;
+      }
       try {
         await deleteBackup(config, item.key);
         deleted++;

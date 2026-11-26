@@ -75,8 +75,11 @@ class LLMService {
     var uri = Uri.parse(base);
     var path = uri.path.replaceAll(RegExp(r'/+$'), '');
     // 兼容把完整接口地址填进 baseUrl 的情况：剥掉三种协议的末级路径
-    for (final suffix
-        in const ['/chat/completions', '/messages', '/responses']) {
+    for (final suffix in const [
+      '/chat/completions',
+      '/messages',
+      '/responses'
+    ]) {
       if (path.endsWith(suffix)) {
         path = path.substring(0, path.length - suffix.length);
       }
@@ -237,9 +240,10 @@ class LLMService {
           'input': input,
           'max_output_tokens': _outputLimit(model, maxTokens),
           if (temperature != null) 'temperature': temperature,
-          if (jsonMode) 'text': {
-            'format': {'type': 'json_object'}
-          },
+          if (jsonMode)
+            'text': {
+              'format': {'type': 'json_object'}
+            },
           if (stream) 'stream': true,
         };
       case ApiFormat.openaiChat:
@@ -315,8 +319,8 @@ class LLMService {
 
   /// data URL → Anthropic base64 图片 source；非 data URL（外链等）返回 null。
   static Map<String, Object>? _dataUrlToImageSource(String url) {
-    final match =
-        RegExp(r'^data:([^;]+);base64,(.*)', dotAll: true).firstMatch(url.trim());
+    final match = RegExp(r'^data:([^;]+);base64,(.*)', dotAll: true)
+        .firstMatch(url.trim());
     if (match == null) return null;
     return {
       'type': 'base64',
@@ -339,6 +343,7 @@ class LLMService {
   static Future<String> compressHistory({
     required ApiModel model,
     required List<Map<String, String>> historyMessages,
+    UsageCallback? onUsage,
   }) async {
     final result = await fetchCompletion(
       model: model,
@@ -348,6 +353,7 @@ class LLMService {
       ],
       temperature: 0.3,
       maxTokens: 800,
+      onUsage: onUsage,
     );
     return result.content.trim();
   }
@@ -370,26 +376,51 @@ class LLMService {
     required List<Map<String, Object>> messages,
     required int maxTokens,
     double initialTemperature = 0.9,
+    UsageCallback? onUsage,
   }) async {
+    var accumulatedUsage = const ChatUsage();
+    Future<void> recordUsage(ChatUsage usage) async {
+      accumulatedUsage = accumulatedUsage.add(usage);
+      await _reportUsage(onUsage, usage);
+    }
+
+    CompletionResult result;
     try {
-      return await fetchCompletion(
+      result = await fetchCompletion(
         model: model,
         messages: messages,
         temperature: initialTemperature,
         maxTokens: maxTokens,
+        onUsage: recordUsage,
       );
     } catch (_) {
-      if (model.modelName.toLowerCase().contains('kimi')) {
-        debugPrint('[LLMService] ${model.modelName} 首次请求失败，'
-            '改用 temperature=1 再次尝试');
-        return fetchCompletion(
-          model: model,
-          messages: messages,
-          temperature: 1.0,
-          maxTokens: maxTokens,
-        );
-      }
-      rethrow;
+      if (!model.modelName.toLowerCase().contains('kimi')) rethrow;
+      debugPrint('[LLMService] ${model.modelName} 首次请求失败，'
+          '改用 temperature=1 再次尝试');
+      result = await fetchCompletion(
+        model: model,
+        messages: messages,
+        temperature: 1.0,
+        maxTokens: maxTokens,
+        onUsage: recordUsage,
+      );
+    }
+    return CompletionResult(
+      result.content,
+      accumulatedUsage,
+      reasoningContent: result.reasoningContent,
+      reasoningDurationMs: result.reasoningDurationMs,
+      finishReason: result.finishReason,
+    );
+  }
+
+  static Future<void> _reportUsage(
+      UsageCallback? callback, ChatUsage usage) async {
+    if (callback == null || usage.isEmpty) return;
+    try {
+      await callback(usage);
+    } catch (error) {
+      debugPrint('[LLMService] Usage recording failed: $error');
     }
   }
 
@@ -451,7 +482,7 @@ class LLMService {
           final message = decoded['message'];
           return StreamCompletionChunk(
             usage: message is Map<String, dynamic>
-                ? _parseUsage(message)
+                ? _parseUsage(message, anthropic: true)
                 : const ChatUsage(),
           );
         case 'content_block_delta':
@@ -466,18 +497,8 @@ class LLMService {
           }
           return const StreamCompletionChunk();
         case 'message_delta':
-          final usage = decoded['usage'];
-          final input =
-              usage is Map<String, dynamic> ? _usageInt(usage['input_tokens']) : null;
-          final output =
-              usage is Map<String, dynamic> ? _usageInt(usage['output_tokens']) : null;
           return StreamCompletionChunk(
-            usage: ChatUsage(
-              promptTokens: input,
-              completionTokens: output,
-              totalTokens:
-                  (input != null || output != null) ? (input ?? 0) + (output ?? 0) : null,
-            ),
+            usage: _parseUsage(decoded, anthropic: true),
           );
         default:
           return const StreamCompletionChunk();
@@ -495,10 +516,12 @@ class LLMService {
       final type = decoded['type']?.toString() ?? '';
       switch (type) {
         case 'response.output_text.delta':
-          return StreamCompletionChunk(content: decoded['delta']?.toString() ?? '');
+          return StreamCompletionChunk(
+              content: decoded['delta']?.toString() ?? '');
         case 'response.reasoning_text.delta':
         case 'response.reasoning_summary_text.delta':
-          return StreamCompletionChunk(reasoning: decoded['delta']?.toString() ?? '');
+          return StreamCompletionChunk(
+              reasoning: decoded['delta']?.toString() ?? '');
         case 'response.completed':
         case 'response.incomplete':
           final response = decoded['response'];
@@ -544,6 +567,7 @@ class LLMService {
     double? temperature = 0.9,
     int maxTokens = 512,
     bool jsonMode = false,
+    UsageCallback? onUsage,
   }) async {
     if (model.modelName.isEmpty) {
       throw const LLMException('所选模型未填写模型名称，请到「API 设置」中检查');
@@ -557,6 +581,7 @@ class LLMService {
 
     // 部分模型（快速/推理模型）偶发返回 HTTP 200 但 content 为空，
     // 重发一次请求让模型重新生成，显著降低"API 返回内容为空"的出现频率。
+    var accumulatedUsage = const ChatUsage();
     for (var attempt = 0; attempt < 2; attempt++) {
       final result = await _requestOnce(
         url: url,
@@ -566,7 +591,17 @@ class LLMService {
         maxTokens: maxTokens,
         jsonMode: jsonMode,
       );
-      if (result.content.trim().isNotEmpty) return result;
+      accumulatedUsage = accumulatedUsage.add(result.usage);
+      await _reportUsage(onUsage, result.usage);
+      if (result.content.trim().isNotEmpty) {
+        return CompletionResult(
+          result.content,
+          accumulatedUsage,
+          reasoningContent: result.reasoningContent,
+          reasoningDurationMs: result.reasoningDurationMs,
+          finishReason: result.finishReason,
+        );
+      }
       if (result.finishReason == 'length') {
         throw const LLMException('模型已达到输出额度但未生成正文，推理可能耗尽了额度；可改用非推理模型');
       }
@@ -615,7 +650,8 @@ class LLMService {
 
       if (response.statusCode == 200) {
         final reply = parseChatReply(body);
-        final usage = _parseUsage(jsonDecode(body) as Map<String, dynamic>);
+        final usage = _parseUsage(jsonDecode(body) as Map<String, dynamic>,
+            anthropic: model.apiFormat == ApiFormat.anthropic);
         final reasoning = reply.reasoning;
         final reasoningTokens =
             usage.reasoningTokens ?? estimateReasoningTokens(reasoning);
@@ -1227,22 +1263,36 @@ class LLMService {
   /// 从对话补全响应中解析 token 用量（usage 字段，可能缺失）。
   /// 单次调用总消耗 = prompt_tokens（系统提示词 + 软件提示词 + 历史 + 本次提问）
   ///               + completion_tokens（AI 思考过程 + 最终回复）。
-  static ChatUsage _parseUsage(Map<String, dynamic> decoded) {
+  static ChatUsage _parseUsage(Map<String, dynamic> decoded,
+      {bool anthropic = false}) {
     final usage = decoded['usage'];
     if (usage is! Map<String, dynamic>) return const ChatUsage();
-    final prompt =
+    final details =
+        usage['prompt_tokens_details'] ?? usage['input_tokens_details'];
+    final cacheRead = _usageInt(usage['cache_read_input_tokens']) ??
+        _usageInt(usage['prompt_cache_hit_tokens']) ??
+        (details is Map ? _usageInt(details['cached_tokens']) : null);
+    final cacheCreation = _usageInt(usage['cache_creation_input_tokens']);
+    var prompt =
         _usageInt(usage['prompt_tokens']) ?? _usageInt(usage['input_tokens']);
+    // Anthropic input_tokens excludes cache reads and cache writes. OpenAI's
+    // prompt_tokens already includes its cached_tokens subset.
+    if (anthropic &&
+        (prompt != null || cacheRead != null || cacheCreation != null)) {
+      prompt = (prompt ?? 0) + (cacheRead ?? 0) + (cacheCreation ?? 0);
+    }
     final completion = _usageInt(usage['completion_tokens']) ??
         _usageInt(usage['output_tokens']);
-    final total = _usageInt(usage['total_tokens']) ??
-        ((prompt != null || completion != null)
-            ? (prompt ?? 0) + (completion ?? 0)
-            : null);
     return ChatUsage(
       promptTokens: prompt,
       completionTokens: completion,
-      totalTokens: total,
+      totalTokens: _usageInt(usage['total_tokens']) ??
+          ((prompt != null || completion != null)
+              ? (prompt ?? 0) + (completion ?? 0)
+              : null),
       reasoningTokens: parseReasoningTokens(usage),
+      cacheReadTokens: cacheRead,
+      cacheCreationTokens: cacheCreation,
     );
   }
 
@@ -1250,8 +1300,8 @@ class LLMService {
   /// Responses: output_tokens_details.reasoning_tokens）。
   /// 字段缺失或无法解析时返回 null，由调用方按正文估算。
   static int? parseReasoningTokens(Map<String, dynamic> usage) {
-    final details = usage['completion_tokens_details'] ??
-        usage['output_tokens_details'];
+    final details =
+        usage['completion_tokens_details'] ?? usage['output_tokens_details'];
     if (details is Map<String, dynamic>) {
       return _usageInt(details['reasoning_tokens']);
     }
@@ -1270,10 +1320,13 @@ class LLMService {
   }
 
   static int? _usageInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    if (v is String) return int.tryParse(v.trim());
-    return null;
+    final parsed = switch (v) {
+      int value => value,
+      num value when value.isFinite => value.toInt(),
+      String value => int.tryParse(value.trim()),
+      _ => null,
+    };
+    return parsed != null && parsed >= 0 ? parsed : null;
   }
 
   /// 容错解析 LLM 返回的消息数组：
@@ -1426,6 +1479,9 @@ class StreamCompletionChunk {
 }
 
 /// 一次对话补全的 token 用量（来自 API 响应 usage 字段；字段缺失为 null）
+/// Callback receives usage once per physical request, including discarded replies.
+typedef UsageCallback = FutureOr<void> Function(ChatUsage usage);
+
 class ChatUsage {
   final int? promptTokens; // 输入：系统提示词 + 软件提示词 + 历史上下文 + 本次提问
   final int? completionTokens; // 输出：AI 思考过程 + 最终回复
@@ -1434,19 +1490,55 @@ class ChatUsage {
   /// 思考过程 token（通常已含在 completionTokens 内）。
   /// 优先取 API 的 completion_tokens_details.reasoning_tokens。
   final int? reasoningTokens;
+  final int? cacheReadTokens;
+  final int? cacheCreationTokens;
 
   const ChatUsage({
     this.promptTokens,
     this.completionTokens,
     this.totalTokens,
     this.reasoningTokens,
+    this.cacheReadTokens,
+    this.cacheCreationTokens,
   });
+
+  /// Merge cumulative snapshots from the same request, preserving absent fields.
+  ChatUsage merge(ChatUsage newer) {
+    final prompt = newer.promptTokens ?? promptTokens;
+    final completion = newer.completionTokens ?? completionTokens;
+    return ChatUsage(
+      promptTokens: prompt,
+      completionTokens: completion,
+      totalTokens: prompt != null && completion != null
+          ? prompt + completion
+          : newer.totalTokens ?? totalTokens,
+      reasoningTokens: newer.reasoningTokens ?? reasoningTokens,
+      cacheReadTokens: newer.cacheReadTokens ?? cacheReadTokens,
+      cacheCreationTokens: newer.cacheCreationTokens ?? cacheCreationTokens,
+    );
+  }
+
+  /// Add usage from separate physical requests, including automatic retries.
+  ChatUsage add(ChatUsage other) => ChatUsage(
+        promptTokens: _sum(promptTokens, other.promptTokens),
+        completionTokens: _sum(completionTokens, other.completionTokens),
+        totalTokens: _sum(totalTokens, other.totalTokens),
+        reasoningTokens: _sum(reasoningTokens, other.reasoningTokens),
+        cacheReadTokens: _sum(cacheReadTokens, other.cacheReadTokens),
+        cacheCreationTokens:
+            _sum(cacheCreationTokens, other.cacheCreationTokens),
+      );
+
+  static int? _sum(int? a, int? b) =>
+      a == null && b == null ? null : (a ?? 0) + (b ?? 0);
 
   bool get isEmpty =>
       promptTokens == null &&
       completionTokens == null &&
       totalTokens == null &&
-      reasoningTokens == null;
+      reasoningTokens == null &&
+      cacheReadTokens == null &&
+      cacheCreationTokens == null;
 }
 
 /// 对话补全结果：回复内容 + 真实 token 用量 + 思考过程

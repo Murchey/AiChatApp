@@ -132,6 +132,8 @@ class BackupScheduleService {
   static const _lastLocalKey = 'backup_schedule_last_local_v1';
   static const _lastCloudKey = 'backup_schedule_last_cloud_v1';
   static bool _automaticRunInProgress = false;
+  static Future<String>? _localRun;
+  static Future<String>? _cloudRun;
 
   static Future<BackupScheduleConfig> loadLocal() async {
     final prefs = await SharedPreferences.getInstance();
@@ -260,15 +262,28 @@ class BackupScheduleService {
   static const autoFilePrefix = 'aichat_auto';
 
   /// 执行一次本地自动备份；按配置清理上一份自动备份。
-  static Future<String> runLocalAutoBackup(BackupScheduleConfig config) async {
-    if (config.deletePrevious) {
-      await BackupService.deleteLocalBackupsByPrefix(autoFilePrefix);
-    }
+  static Future<String> runLocalAutoBackup(BackupScheduleConfig config) {
+    return _localRun ??= _runLocalAutoBackup(config).whenComplete(() {
+      _localRun = null;
+    });
+  }
+
+  static Future<String> _runLocalAutoBackup(BackupScheduleConfig config) async {
     final file = await BackupService.createLocalBackup(
       password: config.encryptEnabled ? config.password.trim() : null,
       fileNamePrefix: autoFilePrefix,
     );
     await _markLocalRun(DateTime.now());
+    if (config.deletePrevious) {
+      try {
+        await BackupService.deleteLocalBackupsByPrefix(
+          autoFilePrefix,
+          exceptPath: file.path,
+        );
+      } catch (e) {
+        debugPrint('[BackupSchedule] local retention cleanup failed: $e');
+      }
+    }
     return '本地自动备份完成：${_baseName(file.path)}';
   }
 
@@ -276,51 +291,72 @@ class BackupScheduleService {
   static Future<String> runCloudAutoBackup(
     CloudBackupConfig cloudConfig,
     BackupScheduleConfig config,
+  ) {
+    return _cloudRun ??=
+        _runCloudAutoBackup(cloudConfig, config).whenComplete(() {
+      _cloudRun = null;
+    });
+  }
+
+  static Future<String> _runCloudAutoBackup(
+    CloudBackupConfig cloudConfig,
+    BackupScheduleConfig config,
   ) async {
-    if (config.deletePrevious) {
-      await CloudBackupService.deleteBackupsByFileNamePrefix(
-        cloudConfig,
-        autoFilePrefix,
-      );
-    }
     final item = await CloudBackupService.uploadBackup(
       cloudConfig,
       password: config.encryptEnabled ? config.password.trim() : null,
       fileNamePrefix: autoFilePrefix,
     );
     await _markCloudRun(DateTime.now());
+    if (config.deletePrevious) {
+      try {
+        await CloudBackupService.deleteBackupsByFileNamePrefix(
+          cloudConfig,
+          autoFilePrefix,
+          exceptKey: item.key,
+        );
+      } catch (e) {
+        debugPrint('[BackupSchedule] cloud retention cleanup failed: $e');
+      }
+    }
     return '云端自动备份完成：${item.fileName}';
   }
 
   /// 打开 APP 时检查并执行到期的本地 / 云端自动备份。
   /// 返回本次实际执行的备份说明（用于 Toast）；无执行返回空列表。
-  static Future<List<String>> checkAndRunOnAppOpen() async {
+  static Future<List<String>> checkAndRunOnAppOpen() =>
+      checkAndRunNow(local: true, cloud: true);
+
+  static Future<List<String>> checkAndRunNow({
+    required bool local,
+    required bool cloud,
+  }) async {
     if (_automaticRunInProgress) return const [];
     _automaticRunInProgress = true;
-    final results = <String>[];
     try {
-      final localCfg = await loadLocal();
-      final cloudCfg = await loadCloud();
-
-      if (isDue(config: localCfg, lastRun: await lastLocalRun())) {
-        try {
-          results.add(await runLocalAutoBackup(localCfg));
-        } catch (e) {
-          debugPrint('[BackupSchedule] local auto backup failed: $e');
-          results.add('本地自动备份失败：$e');
+      final results = <String>[];
+      if (local) {
+        final cfg = await loadLocal();
+        if (isDue(config: cfg, lastRun: await lastLocalRun())) {
+          try {
+            results.add(await runLocalAutoBackup(cfg));
+          } catch (e) {
+            results.add('本地自动备份失败：$e');
+          }
         }
       }
-
-      if (isDue(config: cloudCfg, lastRun: await lastCloudRun())) {
-        final cloudConfig = await CloudBackupService.loadConfig();
-        if (!cloudConfig.isConfigured) {
-          results.add('云端定时备份已到期，但未配置对象储存，已跳过');
-        } else {
-          try {
-            results.add(await runCloudAutoBackup(cloudConfig, cloudCfg));
-          } catch (e) {
-            debugPrint('[BackupSchedule] cloud auto backup failed: $e');
-            results.add('云端自动备份失败：$e');
+      if (cloud) {
+        final cfg = await loadCloud();
+        if (isDue(config: cfg, lastRun: await lastCloudRun())) {
+          final cloudConfig = await CloudBackupService.loadConfig();
+          if (!cloudConfig.isConfigured) {
+            results.add('云端定时备份已到期，但未配置对象储存，已跳过');
+          } else {
+            try {
+              results.add(await runCloudAutoBackup(cloudConfig, cfg));
+            } catch (e) {
+              results.add('云端自动备份失败：$e');
+            }
           }
         }
       }
@@ -328,40 +364,6 @@ class BackupScheduleService {
     } finally {
       _automaticRunInProgress = false;
     }
-  }
-
-  /// 备份页保存配置后立即评估一次（便于用户刚改完就能触发）。
-  static Future<List<String>> checkAndRunNow({
-    required bool local,
-    required bool cloud,
-  }) async {
-    final results = <String>[];
-    if (local) {
-      final cfg = await loadLocal();
-      if (isDue(config: cfg, lastRun: await lastLocalRun())) {
-        try {
-          results.add(await runLocalAutoBackup(cfg));
-        } catch (e) {
-          results.add('本地自动备份失败：$e');
-        }
-      }
-    }
-    if (cloud) {
-      final cfg = await loadCloud();
-      if (isDue(config: cfg, lastRun: await lastCloudRun())) {
-        final cloudConfig = await CloudBackupService.loadConfig();
-        if (!cloudConfig.isConfigured) {
-          results.add('云端定时备份已到期，但未配置对象储存，已跳过');
-        } else {
-          try {
-            results.add(await runCloudAutoBackup(cloudConfig, cfg));
-          } catch (e) {
-            results.add('云端自动备份失败：$e');
-          }
-        }
-      }
-    }
-    return results;
   }
 
   static String _baseName(String path) {

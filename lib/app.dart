@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'config/theme.dart';
 import 'config/routes.dart';
+import 'models/token_usage.dart';
 import 'providers/auto_moment_provider.dart';
 import 'providers/proactive_greeting_provider.dart';
 import 'providers/api_provider.dart';
@@ -83,6 +84,8 @@ class _AiChatAppState extends State<AiChatApp> {
     final settings = context.read<ChatSettingsProvider>();
     final memory = context.read<MemoryPointProvider>();
     final api = context.read<ApiProvider>();
+    chat.autoMemoryCancel = AutoMemoryService.cancelConversation;
+    chat.autoMemoryCancelAll = AutoMemoryService.cancelAll;
     chat.autoMemoryRecorder = (conversationId) {
       AutoMemoryService.maybeRecord(
         chatProvider: chat,
@@ -123,9 +126,11 @@ class _AiChatAppState extends State<AiChatApp> {
         final allUsages = tokenProvider.allUsages;
         int privateChat = 0, groupChat = 0, moment = 0;
         allUsages.forEach((id, usage) {
-          if (id == TokenUsageProvider.kMomentUsageId) {
-            moment = usage.totalTokens;
-          } else if (id.startsWith('group_')) {
+          if (usage.kind == TokenUsageKind.moment ||
+              (usage.kind == null && id == TokenUsageProvider.kMomentUsageId)) {
+            moment += usage.totalTokens;
+          } else if (usage.kind == TokenUsageKind.groupChat ||
+              (usage.kind == null && id.startsWith('group_'))) {
             groupChat += usage.totalTokens;
           } else {
             privateChat += usage.totalTokens;

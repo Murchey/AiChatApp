@@ -6,9 +6,11 @@ part of 'llm_service.dart';
     List<Map<String, Object>> historyMessages = const [],
     String outputInstruction = '',
     bool roleplayMode = false,
+    UsageCallback? onUsage,
   }) async {
     final completion = await LLMService._fetchWithKimiFallback(
       model: model,
+      onUsage: onUsage,
       messages: [
         {'role': 'system', 'content': systemPrompt},
         ...historyMessages,
@@ -36,6 +38,7 @@ part of 'llm_service.dart';
     required ApiModel model,
     required String systemPrompt,
     required List<Map<String, String>> historyMessages,
+    UsageCallback? onUsage,
   }) async {
     const instruction = '【系统指令】基于当前语C剧情，给用户提供恰好 4 个可选的下一步行动或台词。\n'
         '要求：\n'
@@ -51,6 +54,7 @@ part of 'llm_service.dart';
         '只输出 JSON 字符串数组，例如：["台词或行动1","台词或行动2","台词或行动3","台词或行动4"]，不要输出其他内容。';
     final completion = await LLMService._fetchWithKimiFallback(
       model: model,
+      onUsage: onUsage,
       messages: [
         {'role': 'system', 'content': systemPrompt},
         ...historyMessages,
@@ -74,6 +78,7 @@ part of 'llm_service.dart';
     required List<Map<String, String>> historyMessages,
     String userSupplement = '',
     bool roleplayMode = false,
+    UsageCallback? onUsage,
   }) async {
     final supplement = userSupplement.trim();
     final supplementBlock = supplement.isEmpty
@@ -105,6 +110,7 @@ part of 'llm_service.dart';
         supplementBlock;
     final completion = await LLMService._fetchWithKimiFallback(
       model: model,
+      onUsage: onUsage,
       messages: [
         {'role': 'system', 'content': systemPrompt},
         ...historyMessages,
@@ -129,9 +135,11 @@ part of 'llm_service.dart';
     required ApiModel model,
     required List<Map<String, String>> historyMessages,
     required List<Map<String, String>> existingRecords,
+    UsageCallback? onUsage,
   }) {
     return LLMService._fetchWithKimiFallback(
       model: model,
+      onUsage: onUsage,
       messages: [
         ...historyMessages,
         {'role': 'user', 'content': buildPlotMemoryInstruction(existingRecords)},
@@ -182,6 +190,7 @@ part of 'llm_service.dart';
     required String imagePath,
     required String outputInstruction,
     bool roleplayMode = false,
+    UsageCallback? onUsage,
   }) async {
     String base64;
     try {
@@ -192,6 +201,7 @@ part of 'llm_service.dart';
     }
     final completion = await LLMService._fetchWithKimiFallback(
       model: model,
+      onUsage: onUsage,
       messages: [
         {'role': 'system', 'content': systemPrompt},
         ...historyMessages,
@@ -244,6 +254,7 @@ Stream<StreamCompletionChunk> streamCompletion({
   required List<Map<String, Object>> messages,
   int maxTokens = 1024,
   double temperature = 0.9,
+  UsageCallback? onUsage,
 }) async* {
   if (model.modelName.isEmpty) {
     throw const LLMException('所选模型未填写模型名称，请到「API 设置」中检查');
@@ -253,6 +264,7 @@ Stream<StreamCompletionChunk> streamCompletion({
   }
   final url = LLMService.completionUrl(model);
   final client = HttpClient();
+  var accumulatedUsage = const ChatUsage();
   try {
     final request = await client
         .postUrl(Uri.parse(url))
@@ -293,11 +305,16 @@ Stream<StreamCompletionChunk> streamCompletion({
       }
       final chunk =
           LLMService.parseStreamChunkFor(model.apiFormat, data);
+      accumulatedUsage = accumulatedUsage.merge(chunk.usage);
       receivedContent = receivedContent || chunk.content.trim().isNotEmpty;
       if (chunk.content.isNotEmpty ||
           chunk.reasoning.isNotEmpty ||
           !chunk.usage.isEmpty) {
-        yield chunk;
+        yield StreamCompletionChunk(
+          content: chunk.content,
+          reasoning: chunk.reasoning,
+          usage: accumulatedUsage,
+        );
       }
     }
     if (!receivedContent) {
@@ -305,6 +322,7 @@ Stream<StreamCompletionChunk> streamCompletion({
     }
   } finally {
     client.close(force: true);
+    await LLMService._reportUsage(onUsage, accumulatedUsage);
   }
 }
 

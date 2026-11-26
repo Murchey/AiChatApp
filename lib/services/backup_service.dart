@@ -1,18 +1,60 @@
 import 'chat_draft_service.dart';
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'auto_memory_service.dart';
 import 'backup_crypto.dart';
 import 'storage_migration_service.dart';
 
 /// 备份/恢复过程进度回调：[progress] 0~1，[stage] 为阶段说明。
 typedef BackupProgressCallback = void Function(double progress, String stage);
+
+Uint8List _encodeBackup(Map<String, Object?> request) {
+  final output = OutputMemoryStream();
+  final encoder = ZipEncoder()..startEncode(output);
+  final entries = request['entries'] as List<String>;
+  for (var i = 0; i < entries.length; i += 2) {
+    final input = InputFileStream(entries[i + 1]);
+    try {
+      encoder.add(ArchiveFile.stream(entries[i], input), autoClose: true);
+    } finally {
+      input.closeSync();
+    }
+  }
+  final prefs = request['prefs'] as Map<String, dynamic>;
+  final docsPath = request['docsPath'] as String;
+  final encodedPrefs = <String, dynamic>{};
+  for (final entry in prefs.entries) {
+    final sanitized = BackupService.sanitizePrefForExport(
+      entry.key,
+      BackupService._relativizePaths(entry.value, docsPath),
+    );
+    if (sanitized != null) {
+      encodedPrefs[entry.key] = BackupService._encodePrefValue(sanitized);
+    }
+  }
+  encoder.add(ArchiveFile.string(
+    BackupService._manifestName,
+    const JsonEncoder.withIndent('  ').convert(request['manifest']),
+  ));
+  encoder.add(ArchiveFile.string(
+    BackupService._prefsName,
+    const JsonEncoder.withIndent('  ').convert(encodedPrefs),
+  ));
+  encoder.endEncode();
+  final zipBytes = output.getBytes();
+  final password = request['password'] as String?;
+  return password == null || password.isEmpty
+      ? zipBytes
+      : BackupCrypto.encrypt(zipBytes, password);
+}
 
 /// 本地导出结果
 class LocalExport {
@@ -38,6 +80,7 @@ class LocalExport {
 /// 可选 AES-256-GCM 密码加密整包（密文布局见 [BackupCrypto]）。
 class BackupService {
   static const int formatVersion = 2;
+  static Future<void> _exportQueue = Future<void>.value();
   static const String _manifestName = 'manifest.json';
   static const String _prefsName = 'prefs.json';
   static const String _sqliteName = 'database.sqlite';
@@ -115,6 +158,23 @@ class BackupService {
     String? password,
     String fileNamePrefix = 'aichat_backup',
     BackupProgressCallback? onProgress,
+  }) {
+    // Bound peak memory when manual, local, and cloud exports overlap.
+    final operation = _exportQueue
+        .then((_) => AutoMemoryService.withBackupBarrier(() => _exportBackupZip(
+              password: password,
+              fileNamePrefix: fileNamePrefix,
+              onProgress: onProgress,
+            )));
+    _exportQueue =
+        operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return operation;
+  }
+
+  static Future<LocalExport> _exportBackupZip({
+    String? password,
+    required String fileNamePrefix,
+    BackupProgressCallback? onProgress,
   }) async {
     void report(double p, String stage) =>
         onProgress?.call(p.clamp(0, 1), stage);
@@ -131,12 +191,7 @@ class BackupService {
       if (_sqliteOwnedPrefsKeys.contains(key)) continue;
       final value = prefs.get(key);
       if (value == null) continue;
-      final sanitized = sanitizePrefForExport(
-        key,
-        _relativizePaths(value, docDir.path),
-      );
-      if (sanitized == null) continue; // 密钥整键不进备份
-      rawPrefs[key] = _encodePrefValue(sanitized);
+      rawPrefs[key] = value;
     }
 
     final ts = _timestamp();
@@ -144,8 +199,9 @@ class BackupService {
         ? '${fileNamePrefix}_${ts}_enc.zip'
         : '${fileNamePrefix}_$ts.zip';
 
-    final archive = Archive();
-    final filesMap = <String, dynamic>{};
+    // Only paths cross the isolate boundary. The worker reads and compresses
+    // one file at a time, so all uncompressed assets are never held together.
+    final archiveEntries = <String>[];
 
     // 2. 先统计用户文件数量，便于按比例回报进度
     report(0.12, '扫描用户文件');
@@ -162,7 +218,15 @@ class BackupService {
       }
       await for (final entity in root.list()) {
         if (entity is! File) continue;
-        if (_basename(entity.path).startsWith('.')) continue;
+        final name = _basename(entity.path);
+        // v2 already contains a consistent database.sqlite snapshot; never
+        // archive the live Drift database or its WAL sidecars as user files.
+        if (name == 'ai_chat_core.sqlite' ||
+            name == 'ai_chat_core.sqlite-wal' ||
+            name == 'ai_chat_core.sqlite-shm' ||
+            name.startsWith('.')) {
+          continue;
+        }
         pendingFiles.add(entity);
       }
     }
@@ -172,9 +236,9 @@ class BackupService {
     for (var i = 0; i < pendingFiles.length; i++) {
       final file = pendingFiles[i];
       final rel = _relativeTo(file.path, docDir.path) ?? _basename(file.path);
-      final bytes = await file.readAsBytes();
-      archive.addFile(ArchiveFile.bytes('files/$rel', bytes));
-      filesMap[rel] = bytes.length;
+      archiveEntries
+        ..add('files/$rel')
+        ..add(file.path);
       fileCount++;
       if (i % 5 == 0 || i == pendingFiles.length - 1) {
         report(
@@ -192,14 +256,6 @@ class BackupService {
       'export_time': DateTime.now().toIso8601String(),
       'file_count': fileCount,
     };
-    archive.addFile(ArchiveFile.string(
-      _manifestName,
-      const JsonEncoder.withIndent('  ').convert(manifest),
-    ));
-    archive.addFile(ArchiveFile.string(
-      _prefsName,
-      const JsonEncoder.withIndent('  ').convert(rawPrefs),
-    ));
 
     // SQLite is the efficient primary representation for large core data.
     // prefs.json remains for settings and for importing older format-v1 ZIPs.
@@ -210,22 +266,25 @@ class BackupService {
     try {
       await ChatDraftService.instance.flushAll();
       await StorageMigrationService.exportSqlite(sqliteTemp);
-      archive.addFile(ArchiveFile.bytes(
-        _sqliteName,
-        await sqliteTemp.readAsBytes(),
-      ));
+      archiveEntries
+        ..add(_sqliteName)
+        ..add(sqliteTemp.path);
+
+      report(0.88, '压缩打包');
+      // compute transfers the returned bytes using Isolate.exit on native platforms.
+      // ZIP and encryption share one worker, so the ZIP never returns to the UI.
+      final out = await compute(_encodeBackup, <String, Object?>{
+        'entries': archiveEntries,
+        'prefs': rawPrefs,
+        'docsPath': docDir.path,
+        'manifest': manifest,
+        'password': password,
+      });
+      report(1, '导出完成');
+      return LocalExport(bytes: out, fileName: fileName, size: out.length);
     } finally {
       if (await sqliteTemp.exists()) await sqliteTemp.delete();
     }
-
-    report(0.88, '压缩打包');
-    final zipBytes = Uint8List.fromList(ZipEncoder().encode(archive));
-    if (encrypted) {
-      report(0.93, '加密备份包');
-    }
-    final out = encrypted ? BackupCrypto.encrypt(zipBytes, password) : zipBytes;
-    report(1, '导出完成');
-    return LocalExport(bytes: out, fileName: fileName, size: out.length);
   }
 
   /// 生成备份并写入本地备份目录，返回目标文件。
@@ -246,21 +305,34 @@ class BackupService {
     onProgress?.call(0.94, '写入本地备份');
     final dir = await localBackupDir();
     final target = File('${dir.path}/${export.fileName}');
-    await target.writeAsBytes(export.bytes, flush: true);
+    final temp =
+        File('${target.path}.tmp_${DateTime.now().microsecondsSinceEpoch}');
+    try {
+      await temp.writeAsBytes(export.bytes, flush: true);
+      await temp.rename(target.path);
+    } finally {
+      if (await temp.exists()) await temp.delete();
+    }
     onProgress?.call(1, '本地备份完成');
     return target;
   }
 
   /// 删除指定前缀的本地备份（用于自动备份清理上一份），返回删除数量。
   /// 只匹配同前缀文件，不影响手动备份。
-  static Future<int> deleteLocalBackupsByPrefix(String prefix) async {
+  static Future<int> deleteLocalBackupsByPrefix(
+    String prefix, {
+    String? exceptPath,
+  }) async {
     final dir = await localBackupDir();
     if (!await dir.exists()) return 0;
     var deleted = 0;
     await for (final entity in dir.list()) {
       if (entity is! File) continue;
       final name = _basename(entity.path);
-      if (!name.startsWith(prefix)) continue;
+      if ((exceptPath != null && name == _basename(exceptPath)) ||
+          !name.startsWith(prefix)) {
+        continue;
+      }
       if (await deleteLocalBackup(entity)) deleted++;
     }
     return deleted;
@@ -349,7 +421,7 @@ class BackupService {
   }
 
   /// 用备份覆盖当前全部用户数据与设置。
-  /// 恢复前自动写入安全副本；失败时回滚设置。
+  /// 恢复前自动写入安全副本；写入失败时回滚原数据。
   static Future<void> restoreLocalBackup(
     File file, {
     String? password,
@@ -366,7 +438,7 @@ class BackupService {
     Uint8List zipBytes;
     if (BackupCrypto.isEncrypted(raw)) {
       report(0.12, '解密备份包');
-      zipBytes = BackupCrypto.decrypt(raw, password ?? '');
+      zipBytes = await BackupCrypto.decryptInIsolate(raw, password ?? '');
     } else {
       zipBytes = raw;
     }
@@ -374,6 +446,13 @@ class BackupService {
   }
 
   static Future<void> restoreZipBytes(
+    Uint8List zipBytes, {
+    BackupProgressCallback? onProgress,
+  }) => AutoMemoryService.withBackupBarrier(
+        () => _restoreZipBytes(zipBytes, onProgress: onProgress),
+      );
+
+  static Future<void> _restoreZipBytes(
     Uint8List zipBytes, {
     BackupProgressCallback? onProgress,
   }) async {
@@ -464,96 +543,174 @@ class BackupService {
       flush: true,
     );
 
+    final originalPrefs = <String, dynamic>{
+      for (final key in prefs.getKeys()) key: prefs.get(key),
+    };
+    final staging = await Directory(docDir.path).createTemp('.aichat_restore_');
+    final stagedFiles = Directory('${staging.path}/new');
+    final oldFiles = Directory('${staging.path}/old');
+    final movedOld = <String>[];
+    final installed = <String>[];
+    var rollbackFailed = false;
+    var prefsTouched = false;
     try {
-      // 1. 覆盖 SharedPreferences
-      report(0.45, '恢复应用设置');
-      await prefs.clear();
-      for (final entry in decodedPrefs.entries) {
-        await _setPrefValue(prefs, entry.key, entry.value, docDir.path);
-      }
-      // 回填本机密钥（备份里是空的）
-      for (final entry in localSecretTop.entries) {
-        await prefs.setString(entry.key, entry.value);
-      }
-      for (final key in prefs.getKeys()) {
-        final value = prefs.get(key);
-        if (value is! String) continue;
-        final trimmed = value.trim();
-        if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) continue;
-        try {
-          final decoded = jsonDecode(trimmed);
-          final byPath = <String, String>{};
-          for (final e in localSecretsByPath.entries) {
-            if (e.key.startsWith('$key|')) {
-              byPath[e.key.substring(key.length + 1)] = e.value;
-            }
-          }
-          final filled = fillSecretFields(
-            decoded,
-            '',
-            {...localSecretsByField, ...byPath},
-          );
-          final encoded = jsonEncode(filled);
-          if (encoded != value) {
-            await prefs.setString(key, encoded);
-          }
-        } catch (_) {}
-      }
-
-      // 2. 替换用户数据文件：先清掉旧目录，再写入备份内容
-      report(0.55, '清理旧用户文件');
-      final root = Directory(docDir.path);
-      if (await root.exists()) {
-        await for (final entity in root.list()) {
-          if (entity is! Directory) continue;
-          final name = _basename(entity.path);
-          if (!_isUserDir(name)) continue;
-          await entity.delete(recursive: true);
-        }
-      }
-      final total = fileEntries.isEmpty ? 1 : fileEntries.length;
-      var index = 0;
+      await stagedFiles.create();
+      await oldFiles.create();
       for (final entry in fileEntries.entries) {
-        final target = File('${docDir.path}/${entry.key}');
+        final parts = entry.key.split('/');
+        if (parts.any((part) =>
+                part.isEmpty ||
+                part == '.' ||
+                part == '..' ||
+                part.contains(':')) ||
+            (parts.length > 1 && !_isUserDir(parts.first))) {
+          throw StateError('备份包含无效的文件路径：${entry.key}');
+        }
+        final target = File('${stagedFiles.path}/${entry.key}');
         await target.parent.create(recursive: true);
         await target.writeAsBytes(entry.value, flush: true);
-        index++;
-        if (index % 5 == 0 || index == fileEntries.length) {
-          report(
-            0.58 + 0.4 * (index / total),
-            '恢复用户文件 $index/$total',
-          );
-        }
       }
+      final sqliteTemp = File('${staging.path}/database.sqlite');
       if (sqliteBytes != null) {
-        report(0.98, '恢复 SQLite 数据');
-        final sqliteTemp = File(
-          '${docDir.path}/.aichat_restore_${DateTime.now().microsecondsSinceEpoch}.sqlite',
-        );
-        try {
-          await sqliteTemp.writeAsBytes(sqliteBytes, flush: true);
-          await StorageMigrationService.importSqlite(sqliteTemp);
-        } catch (e) {
-          // A format v2 backup intentionally omits large core JSON from
-          // prefs.json, so a failed SQLite restore must abort and roll back.
-          throw StateError('SQLite 数据恢复失败：$e');
-        } finally {
-          if (await sqliteTemp.exists()) await sqliteTemp.delete();
-        }
+        await sqliteTemp.writeAsBytes(sqliteBytes, flush: true);
       }
-      report(1, '恢复完成');
-    } catch (e) {
-      // 回滚设置
-      try {
-        final rollback = jsonDecode(await safetyPrefs.readAsString())
-            as Map<String, dynamic>;
-        await prefs.clear();
-        for (final entry in rollback.entries) {
+
+      Future<void> applyRestore() async {
+        // 1. 覆盖 SharedPreferences
+        report(0.45, '恢复应用设置');
+        prefsTouched = true;
+        if (!await prefs.clear()) throw StateError('清理设置失败');
+        for (final entry in decodedPrefs.entries) {
           await _setPrefValue(prefs, entry.key, entry.value, docDir.path);
         }
-      } catch (_) {}
-      throw StateError('恢复写入失败，已尝试回滚设置：$e');
+        // 回填本机密钥（备份里是空的）
+        for (final entry in localSecretTop.entries) {
+          if (!await prefs.setString(entry.key, entry.value)) {
+            throw StateError('写入设置失败：${entry.key}');
+          }
+        }
+        for (final key in prefs.getKeys()) {
+          final value = prefs.get(key);
+          if (value is! String) continue;
+          final trimmed = value.trim();
+          if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) continue;
+          try {
+            final decoded = jsonDecode(trimmed);
+            final byPath = <String, String>{};
+            for (final e in localSecretsByPath.entries) {
+              if (e.key.startsWith('$key|')) {
+                byPath[e.key.substring(key.length + 1)] = e.value;
+              }
+            }
+            final filled = fillSecretFields(
+              decoded,
+              '',
+              {...localSecretsByField, ...byPath},
+            );
+            final encoded = jsonEncode(filled);
+            if (encoded != value && !await prefs.setString(key, encoded)) {
+              throw StateError('写入设置失败：$key');
+            }
+          } on FormatException catch (_) {}
+        }
+
+        // 2. Move original entries aside before installing staged entries.
+        report(0.55, '清理旧用户文件');
+        final root = Directory(docDir.path);
+        final names = <String>{};
+        await for (final entity in root.list(followLinks: false)) {
+          final name = _basename(entity.path);
+          if (entity is Directory && _isUserDir(name)) names.add(name);
+        }
+        await for (final entity in stagedFiles.list(followLinks: false)) {
+          names.add(_basename(entity.path));
+        }
+        for (final name in names) {
+          final path = '${docDir.path}/$name';
+          final type = await FileSystemEntity.type(path, followLinks: false);
+          if (type == FileSystemEntityType.link) {
+            throw StateError('恢复目标包含符号链接：$name');
+          }
+          if (type == FileSystemEntityType.directory) {
+            await Directory(path).rename('${oldFiles.path}/$name');
+            movedOld.add(name);
+          } else if (type == FileSystemEntityType.file) {
+            await File(path).rename('${oldFiles.path}/$name');
+            movedOld.add(name);
+          }
+          final stagedPath = '${stagedFiles.path}/$name';
+          final stagedType = await FileSystemEntity.type(stagedPath);
+          if (stagedType == FileSystemEntityType.directory) {
+            await Directory(stagedPath).rename(path);
+            installed.add(name);
+          } else if (stagedType == FileSystemEntityType.file) {
+            await File(stagedPath).rename(path);
+            installed.add(name);
+          }
+        }
+        report(0.98, '恢复用户文件');
+      }
+
+      if (sqliteBytes != null) {
+        report(0.98, '恢复 SQLite 数据');
+        await StorageMigrationService.importSqlite(sqliteTemp,
+            beforeCommit: applyRestore);
+      } else {
+        await applyRestore();
+      }
+    } catch (e) {
+      final failures = <String>[];
+      for (final name in installed.reversed) {
+        try {
+          final path = '${docDir.path}/$name';
+          final type = await FileSystemEntity.type(path, followLinks: false);
+          if (type == FileSystemEntityType.directory) {
+            await Directory(path).delete(recursive: true);
+          } else if (type != FileSystemEntityType.notFound) {
+            await File(path).delete();
+          }
+        } catch (error) {
+          failures.add('删除新文件 $name: $error');
+        }
+      }
+      for (final name in movedOld.reversed) {
+        try {
+          final path = '${oldFiles.path}/$name';
+          if (await FileSystemEntity.type(path) ==
+              FileSystemEntityType.directory) {
+            await Directory(path).rename('${docDir.path}/$name');
+          } else {
+            await File(path).rename('${docDir.path}/$name');
+          }
+        } catch (error) {
+          failures.add('恢复原文件 $name: $error');
+        }
+      }
+      try {
+        if (prefsTouched && !await prefs.clear()) {
+          throw StateError('清理设置失败');
+        }
+        for (final entry in (prefsTouched
+            ? originalPrefs.entries
+            : <MapEntry<String, dynamic>>[])) {
+          await _setPrefValue(prefs, entry.key, entry.value, docDir.path);
+        }
+      } catch (error) {
+        failures.add('恢复设置: $error');
+      }
+      rollbackFailed = failures.isNotEmpty;
+      throw StateError(
+          '恢复写入失败：$e${failures.isEmpty ? "" : "；回滚失败：${failures.join(", ")}；原文件保留在 ${oldFiles.path}"}');
+    } finally {
+      if (!rollbackFailed) {
+        try {
+          await staging.delete(recursive: true);
+        } catch (e) {
+          debugPrint('[BackupService] 清理恢复临时文件失败: $e');
+        }
+      }
     }
+    report(1, '恢复完成');
   }
 
   static Future<bool> hasSafetyCopy() async {
@@ -639,7 +796,8 @@ class BackupService {
     final n = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
     return '${n.year}${two(n.month)}${two(n.day)}_'
-        '${two(n.hour)}${two(n.minute)}${two(n.second)}';
+        '${two(n.hour)}${two(n.minute)}${two(n.second)}_'
+        '${n.microsecondsSinceEpoch}';
   }
 
   static String _basename(String path) {
@@ -840,35 +998,47 @@ class BackupService {
       final raw = _absolutizePaths(encoded['v'], docPath);
       switch (type) {
         case 's':
-          await prefs.setString(key, raw as String);
+          if (!await prefs.setString(key, raw as String)) {
+            throw StateError('写入设置失败：$key');
+          }
         case 'b':
-          await prefs.setBool(key, raw as bool);
+          if (!await prefs.setBool(key, raw as bool)) {
+            throw StateError('写入设置失败：$key');
+          }
         case 'i':
-          await prefs.setInt(key, (raw as num).toInt());
+          if (!await prefs.setInt(key, (raw as num).toInt())) {
+            throw StateError('写入设置失败：$key');
+          }
         case 'd':
-          await prefs.setDouble(key, (raw as num).toDouble());
+          if (!await prefs.setDouble(key, (raw as num).toDouble())) {
+            throw StateError('写入设置失败：$key');
+          }
         case 'l':
-          await prefs.setStringList(
+          if (!await prefs.setStringList(
             key,
             (raw as List).map((e) => e.toString()).toList(),
-          );
+          )) {
+            throw StateError('写入设置失败：$key');
+          }
       }
       return;
     }
     // 兼容未带类型的裸值
     if (encoded is String) {
-      await prefs.setString(key, encoded);
+      if (!await prefs.setString(key, encoded)) throw StateError('写入设置失败：$key');
     } else if (encoded is bool) {
-      await prefs.setBool(key, encoded);
+      if (!await prefs.setBool(key, encoded)) throw StateError('写入设置失败：$key');
     } else if (encoded is int) {
-      await prefs.setInt(key, encoded);
+      if (!await prefs.setInt(key, encoded)) throw StateError('写入设置失败：$key');
     } else if (encoded is double) {
-      await prefs.setDouble(key, encoded);
+      if (!await prefs.setDouble(key, encoded)) throw StateError('写入设置失败：$key');
     } else if (encoded is List) {
-      await prefs.setStringList(
+      if (!await prefs.setStringList(
         key,
         encoded.map((e) => e.toString()).toList(),
-      );
+      )) {
+        throw StateError('写入设置失败：$key');
+      }
     }
   }
 

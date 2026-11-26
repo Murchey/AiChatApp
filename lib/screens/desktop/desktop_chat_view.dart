@@ -865,6 +865,10 @@ class DesktopChatReply {
           contextCount: chatSettings.contextCount,
           progressionStyle: chatSettings.roleplayProgressionStyle.name,
           includeChoices: chatSettings.enableRoleplayChoices,
+          enableCompression: chatSettings.enableCompression,
+          compressModel: compressModel,
+          contextLength: model.contextLength,
+          compressThreshold: chatSettings.compressThreshold,
         );
       } else {
         await chatProvider.runProactiveReply(

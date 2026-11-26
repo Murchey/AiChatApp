@@ -205,7 +205,7 @@ class ChatMessageActions {
               const Text(
                 '给新角色命名，将从当前消息处分出新会话：\n'
                 '该条及之前的聊天记录会复制到新会话，之后的消息不会带入。\n'
-                '新角色将完整复制当前角色的角色包内容（人设、提示词、头像、记忆点等），仅名称为你新填的名字。',
+                '新角色会复制人设、提示词、头像和手动及故事线记忆。AI 托管记忆将从分支对话重新整理。',
                 style: TextStyle(fontSize: 13, height: 1.45),
               ),
               const SizedBox(height: 10),
@@ -276,7 +276,7 @@ class ChatMessageActions {
     if (source != null) {
       await memoryProvider.replacePoints(
         characterId,
-        memoryProvider.pointsFor(source.id).toList(),
+        memoryProvider.pointsFor(source.id).where((p) => !p.isAutoManaged).toList(),
       );
     }
     if (!context.mounted) return;

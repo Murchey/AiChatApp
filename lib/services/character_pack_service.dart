@@ -165,10 +165,10 @@ class CharacterPackService {
         if (m is! Map<String, dynamic>) continue;
         final content = (m['content'] as String? ?? '').trim();
         if (content.isEmpty) continue;
-        memoryPoints.add(MemoryPoint(
-          content: content,
-          createdAt: DateTime.tryParse(m['created_at'] as String? ?? ''),
-        ));
+        // 为导入的记忆生成本地 ID，同时保留来源和其他可兼容的字段。
+        final memory = Map<String, dynamic>.from(m)..remove('id');
+        memory['content'] = content;
+        memoryPoints.add(MemoryPoint.fromJson(memory));
       }
     }
 
@@ -491,15 +491,11 @@ class CharacterPackService {
         // 缺省模型（全局模型未配置时的兜底）
         if (c.defaultModelId.isNotEmpty) 'default_model_id': c.defaultModelId,
       };
-      // 持久化记忆点：写入 memory_points（[{content, created_at}]）
+      // 保留记忆来源等元数据，导入时为记忆生成新的本地 ID。
       final memory = memoryByCharacter?[c.id] ?? const <MemoryPoint>[];
       if (memory.isNotEmpty) {
         data['memory_points'] = [
-          for (final p in memory)
-            {
-              'content': p.content,
-              'created_at': p.createdAt.toIso8601String(),
-            },
+          for (final p in memory) p.toJson()..remove('id'),
         ];
       }
       archive.addFile(ArchiveFile.string(

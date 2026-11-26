@@ -1,5 +1,7 @@
+import 'dart:io';
 
 import 'api_provider.dart';
+import 'chat_token_estimator.dart';
 import '../services/llm_service.dart';
 import '../services/prompt_builder.dart';
 
@@ -77,27 +79,69 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
     roleplayMode: roleplayMode,
     includeRoleplayChoices: false,
   );
-  hooks.setSystemTokens(
-    conversationId,
-    hooks.estimateTokens(prompt) +
-        hooks.estimateTokens(outputInstruction) +
-        kChatReplyPerMessageJsonTokens * 2,
-  );
-  if (enableCompression && compressModel != null && contextLength > 0) {
-    await hooks.compress(
-      conversationId: conversationId,
-      compressModel: compressModel,
-      contextLength: contextLength,
-      threshold: compressThreshold,
-      systemPromptTokens: hooks.estimateTokens(prompt) +
-          hooks.estimateTokens(outputInstruction) +
-          kChatReplyPerMessageJsonTokens * 2,
-      contextCount: contextCount,
-    );
+  final fixedMessages = <Map<String, Object>>[
+    {'role': 'system', 'content': prompt},
+    if (outputInstruction.trim().isNotEmpty)
+      {'role': 'user', 'content': outputInstruction.trim()},
+  ];
+  final systemTokens = ChatTokenEstimator.estimatePayload(fixedMessages);
+  hooks.setSystemTokens(conversationId, systemTokens);
+  var recordedUsage = const ChatUsage();
+  void recordUsage(ChatUsage usage) {
+    recordedUsage = recordedUsage.add(usage);
   }
+
   try {
+    final hasImage = imagePath != null && imagePath.isNotEmpty;
+    // The vision service sends this image in the final output-instruction turn.
+    var imageTokens = 0;
+    if (hasImage) {
+      try {
+        await File(imagePath).length();
+      } catch (_) {
+        throw const LLMException('无法读取图片，请重新选择图片后重试');
+      }
+      // Visual token cost depends on image dimensions and provider processing.
+      // This fixed reserve avoids treating base64 bytes as visual tokens.
+      imageTokens = 4096;
+    }
+    final fixedBudget = ChatTokenEstimator.requestBudget(
+      model: model,
+      messages: fixedMessages,
+      requestedOutputTokens: ChatTokenEstimator.proactiveReplyOutputTokens,
+      contextLength: model.contextLength,
+      additionalInputTokens: imageTokens,
+    );
+    fixedBudget.ensureFits();
+    // Explicit history is a caller-owned projection and cannot be rebuilt from
+    // stored messages after compression.
+    if (historyMessages == null &&
+        enableCompression &&
+        compressModel != null &&
+        model.contextLength > 0) {
+      await hooks.compress(
+        conversationId: conversationId,
+        compressModel: compressModel,
+        contextLength: model.contextLength,
+        threshold: compressThreshold,
+        systemPromptTokens:
+            systemTokens + imageTokens + fixedBudget.reservedTokens,
+        contextCount: contextCount,
+      );
+    }
     final history =
         historyMessages ?? hooks.buildHistory(conversationId, contextCount);
+    ChatTokenEstimator.requestBudget(
+      model: model,
+      messages: [
+        fixedMessages.first,
+        ...history,
+        ...fixedMessages.skip(1),
+      ],
+      requestedOutputTokens: ChatTokenEstimator.proactiveReplyOutputTokens,
+      contextLength: model.contextLength,
+      additionalInputTokens: imageTokens,
+    ).ensureFits();
     if (imagePath != null && imagePath.isNotEmpty) {
       return await generateVisionReply(
         model: model,
@@ -106,6 +150,7 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
         imagePath: imagePath,
         outputInstruction: outputInstruction,
         roleplayMode: roleplayMode,
+        onUsage: recordUsage,
       );
     }
     return await generateMessages(
@@ -114,12 +159,13 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
       historyMessages: history,
       outputInstruction: outputInstruction,
       roleplayMode: roleplayMode,
+      onUsage: recordUsage,
     );
   } on LLMException catch (e) {
     hooks.setLastError(e.message);
-    return const ProactiveResult([], ChatUsage());
+    return ProactiveResult([], recordedUsage);
   } catch (e) {
     hooks.setLastError(LLMService.describeException(e));
-    return const ProactiveResult([], ChatUsage());
+    return ProactiveResult([], recordedUsage);
   }
 }

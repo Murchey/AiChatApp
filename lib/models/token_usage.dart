@@ -1,71 +1,99 @@
-/// 单个会话（私聊 / 群聊）累计消耗的 token 用量。
-///
-/// - [sentTokens]：累计发送给模型的 token（API usage.prompt_tokens 累加）
-/// - [receivedTokens]：累计从模型接收的 token（API usage.completion_tokens 累加，
-///   **已包含**思考过程 token，与账单口径一致）
-/// - [reasoningTokens]：累计思考过程 token（completion 的子集；
-///   优先来自 completion_tokens_details.reasoning_tokens，否则按思考正文估算）
-/// - [label] / [avatar]：会话展示名与头像快照。会话被删除后统计仍保留这些字段，
-///   统计页不再显示「该对话已删除」占位。
+/// Persisted category keeps deleted and UUID-named group chats classified.
+enum TokenUsageKind { privateChat, groupChat, moment }
+
+/// Accumulated input and output tokens. Cache counters are input subsets and
+/// reasoning tokens are an output subset, so neither is added to [totalTokens].
 class TokenUsage {
   final int sentTokens;
   final int receivedTokens;
   final int reasoningTokens;
+  final int cacheReadTokens;
+  final int cacheCreationTokens;
   final String label;
   final String avatar;
+  final TokenUsageKind? kind;
 
   const TokenUsage({
     this.sentTokens = 0,
     this.receivedTokens = 0,
     this.reasoningTokens = 0,
+    this.cacheReadTokens = 0,
+    this.cacheCreationTokens = 0,
     this.label = '',
     this.avatar = '',
+    this.kind,
   });
 
-  /// 输出中的正文部分（不含思考）
-  int get bodyTokens {
-    final body = receivedTokens - reasoningTokens;
-    return body < 0 ? 0 : body;
-  }
-
+  int get bodyTokens =>
+      (receivedTokens - reasoningTokens).clamp(0, receivedTokens);
   int get totalTokens => sentTokens + receivedTokens;
-
   bool get isEmpty =>
-      sentTokens == 0 && receivedTokens == 0 && reasoningTokens == 0;
-
+      sentTokens == 0 &&
+      receivedTokens == 0 &&
+      reasoningTokens == 0 &&
+      cacheReadTokens == 0 &&
+      cacheCreationTokens == 0;
   bool get hasLabel => label.trim().isNotEmpty;
 
   factory TokenUsage.fromJson(Map<String, dynamic> json) {
     return TokenUsage(
-      sentTokens: json['sent'] as int? ?? 0,
-      receivedTokens: json['received'] as int? ?? 0,
-      reasoningTokens: json['reasoning'] as int? ?? 0,
-      label: json['label'] as String? ?? '',
-      avatar: json['avatar'] as String? ?? '',
+      sentTokens: _count(json['sent']),
+      receivedTokens: _count(json['received']),
+      reasoningTokens: _count(json['reasoning']),
+      cacheReadTokens: _count(json['cacheRead']),
+      cacheCreationTokens: _count(json['cacheCreation']),
+      label: json['label'] is String ? json['label'] as String : '',
+      avatar: json['avatar'] is String ? json['avatar'] as String : '',
+      kind: _kind(json['kind']),
     );
+  }
+
+  static TokenUsageKind? _kind(Object? value) {
+    for (final kind in TokenUsageKind.values) {
+      if (kind.name == value) return kind;
+    }
+    return null;
+  }
+
+  static int _count(Object? value) {
+    final count = switch (value) {
+      int number => number,
+      num number when number.isFinite => number.toInt(),
+      String text => int.tryParse(text.trim()) ?? 0,
+      _ => 0,
+    };
+    return count < 0 ? 0 : count;
   }
 
   Map<String, dynamic> toJson() => {
         'sent': sentTokens,
         'received': receivedTokens,
         'reasoning': reasoningTokens,
+        'cacheRead': cacheReadTokens,
+        'cacheCreation': cacheCreationTokens,
         'label': label,
         'avatar': avatar,
+        if (kind != null) 'kind': kind!.name,
       };
 
   TokenUsage copyWith({
     int? sentTokens,
     int? receivedTokens,
     int? reasoningTokens,
+    int? cacheReadTokens,
+    int? cacheCreationTokens,
     String? label,
     String? avatar,
-  }) {
-    return TokenUsage(
-      sentTokens: sentTokens ?? this.sentTokens,
-      receivedTokens: receivedTokens ?? this.receivedTokens,
-      reasoningTokens: reasoningTokens ?? this.reasoningTokens,
-      label: label ?? this.label,
-      avatar: avatar ?? this.avatar,
-    );
-  }
+    TokenUsageKind? kind,
+  }) =>
+      TokenUsage(
+        sentTokens: sentTokens ?? this.sentTokens,
+        receivedTokens: receivedTokens ?? this.receivedTokens,
+        reasoningTokens: reasoningTokens ?? this.reasoningTokens,
+        cacheReadTokens: cacheReadTokens ?? this.cacheReadTokens,
+        cacheCreationTokens: cacheCreationTokens ?? this.cacheCreationTokens,
+        label: label ?? this.label,
+        avatar: avatar ?? this.avatar,
+        kind: kind ?? this.kind,
+      );
 }

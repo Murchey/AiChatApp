@@ -2,6 +2,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ai_chat/models/auto_memory_op.dart';
 
 void main() {
+  test('区分合法空数组和非法响应', () {
+    expect(AutoMemoryOp.parseResult('[]').isValidJsonArray, isTrue);
+    expect(AutoMemoryOp.parseResult('无变化').isValidJsonArray, isFalse);
+    expect(AutoMemoryOp.parseResult('[{"op":"unknown"}]').isValidJsonArray,
+        isFalse);
+    expect(AutoMemoryOp.parseResult('[{').isValidJsonArray, isFalse);
+  });
+
   test('解析裸 JSON 操作数组', () {
     final ops = AutoMemoryOp.parseList(
       '[{"op":"add","content":"新剧情"},{"op":"update","id":"p1","content":"改写"},{"op":"delete","id":"p2"}]',
@@ -42,7 +50,8 @@ void main() {
     expect(ops.first.content, '有效记录');
 
     // action 别名可用
-    final aliased = AutoMemoryOp.parseList('[{"action":"add","content":"别名操作"}]');
+    final aliased =
+        AutoMemoryOp.parseList('[{"action":"add","content":"别名操作"}]');
     expect(aliased.length, 1);
     expect(aliased.first.isAdd, isTrue);
   });
@@ -58,8 +67,7 @@ void main() {
     expect(ops.length, AutoMemoryOp.maxOps);
 
     final long = '长' * 300;
-    final clamped =
-        AutoMemoryOp.parseList('[{"op":"add","content":"$long"}]');
+    final clamped = AutoMemoryOp.parseList('[{"op":"add","content":"$long"}]');
     expect(clamped.first.content.length, AutoMemoryOp.maxContentLength);
   });
 }

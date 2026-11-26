@@ -8,6 +8,9 @@ class MemoryPoint {
   final String content;
   final DateTime createdAt;
 
+  /// 内容的单调版本号，用于 AI 托管操作的乐观并发控制。旧数据缺省为 0。
+  final int revision;
+
   /// AI 托管剧情记录的来源标记（sourceType 取值）。
   static const String sourceTypeAuto = 'auto';
 
@@ -26,6 +29,7 @@ class MemoryPoint {
     String? id,
     required this.content,
     DateTime? createdAt,
+    this.revision = 0,
     this.sourceType,
     this.sourceId,
     this.sourceVersion,
@@ -38,6 +42,7 @@ class MemoryPoint {
     return MemoryPoint(
       id: json['id'] as String? ?? const Uuid().v4(),
       content: json['content'] as String? ?? '',
+      revision: (json['revision'] as num?)?.toInt() ?? 0,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.now(),
       sourceType:
@@ -55,6 +60,7 @@ class MemoryPoint {
   Map<String, dynamic> toJson() => {
         'id': id,
         'content': content,
+        'revision': revision,
         'created_at': createdAt.toIso8601String(),
         if (sourceType != null) 'source_type': sourceType,
         if (sourceId != null) 'source_id': sourceId,
@@ -74,6 +80,7 @@ class MemoryPoint {
   MemoryPoint copyWith({
     String? content,
     DateTime? createdAt,
+    int? revision,
     Object? sourceType = _unset,
     Object? sourceId = _unset,
     Object? sourceVersion = _unset,
@@ -84,6 +91,7 @@ class MemoryPoint {
         id: id,
         content: content ?? this.content,
         createdAt: createdAt ?? this.createdAt,
+        revision: revision ?? this.revision,
         sourceType: identical(sourceType, _unset)
             ? this.sourceType
             : sourceType as String?,
