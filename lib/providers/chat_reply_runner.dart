@@ -51,6 +51,7 @@ Future<List<String>> processProactiveReplyMessages({
   required int? reasoningDurationMs,
   required int contextCount,
   required ChatUsage usage,
+  bool isGeneralAgent = false,
   StickerMatch? Function(String query)? findSticker,
 }) async {
   // Capture the request projection before generated replies enter history.
@@ -78,8 +79,10 @@ Future<List<String>> processProactiveReplyMessages({
   var stickerSent = false;
   var reasoningAttached = false;
   for (final content in messages) {
-    final query = StickerQueryProtocol.extractQuery(content);
-    final visibleContent = StickerQueryProtocol.visibleText(content);
+    final query =
+        isGeneralAgent ? null : StickerQueryProtocol.extractQuery(content);
+    final visibleContent =
+        isGeneralAgent ? content : StickerQueryProtocol.visibleText(content);
     if (query != null) {
       final sticker = !stickerSent ? findSticker?.call(query) : null;
       if (sticker != null) {
@@ -106,8 +109,10 @@ Future<List<String>> processProactiveReplyMessages({
     if (reasoningContent.trim().isNotEmpty) reasoningAttached = true;
     displayedMessages.add(visibleContent);
     HapticFeedback.lightImpact();
-    final delay = random.nextDouble() * 1000 + visibleContent.length * 50;
-    await Future.delayed(Duration(milliseconds: delay.round() + 600));
+    if (!isGeneralAgent) {
+      final delay = random.nextDouble() * 1000 + visibleContent.length * 50;
+      await Future.delayed(Duration(milliseconds: delay.round() + 600));
+    }
   }
   final prompt = usage.promptTokens;
   hooks.setContextTokens(

@@ -247,8 +247,7 @@ class ChatMessageActions {
         ? null
         : characterProvider.getCharacterById(sourceConversation.characterId);
 
-    final characterId =
-        'branch_${DateTime.now().millisecondsSinceEpoch}';
+    final characterId = 'branch_${DateTime.now().millisecondsSinceEpoch}';
     final newCharacter = source == null
         ? Character(id: characterId, name: newName)
         : Character(
@@ -268,6 +267,7 @@ class ChatMessageActions {
             activeEnd: source.activeEnd,
             modelId: source.modelId,
             defaultModelId: source.defaultModelId,
+            isGeneralAgent: source.isGeneralAgent,
             tags: List.of(source.tags),
             moments: List.of(source.moments),
           );
@@ -276,7 +276,10 @@ class ChatMessageActions {
     if (source != null) {
       await memoryProvider.replacePoints(
         characterId,
-        memoryProvider.pointsFor(source.id).where((p) => !p.isAutoManaged).toList(),
+        memoryProvider
+            .pointsFor(source.id)
+            .where((p) => !p.isAutoManaged)
+            .toList(),
       );
     }
     if (!context.mounted) return;

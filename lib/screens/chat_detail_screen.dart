@@ -663,16 +663,21 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           _buildInfoSection(character),
           if (widget.showChatManage && conversation != null) ...[
             const SizedBox(height: 24),
-            buildAutoMomentSection(context, _characterId,
-                onChanged: () => setState(() {})),
-            const SizedBox(height: 16),
-            buildProactiveGreetingSection(context, _characterId),
-            const SizedBox(height: 24),
+            if (!(character?.isGeneralAgent ?? false)) ...[
+              buildAutoMomentSection(context, _characterId,
+                  onChanged: () => setState(() {})),
+              const SizedBox(height: 16),
+              buildProactiveGreetingSection(context, _characterId),
+              const SizedBox(height: 24),
+            ],
             _buildManageSection(),
           ],
           const SizedBox(height: 24),
           ChatDetailPromptPanel(
-              onOpenPrompt: _togglePrompt, onOpenMemory: _openMemoryManage),
+            onOpenPrompt: _togglePrompt,
+            onOpenMemory: _openMemoryManage,
+            isGeneralAgent: character?.isGeneralAgent ?? false,
+          ),
           const SizedBox(height: 24),
           _buildChatSettingsEntry(),
         ],
@@ -1070,6 +1075,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             context,
             CupertinoPageRoute(
               builder: (_) => ChatSettingsScreen(
+                characterId: _characterId,
                 conversationId: widget.conversationId.isEmpty
                     ? null
                     : widget.conversationId,

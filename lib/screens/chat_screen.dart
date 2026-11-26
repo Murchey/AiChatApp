@@ -1291,21 +1291,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               onSendWithFeedback: _handleSend,
                               onPickImage: _handlePickImage,
                               onStickerSelected: _handleStickerSelection,
-                              onRoleplayNarration: context
-                                      .read<ChatSettingsProvider>()
-                                      .isRoleplayMode
-                                  ? _addRoleplayNarration
-                                  : null,
-                              isRoleplayMode: context
-                                  .watch<ChatSettingsProvider>()
-                                  .isRoleplayMode,
-                              roleplayChoices: context
-                                      .watch<ChatSettingsProvider>()
-                                      .enableRoleplayChoices
-                                  ? chatProvider.roleplayChoicesFor(
-                                      widget.conversationId,
-                                    )
-                                  : const [],
+                              onRoleplayNarration:
+                                  !(character?.isGeneralAgent ?? false) &&
+                                          context
+                                              .read<ChatSettingsProvider>()
+                                              .isRoleplayMode
+                                      ? _addRoleplayNarration
+                                      : null,
+                              isRoleplayMode:
+                                  !(character?.isGeneralAgent ?? false) &&
+                                      context
+                                          .watch<ChatSettingsProvider>()
+                                          .isRoleplayMode,
+                              roleplayChoices:
+                                  !(character?.isGeneralAgent ?? false) &&
+                                          context
+                                              .watch<ChatSettingsProvider>()
+                                              .enableRoleplayChoices
+                                      ? chatProvider.roleplayChoicesFor(
+                                          widget.conversationId,
+                                        )
+                                      : const [],
                               onRoleplayChoice: (text) =>
                                   _inputKey.currentState?.setText(text),
                               onPickFile: _handlePickFile,
@@ -1313,7 +1319,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               onExport: _exportChat,
                               onImport: _importChat,
                               onFeatureDetect: _runFeatureDetect,
-                              onPlotSuggestion: _plotSuggestion,
+                              onPlotSuggestion:
+                                  (character?.isGeneralAgent ?? false)
+                                      ? null
+                                      : _plotSuggestion,
                               showStickerButton: context
                                   .watch<ChatSettingsProvider>()
                                   .showStickerButton,

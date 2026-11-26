@@ -12,7 +12,8 @@ GroupMemberReply member(ApiModel model,
         {String id = 'a',
         String prompt = '',
         String memoryPool = '',
-        List<String> memory = const []}) =>
+        List<String> memory = const [],
+        bool isGeneralAgent = false}) =>
     GroupMemberReply(
       characterId: id,
       name: '同名',
@@ -22,6 +23,7 @@ GroupMemberReply member(ApiModel model,
       activeEnd: '',
       model: model,
       memoryPoints: memory,
+      isGeneralAgent: isGeneralAgent,
       memoryPool: memoryPool,
     );
 
@@ -184,6 +186,58 @@ void main() {
     expect(sent.first['content'], contains('角色 ID 为 a'));
     expect(sent.last['content'], contains('只输出 同名 自己的新内容'));
     expect(jsonEncode(history), isNot(contains('/local/')));
+  });
+
+  test('general agent uses custom system prompt and plain response', () async {
+    await provider.sendMessage(groupId: groupId, content: '普通问题');
+    response = (_) async => '这是普通正文';
+    await run([
+      member(model, prompt: '你是一个通用助手。', isGeneralAgent: true),
+    ]);
+
+    final sent = (requests.single['messages'] as List).cast<Map>();
+    expect(sent.first['role'], 'system');
+    expect(sent.first['content'], '你是一个通用助手。');
+    expect(jsonEncode(sent), contains('普通问题'));
+    expect(jsonEncode(sent), isNot(contains('群聊回复要求')));
+    expect(jsonEncode(sent), isNot(contains('格式约定')));
+    expect(sent.length, 2);
+    expect(provider.getMessages(groupId).last.content, '这是普通正文');
+  });
+
+  test(
+      'general agent keeps identity history and empty system in roleplay groups',
+      () async {
+    await provider.setQuoteProbability(groupId, 1);
+    await provider.importMessages(groupId: groupId, messages: [
+      message(groupId, 'own', 'own text', senderId: 'a'),
+      message(groupId, 'other', 'other text', senderId: 'b'),
+      message(groupId, 'question', 'question'),
+    ]);
+    const raw = '["普通正文"]\n[[查询表情包:测试]]';
+    response = (_) async => raw;
+    await provider.runGroupReply(
+      groupId: groupId,
+      members: [
+        member(model,
+            isGeneralAgent: true, memory: ['长期记忆'], memoryPool: '角色记忆池'),
+      ],
+      userNickname: '用户',
+      roleplayMode: true,
+      mentionedCharacterIds: ['a'],
+    );
+
+    final sent = (requests.single['messages'] as List).cast<Map>();
+    expect(sent, hasLength(3));
+    expect(sent.map((m) => m['role']), ['assistant', 'user', 'user']);
+    expect(sent[0]['content'], contains('ID=a'));
+    expect(sent[1]['content'], contains('ID=b'));
+    expect(sent.last['content'], 'question');
+    expect(jsonEncode(sent), isNot(contains('长期记忆')));
+    expect(jsonEncode(sent), isNot(contains('角色记忆池')));
+    expect(provider.getMessages(groupId).last.content, raw);
+    expect(provider.getMessages(groupId).last.quoteContent, isEmpty);
+    expect(provider.lastError, isNull);
   });
 
   test('message access prevents untracked source edits', () async {

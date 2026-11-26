@@ -13,6 +13,8 @@ import '../../providers/chat_provider.dart';
 import '../../providers/group_chat_provider.dart';
 import '../../models/group_chat.dart';
 import '../../screens/character_detail_screen.dart';
+import '../../screens/create_general_agent_screen.dart';
+import '../../screens/create_group_screen.dart';
 import '../../screens/discover_screen.dart';
 import '../../providers/settings_provider.dart';
 import '../../screens/lan_sync_screen.dart';
@@ -217,11 +219,59 @@ class _DesktopShellState extends State<DesktopShell> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            child: CupertinoSearchTextField(
-              controller: _searchController,
-              focusNode: _searchFocus,
-              placeholder: _rail == 0 ? '搜索会话（Ctrl+F）' : '搜索联系人（Ctrl+F）',
-              onChanged: (v) => setState(() => _search = v.trim()),
+            child: Row(
+              children: [
+                Expanded(
+                  child: CupertinoSearchTextField(
+                    controller: _searchController,
+                    focusNode: _searchFocus,
+                    placeholder: _rail == 0 ? '搜索会话（Ctrl+F）' : '搜索联系人（Ctrl+F）',
+                    onChanged: (v) => setState(() => _search = v.trim()),
+                  ),
+                ),
+                if (_rail == 0) ...[
+                  const SizedBox(width: 8),
+                  Builder(
+                    builder: (buttonContext) => Tooltip(
+                      message: '创建会话',
+                      child: CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(32, 32),
+                        onPressed: () {
+                          final box = buttonContext.findRenderObject() as RenderBox;
+                          showDesktopContextMenu(
+                            context,
+                            globalPos: box.localToGlobal(Offset(0, box.size.height)),
+                            items: [
+                              DesktopMenuItem(
+                                label: '创建群聊',
+                                icon: CupertinoIcons.person_2,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  CupertinoPageRoute(
+                                    builder: (_) => const CreateGroupScreen(),
+                                  ),
+                                ),
+                              ),
+                              DesktopMenuItem(
+                                label: '创建一般智能体',
+                                icon: CupertinoIcons.chat_bubble,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  CupertinoPageRoute(
+                                    builder: (_) => const CreateGeneralAgentScreen(),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                        child: Icon(CupertinoIcons.add, size: 20, color: p.textPrimary),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           Expanded(

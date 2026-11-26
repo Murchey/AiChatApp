@@ -232,6 +232,7 @@ class CharacterPackService {
       activeEnd: str('active_end'),
       modelId: str('model_id'),
       defaultModelId: str('default_model_id'),
+      isGeneralAgent: data['is_general_agent'] as bool? ?? false,
       tags:
           (data['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
               [],
@@ -490,6 +491,7 @@ class CharacterPackService {
         if (c.modelId.isNotEmpty) 'model_id': c.modelId,
         // 缺省模型（全局模型未配置时的兜底）
         if (c.defaultModelId.isNotEmpty) 'default_model_id': c.defaultModelId,
+        'is_general_agent': c.isGeneralAgent,
       };
       // 保留记忆来源等元数据，导入时为记忆生成新的本地 ID。
       final memory = memoryByCharacter?[c.id] ?? const <MemoryPoint>[];

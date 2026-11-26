@@ -129,4 +129,24 @@ void main() {
       isTrue,
     );
   });
+
+  testWidgets('加号菜单提供创建群聊和一般智能体', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider();
+    await settings.init();
+    await settings.setAutoCheckUpdate(false);
+    final chat = ChatProvider();
+    await _pumpHome(tester, settings, chat);
+
+    await tester.tap(find.byIcon(CupertinoIcons.add));
+    await tester.pump();
+    expect(find.text('创建群聊'), findsOneWidget);
+    expect(find.text('创建一般智能体'), findsOneWidget);
+
+    await tester.tap(find.text('创建一般智能体'));
+    await tester.pumpAndSettle();
+    expect(find.text('创建一般智能体'), findsOneWidget);
+    expect(find.byKey(const Key('general-agent-name')), findsOneWidget);
+    expect(find.byKey(const Key('general-agent-prompt')), findsOneWidget);
+  });
 }

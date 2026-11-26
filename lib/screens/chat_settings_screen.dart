@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/api_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/character_provider.dart';
 import '../providers/chat_settings_provider.dart';
 import '../services/llm_service.dart';
 import '../widgets/settings/settings_ui.dart';
@@ -34,10 +35,11 @@ String _formatContextLength(int length) {
 
 /// 聊天设置页面 - 上下文条数、自动压缩、使用的模型
 class ChatSettingsScreen extends StatelessWidget {
-  const ChatSettingsScreen({super.key, this.conversationId});
+  const ChatSettingsScreen({super.key, this.conversationId, this.characterId});
 
   /// 当前会话 id：用于在页面顶部展示该会话的上下文使用情况
   final String? conversationId;
+  final String? characterId;
 
   /// 当前会话上下文使用情况：已用 token / 模型上下文长度 / 进度与压缩阈值标记
   Widget _buildContextUsageSection(
@@ -324,6 +326,15 @@ class ChatSettingsScreen extends StatelessWidget {
     final settings = context.watch<ChatSettingsProvider>();
     final api = context.watch<ApiProvider>();
     final chat = context.watch<ChatProvider>();
+    final conversation =
+        chat.conversations.where((c) => c.id == conversationId).firstOrNull;
+    final id = characterId ?? conversation?.characterId;
+    final isGeneralAgent = id != null &&
+        (context
+                .watch<CharacterProvider>()
+                .getCharacterById(id)
+                ?.isGeneralAgent ??
+            false);
     final segmentedTextColor = context.accentColor.computeLuminance() > 0.5
         ? CupertinoColors.black
         : CupertinoColors.white;
@@ -445,150 +456,154 @@ class ChatSettingsScreen extends StatelessWidget {
             ],
           ),
           // 朋友圈记忆（角色记忆池的一部分）
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('朋友圈记忆'),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '记忆池携带朋友圈条数',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: context.textPrimaryColor,
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: context.accentColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            settings.momentMemoryCount == 0
-                                ? '不携带'
-                                : '${settings.momentMemoryCount} 条',
+          if (!isGeneralAgent)
+            CupertinoListSection.insetGrouped(
+              backgroundColor: context.scaffoldColor,
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              header: const Text('朋友圈记忆'),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '记忆池携带朋友圈条数',
                             style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: context.accentColor,
+                              fontSize: 16,
+                              color: context.textPrimaryColor,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      width: double.infinity,
-                      child: CupertinoSlider(
-                        value:
-                            settings.momentMemoryCount.clamp(0, 10).toDouble(),
-                        min: 0,
-                        max: 10,
-                        divisions: 10,
-                        activeColor: context.accentColor,
-                        onChanged: (value) =>
-                            settings.setMomentMemoryCount(value.round()),
-                      ),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '0（不携带）',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: context.textSecondaryColor,
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  context.accentColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              settings.momentMemoryCount == 0
+                                  ? '不携带'
+                                  : '${settings.momentMemoryCount} 条',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: context.accentColor,
+                              ),
+                            ),
                           ),
-                        ),
-                        Text(
-                          '10',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: context.textSecondaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '角色在私聊 / 群聊 / 朋友圈互动时，记忆池将携带最近 N 条该角色发布的朋友圈贴文（含全部点赞与评论），让角色记得发过什么',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        width: double.infinity,
+                        child: CupertinoSlider(
+                          value: settings.momentMemoryCount
+                              .clamp(0, 10)
+                              .toDouble(),
+                          min: 0,
+                          max: 10,
+                          divisions: 10,
+                          activeColor: context.accentColor,
+                          onChanged: (value) =>
+                              settings.setMomentMemoryCount(value.round()),
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '0（不携带）',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.textSecondaryColor,
+                            ),
+                          ),
+                          Text(
+                            '10',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.textSecondaryColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '角色在私聊 / 群聊 / 朋友圈互动时，记忆池将携带最近 N 条该角色发布的朋友圈贴文（含全部点赞与评论），让角色记得发过什么',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
+              ],
             ),
-            header: const Text('回复格式'),
-            children: [
-              CupertinoListTile(
-                title: const Text('语C推进风格'),
-                trailing:
-                    CupertinoSlidingSegmentedControl<RoleplayProgressionStyle>(
-                  groupValue: settings.roleplayProgressionStyle,
-                  backgroundColor: context.fieldBgColor,
-                  thumbColor: context.accentColor,
-                  padding: const EdgeInsets.all(3),
-                  children: {
-                    for (final style in RoleplayProgressionStyle.values)
-                      style: Text(style.displayName,
-                          style: TextStyle(color: segmentedTextColor)),
-                  },
-                  onValueChanged: (style) {
-                    if (settings.isRoleplayMode && style != null) {
-                      settings.setRoleplayProgressionStyle(style);
-                    }
-                  },
-                ),
+          if (!isGeneralAgent)
+            CupertinoListSection.insetGrouped(
+              backgroundColor: context.scaffoldColor,
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(10),
               ),
-              CupertinoListTile(
-                title: const Text('语C/短信模式'),
-                trailing: CupertinoSlidingSegmentedControl<ChatMessageMode>(
-                  // 不使用 Cupertino 默认蓝灰配色，跟随应用自定义浅色/暗色主题。
-                  backgroundColor: context.fieldBgColor,
-                  thumbColor: context.accentColor,
-                  padding: const EdgeInsets.all(3),
-                  groupValue: settings.messageMode,
-                  children: {
-                    ChatMessageMode.sms: Text(
-                      '短信',
-                      style: TextStyle(color: segmentedTextColor),
-                    ),
-                    ChatMessageMode.roleplay: Text(
-                      '语C',
-                      style: TextStyle(color: segmentedTextColor),
-                    ),
-                  },
-                  onValueChanged: (mode) {
-                    if (mode != null) settings.setMessageMode(mode);
-                  },
+              header: const Text('回复格式'),
+              children: [
+                CupertinoListTile(
+                  title: const Text('语C推进风格'),
+                  trailing: CupertinoSlidingSegmentedControl<
+                      RoleplayProgressionStyle>(
+                    groupValue: settings.roleplayProgressionStyle,
+                    backgroundColor: context.fieldBgColor,
+                    thumbColor: context.accentColor,
+                    padding: const EdgeInsets.all(3),
+                    children: {
+                      for (final style in RoleplayProgressionStyle.values)
+                        style: Text(style.displayName,
+                            style: TextStyle(color: segmentedTextColor)),
+                    },
+                    onValueChanged: (style) {
+                      if (settings.isRoleplayMode && style != null) {
+                        settings.setRoleplayProgressionStyle(style);
+                      }
+                    },
+                  ),
                 ),
-              ),
-            ],
-          ),
+                CupertinoListTile(
+                  title: const Text('语C/短信模式'),
+                  trailing: CupertinoSlidingSegmentedControl<ChatMessageMode>(
+                    // 不使用 Cupertino 默认蓝灰配色，跟随应用自定义浅色/暗色主题。
+                    backgroundColor: context.fieldBgColor,
+                    thumbColor: context.accentColor,
+                    padding: const EdgeInsets.all(3),
+                    groupValue: settings.messageMode,
+                    children: {
+                      ChatMessageMode.sms: Text(
+                        '短信',
+                        style: TextStyle(color: segmentedTextColor),
+                      ),
+                      ChatMessageMode.roleplay: Text(
+                        '语C',
+                        style: TextStyle(color: segmentedTextColor),
+                      ),
+                    },
+                    onValueChanged: (mode) {
+                      if (mode != null) settings.setMessageMode(mode);
+                    },
+                  ),
+                ),
+              ],
+            ),
           // 输入框显示选项
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
@@ -598,24 +613,26 @@ class ChatSettingsScreen extends StatelessWidget {
             ),
             header: const Text('输入框'),
             children: [
-              CupertinoListTile(
-                title: const Text('生成语C候选行动'),
-                trailing: CupertinoSwitch(
-                  value: settings.enableRoleplayChoices,
-                  onChanged: settings.isRoleplayMode
-                      ? settings.setEnableRoleplayChoices
-                      : null,
+              if (!isGeneralAgent)
+                CupertinoListTile(
+                  title: const Text('生成语C候选行动'),
+                  trailing: CupertinoSwitch(
+                    value: settings.enableRoleplayChoices,
+                    onChanged: settings.isRoleplayMode
+                        ? settings.setEnableRoleplayChoices
+                        : null,
+                  ),
                 ),
-              ),
-              CupertinoListTile(
-                title: const Text('语C流式回复'),
-                trailing: CupertinoSwitch(
-                  value: settings.enableRoleplayStream,
-                  onChanged: settings.isRoleplayMode
-                      ? settings.setEnableRoleplayStream
-                      : null,
+              if (!isGeneralAgent)
+                CupertinoListTile(
+                  title: const Text('语C流式回复'),
+                  trailing: CupertinoSwitch(
+                    value: settings.enableRoleplayStream,
+                    onChanged: settings.isRoleplayMode
+                        ? settings.setEnableRoleplayStream
+                        : null,
+                  ),
                 ),
-              ),
               CupertinoListTile(
                 title: const Text('显示表情按钮'),
                 trailing: CupertinoSwitch(
@@ -714,34 +731,35 @@ class ChatSettingsScreen extends StatelessWidget {
             ],
           ),
           // 记忆点自动托管
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('记忆点自动托管'),
-            children: [
-              CupertinoListTile(
-                title: const Text('自动记录剧情记忆'),
-                trailing: CupertinoSwitch(
-                  value: settings.autoMemoryEnabled,
-                  onChanged: settings.setAutoMemoryEnabled,
-                ),
+          if (!isGeneralAgent)
+            CupertinoListSection.insetGrouped(
+              backgroundColor: context.scaffoldColor,
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(10),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: Text(
-                  '开启后，对话每累计 10 条消息，AI 会自动整理剧情推进并写入记忆点的「AI 托管」分区；托管记忆会随提示词回传给模型，可在「记忆点管理」中查看、搜索或批量删除。',
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.4,
-                    color: context.textSecondaryColor,
+              header: const Text('记忆点自动托管'),
+              children: [
+                CupertinoListTile(
+                  title: const Text('自动记录剧情记忆'),
+                  trailing: CupertinoSwitch(
+                    value: settings.autoMemoryEnabled,
+                    onChanged: settings.setAutoMemoryEnabled,
                   ),
                 ),
-              ),
-            ],
-          ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Text(
+                    '开启后，对话每累计 10 条消息，AI 会自动整理剧情推进并写入记忆点的「AI 托管」分区；托管记忆会随提示词回传给模型，可在「记忆点管理」中查看、搜索或批量删除。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

@@ -516,6 +516,8 @@ _CharacterDecoded _decodeCharacterStore(_CharacterRawStore raw) {
           modelId: custom['model_id'] as String? ?? c.modelId,
           defaultModelId:
               custom['default_model_id'] as String? ?? c.defaultModelId,
+          isGeneralAgent:
+              custom['is_general_agent'] as bool? ?? c.isGeneralAgent,
           tags: (custom['tags'] as List<dynamic>?)?.cast<String>() ?? c.tags,
         );
       }

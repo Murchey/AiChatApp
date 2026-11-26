@@ -49,6 +49,7 @@ class GroupMemberReply {
   final String activeEnd;
   final ApiModel model;
   final List<String> memoryPoints;
+  final bool isGeneralAgent;
 
   /// 角色头像（base64），用于系统通知大图标
   final String avatarBase64;
@@ -65,6 +66,7 @@ class GroupMemberReply {
     required this.activeEnd,
     required this.model,
     required this.memoryPoints,
+    this.isGeneralAgent = false,
     this.avatarBase64 = '',
     this.memoryPool = '',
   });
@@ -682,10 +684,11 @@ class GroupChatProvider extends ChangeNotifier {
       try {
         final history =
             _buildGroupHistory(groupId, contextCount, member.characterId);
-        final systemPrompt =
-            '${_buildGroupSystemPrompt(groupId, member, userNickname, roleplayMode)}\n'
-            '你在此群的身份是 ${member.name}，角色 ID 为 ${member.characterId}。'
-            '历史消息中的角色 ID 标记用于区分同名成员。';
+        final systemPrompt = member.isGeneralAgent
+            ? member.systemPrompt
+            : '${_buildGroupSystemPrompt(groupId, member, userNickname, roleplayMode)}\n'
+                '你在此群的身份是 ${member.name}，角色 ID 为 ${member.characterId}。'
+                '历史消息中的角色 ID 标记用于区分同名成员。';
 
         final isMentioned = mentionedSet.contains(member.characterId);
         // 沉默成员已在外层过滤，speakers 均为本轮实际发言者
@@ -695,25 +698,28 @@ class GroupChatProvider extends ChangeNotifier {
         // 避免话题已过仍引用旧消息；生成时提示围绕该消息回复，
         // 落库时带上引用块（quoteContent/quoteSender），与用户引用同格式展示。
         final quoteRate = getGroupById(groupId)?.quoteProbability ?? 0.2;
-        final quote = random.nextDouble() < quoteRate
+        final quote = !member.isGeneralAgent && random.nextDouble() < quoteRate
             ? _pickQuoteTarget(groupId, member.characterId)
             : null;
 
-        var outputInstruction = PromptBuilder.buildOutputInstruction(
-          characterName: member.name,
-          replyToUser: true,
-          currentTime: roleplayMode ? null : DateTime.now(),
-          roleplayMode: roleplayMode,
-        );
-        // 群聊中只允许输出自己的新内容：防止模型复述/转述其他成员的发言
-        outputInstruction =
-            '只输出 ${member.name} 自己的新内容，不要复述或转述群内其他人刚说过的话。$outputInstruction';
-        if (isMentioned) {
-          outputInstruction = '用户刚在群里 @了你，请立刻回应 ta。$outputInstruction';
-        }
-        if (quote != null) {
-          outputInstruction = '你想回应群友「${quote.name}」刚说的话：'
-              '"${quote.content}"，请围绕这条消息回复。$outputInstruction';
+        var outputInstruction = '';
+        if (!member.isGeneralAgent) {
+          outputInstruction = PromptBuilder.buildOutputInstruction(
+            characterName: member.name,
+            replyToUser: true,
+            currentTime: roleplayMode ? null : DateTime.now(),
+            roleplayMode: roleplayMode,
+          );
+          // 群聊中只允许输出自己的新内容：防止模型复述/转述其他成员的发言
+          outputInstruction =
+              '只输出 ${member.name} 自己的新内容，不要复述或转述群内其他人刚说过的话。$outputInstruction';
+          if (isMentioned) {
+            outputInstruction = '用户刚在群里 @了你，请立刻回应 ta。$outputInstruction';
+          }
+          if (quote != null) {
+            outputInstruction = '你想回应群友「${quote.name}」刚说的话：'
+                '"${quote.content}"，请围绕这条消息回复。$outputInstruction';
+          }
         }
 
         _checkRequestBudget(member, systemPrompt, history, outputInstruction);
@@ -724,7 +730,8 @@ class GroupChatProvider extends ChangeNotifier {
           systemPrompt: systemPrompt,
           historyMessages: history,
           outputInstruction: outputInstruction,
-          roleplayMode: roleplayMode,
+          roleplayMode: !member.isGeneralAgent && roleplayMode,
+          isGeneralAgent: member.isGeneralAgent,
           onUsage: (usage) => TokenUsageProvider.instance.addUsage(
             groupId,
             usage,
@@ -740,8 +747,12 @@ class GroupChatProvider extends ChangeNotifier {
         for (var i = 0; i < result.messages.length; i++) {
           if (generation != _replyGeneration) break;
           final raw = result.messages[i];
-          final query = StickerQueryProtocol.extractQuery(raw);
-          final content = StickerQueryProtocol.visibleText(raw);
+          final query = member.isGeneralAgent
+              ? null
+              : StickerQueryProtocol.extractQuery(raw);
+          final content = member.isGeneralAgent
+              ? raw
+              : StickerQueryProtocol.visibleText(raw);
           if (query != null) {
             // 每个成员每轮最多发送一张；只有本地真实存在的图片才会发送。
             final sticker = !stickerSent ? findSticker?.call(query) : null;
@@ -777,8 +788,10 @@ class GroupChatProvider extends ChangeNotifier {
           );
           visibleMessageIndex++;
           // 模拟打字耗时 + 消息间隔，贴近群聊逐条弹出观感
-          final delay = random.nextDouble() * 800 + content.length * 40 + 500;
-          await Future.delayed(Duration(milliseconds: delay.round()));
+          if (!member.isGeneralAgent) {
+            final delay = random.nextDouble() * 800 + content.length * 40 + 500;
+            await Future.delayed(Duration(milliseconds: delay.round()));
+          }
         }
       } on LLMException catch (e) {
         if (generation != _replyGeneration) break;

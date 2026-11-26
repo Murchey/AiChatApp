@@ -61,6 +61,7 @@ class AutoMomentService {
 
       // 第一阶段：串行生成 + 发布（每个角色一次 LLM 请求）
       for (final character in characterProvider.manageableCharacters) {
+        if (character.isGeneralAgent) continue;
         final config = autoMomentProvider.configFor(character.id);
         if (!config.enabled) continue;
 
@@ -82,7 +83,7 @@ class AutoMomentService {
 
         // 到期：重新读取最新角色快照，避免用旧数据覆盖
         final latest = characterProvider.getCharacterById(character.id);
-        if (latest == null) continue;
+        if (latest == null || latest.isGeneralAgent) continue;
 
         // 积压条数（含当前这条）：从上次到期至今过了几个子间隔
         final elapsedMinutes = now.difference(dueAt).inMinutes;
@@ -238,6 +239,7 @@ class AutoMomentService {
       var triggered = 0;
 
       for (final character in characterProvider.manageableCharacters) {
+        if (character.isGeneralAgent) continue;
         final config = greetingProvider.configFor(character.id);
         if (!config.enabled) continue;
 

@@ -1012,17 +1012,18 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         // 语C不带联系人备注；短信模式仍使用备注优先的显示名。
         name: chatSettings.isRoleplayMode ? c.name : c.displayName,
         systemPrompt: c.systemPrompt,
+        isGeneralAgent: c.isGeneralAgent,
         userRelationship: c.userRelationship,
         activeStart: c.activeStart,
         activeEnd: c.activeEnd,
         model: model,
         // 群聊记忆：所有成员共用群内汇总的共同记忆池
-        memoryPoints: sharedMemoryPool,
+        memoryPoints: c.isGeneralAgent ? const [] : sharedMemoryPool,
         avatarBase64: c.avatar,
         // 角色记忆池：朋友圈 / 近期私聊 / 其他群内容 / 资料卡。
         // 群聊场景排除当前群（当前群历史已作为对话上下文传入），
         // 保留各角色近期的私聊内容与朋友圈动态，保持跨场景记忆连贯
-        memoryPool: chatSettings.isRoleplayMode
+        memoryPool: c.isGeneralAgent || chatSettings.isRoleplayMode
             ? ''
             : MemoryPoolBuilder.build(
                 character: c,

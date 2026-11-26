@@ -6,15 +6,17 @@ part of 'llm_service.dart';
     List<Map<String, Object>> historyMessages = const [],
     String outputInstruction = '',
     bool roleplayMode = false,
+    bool isGeneralAgent = false,
     UsageCallback? onUsage,
   }) async {
     final completion = await LLMService._fetchWithKimiFallback(
       model: model,
       onUsage: onUsage,
       messages: [
-        {'role': 'system', 'content': systemPrompt},
+        if (!isGeneralAgent || systemPrompt.trim().isNotEmpty)
+          {'role': 'system', 'content': systemPrompt},
         ...historyMessages,
-        if (outputInstruction.trim().isNotEmpty)
+        if (!isGeneralAgent && outputInstruction.trim().isNotEmpty)
           {'role': 'user', 'content': outputInstruction.trim()},
       ],
       maxTokens: 1024,
@@ -22,7 +24,11 @@ part of 'llm_service.dart';
     final raw = completion.content;
     debugPrint('[LLMService] 模型原始响应: $raw');
     final result =
-        roleplayMode ? LLMService.parseRoleplayMessage(raw) : LLMService.parseMessages(raw);
+        isGeneralAgent
+            ? [raw]
+            : roleplayMode
+                ? LLMService.parseRoleplayMessage(raw)
+                : LLMService.parseMessages(raw);
     debugPrint('[LLMService] 解析结果(${result.length}条): $result');
     return ProactiveResult(
       result,
@@ -190,6 +196,7 @@ part of 'llm_service.dart';
     required String imagePath,
     required String outputInstruction,
     bool roleplayMode = false,
+    bool isGeneralAgent = false,
     UsageCallback? onUsage,
   }) async {
     String base64;
@@ -203,12 +210,14 @@ part of 'llm_service.dart';
       model: model,
       onUsage: onUsage,
       messages: [
-        {'role': 'system', 'content': systemPrompt},
+        if (!isGeneralAgent || systemPrompt.trim().isNotEmpty)
+          {'role': 'system', 'content': systemPrompt},
         ...historyMessages,
         {
           'role': 'user',
           'content': [
-            {'type': 'text', 'text': outputInstruction.trim()},
+            if (!isGeneralAgent && outputInstruction.trim().isNotEmpty)
+              {'type': 'text', 'text': outputInstruction.trim()},
             {
               'type': 'image_url',
               'image_url': {
@@ -223,7 +232,11 @@ part of 'llm_service.dart';
     final raw = completion.content;
     debugPrint('[LLMService] 模型原始响应: $raw');
     final result =
-        roleplayMode ? LLMService.parseRoleplayMessage(raw) : LLMService.parseMessages(raw);
+        isGeneralAgent
+            ? [raw]
+            : roleplayMode
+                ? LLMService.parseRoleplayMessage(raw)
+                : LLMService.parseMessages(raw);
     debugPrint('[LLMService] 解析结果(${result.length}条): $result');
     return ProactiveResult(
       result,

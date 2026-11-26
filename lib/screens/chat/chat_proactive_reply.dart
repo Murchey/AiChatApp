@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/message.dart';
 import '../../providers/api_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/character_provider.dart';
@@ -19,6 +20,41 @@ import '../../services/tts_playback_controller.dart';
 /// 触发角色主动发言 / 回复：组装 Prompt 与模型参数后调用 ChatProvider。
 class ChatProactiveReply {
   ChatProactiveReply._();
+
+  /// Resolves the visual input for a reply after the screen may have been recreated.
+  /// A newer user text message deliberately clears any older image path.
+  static ({String? imagePath, String? stickerLabel}) resolveReplyImage({
+    required List<Message> messages,
+    required bool replyToUser,
+    String? requestedImagePath,
+    String? requestedStickerLabel,
+  }) {
+    if (!replyToUser) {
+      return (
+        imagePath: requestedImagePath,
+        stickerLabel: requestedStickerLabel,
+      );
+    }
+
+    Message? latestUserMessage;
+    for (final message in messages.reversed) {
+      if (message.isFromUser) {
+        latestUserMessage = message;
+        break;
+      }
+    }
+    final latest = latestUserMessage;
+    if (latest == null) {
+      return (imagePath: null, stickerLabel: null);
+    }
+    if (latest.type == MessageType.image) {
+      return (imagePath: latest.content, stickerLabel: null);
+    }
+    if (latest.type == MessageType.sticker) {
+      return (imagePath: latest.content, stickerLabel: latest.stickerLabel);
+    }
+    return (imagePath: null, stickerLabel: null);
+  }
 
   /// [replyToUser] 为 true 时针对用户最近消息分条回复。
   /// [imagePath] 非空时作为视觉输入传给模型。
@@ -51,14 +87,25 @@ class ChatProactiveReply {
             .read<CharacterProvider>()
             .getCharacterById(conversation.characterId)
         : null;
-    final isRoleplayMode = chatSettings.isRoleplayMode;
+    final isGeneralAgent = character?.isGeneralAgent ?? false;
+    if (isGeneralAgent) {
+      final resolvedImage = resolveReplyImage(
+        messages: chatProvider.getMessages(conversationId),
+        replyToUser: replyToUser,
+        requestedImagePath: imagePath,
+        requestedStickerLabel: stickerLabel,
+      );
+      imagePath = resolvedImage.imagePath;
+      stickerLabel = resolvedImage.stickerLabel;
+    }
+    final isRoleplayMode = !isGeneralAgent && chatSettings.isRoleplayMode;
     final characterName = isRoleplayMode
         ? (character?.name.trim().isNotEmpty == true
             ? character!.name.trim()
             : fallbackName)
         : character?.displayName ?? fallbackName;
 
-    final memoryPoints = conversation != null
+    final memoryPoints = !isGeneralAgent && conversation != null
         ? context
             .read<MemoryPointProvider>()
             .pointsFor(conversation.characterId)
@@ -66,7 +113,7 @@ class ChatProactiveReply {
             .toList()
         : const <String>[];
 
-    final memoryPool = !isRoleplayMode && character != null
+    final memoryPool = !isGeneralAgent && !isRoleplayMode && character != null
         ? MemoryPoolBuilder.build(
             character: character,
             chatProvider: chatProvider,
@@ -120,9 +167,11 @@ class ChatProactiveReply {
             memoryPoints: memoryPoints,
             extraSystemContext: memoryPool,
             roleplayMode: isRoleplayMode,
+            isGeneralAgent: isGeneralAgent,
             roleplayProgressionStyle:
                 chatSettings.roleplayProgressionStyle.name,
-            findSticker: context.read<SettingsProvider>().allowStickerSend
+            findSticker: !isGeneralAgent &&
+                    context.read<SettingsProvider>().allowStickerSend
                 ? (query) =>
                     context.read<StickerProvider>().pickStickerForRole(query)
                 : null,

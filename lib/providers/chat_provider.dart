@@ -675,6 +675,7 @@ class ChatProvider extends ChangeNotifier {
     required String userNickname,
     bool replyToUser = false,
     bool roleplayMode = false,
+    bool isGeneralAgent = false,
     String roleplayProgressionStyle = 'free',
     List<Map<String, Object>>? historyMessages,
     int contextCount = 10,
@@ -710,6 +711,7 @@ class ChatProvider extends ChangeNotifier {
             contextCount: contextCount,
           ),
           buildHistory: _buildHistory,
+          buildGeneralAgentHistory: _buildGeneralAgentHistory,
         ),
         conversationId: conversationId,
         model: model,
@@ -718,7 +720,8 @@ class ChatProvider extends ChangeNotifier {
         userRelationship: userRelationship,
         userNickname: userNickname,
         replyToUser: replyToUser,
-        roleplayMode: roleplayMode,
+        roleplayMode: isGeneralAgent ? false : roleplayMode,
+        isGeneralAgent: isGeneralAgent,
         roleplayProgressionStyle: roleplayProgressionStyle,
         historyMessages: historyMessages,
         contextCount: contextCount,
@@ -749,6 +752,7 @@ class ChatProvider extends ChangeNotifier {
     required String userNickname,
     bool replyToUser = false,
     bool roleplayMode = false,
+    bool isGeneralAgent = false,
     String roleplayProgressionStyle = 'free',
     int contextCount = 10,
     ApiModel? compressModel,
@@ -777,7 +781,8 @@ class ChatProvider extends ChangeNotifier {
           userRelationship: userRelationship,
           userNickname: userNickname,
           replyToUser: replyToUser,
-          roleplayMode: roleplayMode,
+          roleplayMode: isGeneralAgent ? false : roleplayMode,
+          isGeneralAgent: isGeneralAgent,
           roleplayProgressionStyle: roleplayProgressionStyle,
           contextCount: contextCount,
           compressModel: compressModel,
@@ -805,6 +810,7 @@ class ChatProvider extends ChangeNotifier {
     required String userNickname,
     bool replyToUser = false,
     bool roleplayMode = false,
+    bool isGeneralAgent = false,
     String roleplayProgressionStyle = 'free',
     int contextCount = 10,
     ApiModel? compressModel,
@@ -820,6 +826,9 @@ class ChatProvider extends ChangeNotifier {
   }) async {
     debugPrint('[ChatProvider] _doRunProactiveReply 开始: $conversationId');
     try {
+      if (isGeneralAgent) {
+        await setRoleplayChoices(conversationId, const []);
+      }
       final result = await generateProactiveMessages(
         conversationId: conversationId,
         model: model,
@@ -828,7 +837,8 @@ class ChatProvider extends ChangeNotifier {
         userRelationship: userRelationship,
         userNickname: userNickname,
         replyToUser: replyToUser,
-        roleplayMode: roleplayMode,
+        roleplayMode: isGeneralAgent ? false : roleplayMode,
+        isGeneralAgent: isGeneralAgent,
         roleplayProgressionStyle: roleplayProgressionStyle,
         contextCount: contextCount,
         compressModel: compressModel,
@@ -854,8 +864,15 @@ class ChatProvider extends ChangeNotifier {
           },
           messageCount: (id) => _messagesMap[id]?.length ?? 0,
           conversationAvatar: _conversationAvatar,
-          estimateInputBudget: (id, count) =>
-              _estimateRequestInputBudget(id, contextCount: count),
+          estimateInputBudget: (id, count) => isGeneralAgent
+              ? ChatTokenEstimator.estimateRequestBudget(
+                  _buildGeneralAgentHistory(id, count),
+                  systemTokens: (_systemTokens[id] ?? 0) +
+                      (imagePath?.isNotEmpty == true
+                          ? 4096 + ChatTokenEstimator.perMessageJsonTokens
+                          : 0),
+                )
+              : _estimateRequestInputBudget(id, contextCount: count),
           setContextTokens: (id, tokens) => _contextTokens[id] = tokens,
           clearReplying: () {
             _runningReplies.remove(conversationId);
@@ -870,13 +887,14 @@ class ChatProvider extends ChangeNotifier {
         reasoningDurationMs: result.reasoningDurationMs,
         contextCount: contextCount,
         usage: result.usage,
-        findSticker: findSticker,
+        findSticker: isGeneralAgent ? null : findSticker,
+        isGeneralAgent: isGeneralAgent,
       );
     } finally {
       debugPrint('[ChatProvider] _doRunProactiveReply 结束: $conversationId');
       _runningReplies.remove(conversationId);
       notifyListeners();
-      autoMemoryRecorder?.call(conversationId);
+      if (!isGeneralAgent) autoMemoryRecorder?.call(conversationId);
     }
   }
 
@@ -1039,6 +1057,30 @@ class ChatProvider extends ChangeNotifier {
   /// 从会话记录中取最近 [contextCount] 条文本消息作为对话历史。
   /// 压缩后原文不删除：历史起点定位到最后一条压缩摘要消息（含），
   /// 摘要之前的原文已被摘要替代、不再发送给模型。
+  List<Map<String, String>> _buildGeneralAgentHistory(
+    String conversationId,
+    int contextCount,
+  ) {
+    final messages = _messagesMap[conversationId] ?? const <Message>[];
+    final entries = <Map<String, String>>[];
+    for (var i = 0; i < messages.length; i++) {
+      final message = messages[i];
+      if (message.isCompressionSummary ||
+          message.type != MessageType.text ||
+          message.content.trim().isEmpty) {
+        continue;
+      }
+      entries.add({
+        'role': message.isFromUser ? 'user' : 'assistant',
+        'content': message.content
+      });
+    }
+    final start = contextCount > 0 && entries.length > contextCount
+        ? entries.length - contextCount
+        : 0;
+    return entries.skip(start).toList();
+  }
+
   List<Map<String, String>> _buildHistory(
           String conversationId, int contextCount) =>
       buildChatHistory(

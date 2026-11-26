@@ -25,16 +25,17 @@ class PromptEditScreen extends StatefulWidget {
 class _PromptEditScreenState extends State<PromptEditScreen> {
   late final TextEditingController _controller;
   Timer? _debounce;
-  bool _saving = false;
-  bool _pendingSave = false;
+  late final CharacterProvider _characters;
+  Future<void> _saveQueue = Future<void>.value();
+  bool _leaving = false;
   String _status = '已自动保存';
   String _lastSavedText = '';
 
   @override
   void initState() {
     super.initState();
-    final character =
-        context.read<CharacterProvider>().getCharacterById(widget.characterId);
+    _characters = context.read<CharacterProvider>();
+    final character = _characters.getCharacterById(widget.characterId);
     _lastSavedText = character?.systemPrompt ?? '';
     _controller = TextEditingController(text: _lastSavedText);
     _controller.addListener(_onChanged);
@@ -43,62 +44,41 @@ class _PromptEditScreenState extends State<PromptEditScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _leaving = true;
+    // Capture pending text before disposing its controller. Queued writes keep
+    // their order so the final edit cannot be overwritten by an earlier save.
+    unawaited(_saveText(_controller.text));
     _controller.removeListener(_onChanged);
     _controller.dispose();
-    // 退出前把未写入的内容落盘
-    _flushSave();
     super.dispose();
   }
 
   void _onChanged() {
-    final text = _controller.text;
-    if (text == _lastSavedText) return;
     setState(() => _status = '正在输入…');
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 500), _saveNow);
   }
 
-  Future<void> _flushSave() async {
-    _debounce?.cancel();
-    if (_controller.text != _lastSavedText) {
-      await _saveNow();
-    }
-  }
+  Future<void> _saveNow() => _saveText(_controller.text);
 
-  Future<void> _saveNow() async {
-    if (_saving) {
-      _pendingSave = true;
-      return;
-    }
-    final text = _controller.text;
-    if (text == _lastSavedText) return;
-    setState(() {
-      _saving = true;
-      _status = '保存中…';
+  Future<void> _saveText(String text) {
+    final task = _saveQueue.then((_) async {
+      if (text == _lastSavedText) return;
+      if (mounted && !_leaving) setState(() => _status = '保存中…');
+      try {
+        await _characters.updateSystemPrompt(widget.characterId, text);
+        _lastSavedText = text;
+        if (mounted && !_leaving) {
+          setState(() => _status = '已自动保存');
+        }
+      } catch (_) {
+        if (mounted && !_leaving) {
+          setState(() => _status = '保存失败，稍后重试');
+        }
+      }
     });
-    try {
-      await context
-          .read<CharacterProvider>()
-          .updateSystemPrompt(widget.characterId, text);
-      _lastSavedText = text;
-      if (mounted) {
-        setState(() {
-          _saving = false;
-          _status = '已自动保存';
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-          _status = '保存失败，稍后重试';
-        });
-      }
-    }
-    if (_pendingSave) {
-      _pendingSave = false;
-      if (mounted) await _saveNow();
-    }
+    _saveQueue = task;
+    return task;
   }
 
   void _clear() {
@@ -110,6 +90,11 @@ class _PromptEditScreenState extends State<PromptEditScreen> {
   @override
   Widget build(BuildContext context) {
     final length = _controller.text.trim().length;
+    final isGeneralAgent = context
+            .watch<CharacterProvider>()
+            .getCharacterById(widget.characterId)
+            ?.isGeneralAgent ??
+        false;
     return CupertinoPageScaffold(
       backgroundColor: context.scaffoldColor,
       navigationBar: const CupertinoNavigationBar(
@@ -123,7 +108,7 @@ class _PromptEditScreenState extends State<PromptEditScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 children: [
                   Text(
-                    '角色：${widget.characterName}',
+                    '${isGeneralAgent ? '智能体' : '角色'}：${widget.characterName}',
                     style: TextStyle(
                       fontSize: 13,
                       color: context.textSecondaryColor,
@@ -136,8 +121,9 @@ class _PromptEditScreenState extends State<PromptEditScreen> {
                     minLines: 18,
                     expands: false,
                     textAlignVertical: TextAlignVertical.top,
-                    placeholder:
-                        '在此编辑角色提示词…\n\n可描述：身份、性格、说话方式、世界观、禁止事项等。',
+                    placeholder: isGeneralAgent
+                        ? '在此编辑智能体提示词…\n\n可描述：任务、能力、回答方式和约束等。'
+                        : '在此编辑角色提示词…\n\n可描述：身份、性格、说话方式、世界观、禁止事项等。',
                     placeholderStyle: TextStyle(
                       fontSize: 15,
                       height: 1.6,

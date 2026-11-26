@@ -35,6 +35,7 @@ import 'profile_screen.dart';
 import 'chat_search_screen.dart';
 import 'contacts_search_screen.dart';
 import 'create_group_screen.dart';
+import 'create_general_agent_screen.dart';
 import 'group_chat_screen.dart';
 
 enum _ContactListItemKind { self, section, contact, divider }
@@ -84,6 +85,8 @@ class _HomeScreenState extends State<HomeScreen>
 
   // 会话长按悬浮菜单（Overlay，长按位置旁弹出）
   OverlayEntry? _chatMenuEntry;
+  OverlayEntry? _createMenuEntry;
+  final GlobalKey _createButtonKey = GlobalKey();
 
   @override
   void initState() {
@@ -138,6 +141,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _chatMenuEntry?.remove();
+    _createMenuEntry?.remove();
     routeObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
@@ -792,7 +796,7 @@ class _HomeScreenState extends State<HomeScreen>
                     ? CupertinoColors.transparent
                     : null,
             middle: const Text('AiChat'),
-            // 右上角：搜索 + 加号（加号用于创建群聊）
+            // 右上角：搜索 + 创建菜单
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -810,7 +814,8 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(width: 8),
                 CupertinoButton(
                   padding: EdgeInsets.zero,
-                  onPressed: _openCreateGroup,
+                  key: _createButtonKey,
+                  onPressed: _showCreateMenu,
                   child: const Icon(CupertinoIcons.add),
                 ),
               ],
@@ -970,6 +975,86 @@ class _HomeScreenState extends State<HomeScreen>
       return b.lastMessageTime.compareTo(a.lastMessageTime);
     });
     return entries;
+  }
+
+  void _dismissCreateMenu() {
+    _createMenuEntry?.remove();
+    _createMenuEntry = null;
+  }
+
+  void _showCreateMenu() {
+    if (_createMenuEntry != null) {
+      _dismissCreateMenu();
+      return;
+    }
+    _dismissChatMenu();
+    _dismissCreateMenu();
+    final overlay = Overlay.of(context);
+    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    final buttonBox = _createButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (overlayBox == null || buttonBox == null) return;
+    final anchor = buttonBox.localToGlobal(
+      Offset(buttonBox.size.width, buttonBox.size.height), ancestor: overlayBox,
+    );
+    const panelWidth = 220.0;
+    final left = (anchor.dx - panelWidth).clamp(8.0,
+        (overlayBox.size.width - panelWidth - 8).clamp(8.0, double.infinity));
+    final top = (anchor.dy + 6).clamp(8.0,
+        (overlayBox.size.height - 104).clamp(8.0, double.infinity));
+    void choose(VoidCallback action) {
+      _dismissCreateMenu();
+      action();
+    }
+    _createMenuEntry = OverlayEntry(
+      builder: (_) => Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _dismissCreateMenu,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          Positioned(
+            left: left,
+            top: top,
+            child: Container(
+              width: panelWidth,
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [BoxShadow(
+                  color: CupertinoColors.black.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                )],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _chatMenuItem(
+                    icon: CupertinoIcons.person_2,
+                    label: '创建群聊',
+                    onTap: () => choose(_openCreateGroup),
+                  ),
+                  Container(height: 0.5, color: context.separatorColor),
+                  _chatMenuItem(
+                    icon: CupertinoIcons.chat_bubble,
+                    label: '创建一般智能体',
+                    onTap: () => choose(() => Navigator.push(
+                      context,
+                      CupertinoPageRoute(builder: (_) => const CreateGeneralAgentScreen()),
+                    )),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    overlay.insert(_createMenuEntry!);
   }
 
   void _openCreateGroup() {
@@ -1373,6 +1458,7 @@ class _HomeScreenState extends State<HomeScreen>
     HomeChatEntry entry,
   ) {
     _dismissChatMenu();
+    _dismissCreateMenu();
     final overlay = Overlay.of(context);
     final overlayBox = overlay.context.findRenderObject() as RenderBox?;
     if (overlayBox == null) return;

@@ -26,6 +26,7 @@ import '../chat_settings_screen.dart';
 import '../chat_search_screen.dart';
 import '../sticker_picker_screen.dart';
 import '../chat/chat_import_export.dart';
+import '../chat/chat_proactive_reply.dart';
 import '../chat/chat_message_actions.dart';
 import '../chat/chat_plot_suggestion.dart';
 import 'desktop_context_menu.dart';
@@ -693,6 +694,15 @@ class _DesktopChatViewState extends State<DesktopChatView> {
           ),
           child: Consumer2<ChatSettingsProvider, ChatProvider>(
             builder: (context, settings, chat, _) {
+              final conversation = chat.conversations
+                  .where((c) => c.id == widget.conversationId)
+                  .firstOrNull;
+              final isGeneralAgent = conversation != null &&
+                  (context
+                          .watch<CharacterProvider>()
+                          .getCharacterById(conversation.characterId)
+                          ?.isGeneralAgent ??
+                      false);
               return MessageInput(
                 key: _inputKey,
                 enterToSend: true,
@@ -714,7 +724,7 @@ class _DesktopChatViewState extends State<DesktopChatView> {
                 onExport: _exportChat,
                 onImport: _importChat,
                 onFeatureDetect: _runFeatureDetect,
-                onPlotSuggestion: _plotSuggestion,
+                onPlotSuggestion: isGeneralAgent ? null : _plotSuggestion,
                 onStickerSelected: _handleSticker,
                 onSettings: () => setState(
                   () => _panel = _DesktopChatPanel.settings,
@@ -726,14 +736,16 @@ class _DesktopChatViewState extends State<DesktopChatView> {
                         .lastOrNull
                         ?.isFromUser ??
                     true,
-                isRoleplayMode: settings.isRoleplayMode,
-                roleplayChoices: settings.enableRoleplayChoices
-                    ? chat.roleplayChoicesFor(widget.conversationId)
-                    : const [],
+                isRoleplayMode: !isGeneralAgent && settings.isRoleplayMode,
+                roleplayChoices:
+                    !isGeneralAgent && settings.enableRoleplayChoices
+                        ? chat.roleplayChoicesFor(widget.conversationId)
+                        : const [],
                 onRoleplayChoice: (text) =>
                     _inputKey.currentState?.setText(text),
-                onRoleplayNarration:
-                    settings.isRoleplayMode ? _promptNarration : null,
+                onRoleplayNarration: !isGeneralAgent && settings.isRoleplayMode
+                    ? _promptNarration
+                    : null,
               );
             },
           ),
@@ -819,14 +831,25 @@ class DesktopChatReply {
             .read<CharacterProvider>()
             .getCharacterById(conversation.characterId)
         : null;
-    final isRoleplayMode = chatSettings.isRoleplayMode;
+    final isGeneralAgent = character?.isGeneralAgent ?? false;
+    if (isGeneralAgent) {
+      final resolvedImage = ChatProactiveReply.resolveReplyImage(
+        messages: chatProvider.getMessages(conversationId),
+        replyToUser: replyToUser,
+        requestedImagePath: imagePath,
+        requestedStickerLabel: stickerLabel,
+      );
+      imagePath = resolvedImage.imagePath;
+      stickerLabel = resolvedImage.stickerLabel;
+    }
+    final isRoleplayMode = !isGeneralAgent && chatSettings.isRoleplayMode;
     final characterName = isRoleplayMode
         ? (character?.name.trim().isNotEmpty == true
             ? character!.name.trim()
             : fallbackName)
         : character?.displayName ?? fallbackName;
 
-    final memoryPoints = conversation != null
+    final memoryPoints = !isGeneralAgent && conversation != null
         ? context
             .read<MemoryPointProvider>()
             .pointsFor(conversation.characterId)
@@ -834,7 +857,7 @@ class DesktopChatReply {
             .toList()
         : const <String>[];
 
-    final memoryPool = !isRoleplayMode && character != null
+    final memoryPool = !isGeneralAgent && !isRoleplayMode && character != null
         ? MemoryPoolBuilder.build(
             character: character,
             chatProvider: chatProvider,
@@ -890,8 +913,10 @@ class DesktopChatReply {
           memoryPoints: memoryPoints,
           extraSystemContext: memoryPool,
           roleplayMode: isRoleplayMode,
+          isGeneralAgent: isGeneralAgent,
           roleplayProgressionStyle: chatSettings.roleplayProgressionStyle.name,
-          findSticker: context.read<SettingsProvider>().allowStickerSend
+          findSticker: !isGeneralAgent &&
+                  context.read<SettingsProvider>().allowStickerSend
               ? (query) =>
                   context.read<StickerProvider>().pickStickerForRole(query)
               : null,

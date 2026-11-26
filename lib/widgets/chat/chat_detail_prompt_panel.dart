@@ -2,14 +2,16 @@ import 'package:flutter/cupertino.dart';
 
 import '../../config/theme.dart';
 
-  class ChatDetailPromptPanel extends StatelessWidget {
+class ChatDetailPromptPanel extends StatelessWidget {
   final VoidCallback onOpenPrompt;
   final VoidCallback onOpenMemory;
+  final bool isGeneralAgent;
 
   const ChatDetailPromptPanel({
     super.key,
     required this.onOpenPrompt,
     required this.onOpenMemory,
+    this.isGeneralAgent = false,
   });
 
   @override
@@ -33,7 +35,9 @@ import '../../config/theme.dart';
               style: TextStyle(color: context.textPrimaryColor),
             ),
             subtitle: Text(
-              '定义角色对话时的行为与设定，点击进入编辑',
+              isGeneralAgent
+                  ? '定义智能体的任务、行为与回答方式，点击进入编辑'
+                  : '定义角色对话时的行为与设定，点击进入编辑',
               style: TextStyle(
                 fontSize: 12,
                 color: context.textSecondaryColor,
@@ -46,31 +50,33 @@ import '../../config/theme.dart';
             ),
             onTap: onOpenPrompt,
           ),
-          Container(
-            height: 0.5,
-            margin: const EdgeInsets.only(left: 16),
-            color: context.separatorColor,
-          ),
-          CupertinoListTile(
-            leading: const Icon(CupertinoIcons.bookmark),
-            title: Text(
-              '记忆点管理',
-              style: TextStyle(color: context.textPrimaryColor),
+          if (!isGeneralAgent)
+            Container(
+              height: 0.5,
+              margin: const EdgeInsets.only(left: 16),
+              color: context.separatorColor,
             ),
-            subtitle: Text(
-              '此处可以储存世界观、用户人设、对话中的记忆点等，可回传到上下文',
-              style: TextStyle(
-                fontSize: 12,
+          if (!isGeneralAgent)
+            CupertinoListTile(
+              leading: const Icon(CupertinoIcons.bookmark),
+              title: Text(
+                '记忆点管理',
+                style: TextStyle(color: context.textPrimaryColor),
+              ),
+              subtitle: Text(
+                '此处可以储存世界观、用户人设、对话中的记忆点等，可回传到上下文',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.textSecondaryColor,
+                ),
+              ),
+              trailing: Icon(
+                CupertinoIcons.chevron_right,
+                size: 16,
                 color: context.textSecondaryColor,
               ),
+              onTap: onOpenMemory,
             ),
-            trailing: Icon(
-              CupertinoIcons.chevron_right,
-              size: 16,
-              color: context.textSecondaryColor,
-            ),
-            onTap: onOpenMemory,
-          ),
         ],
       ),
     );

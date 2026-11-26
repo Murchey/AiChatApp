@@ -20,6 +20,8 @@ class ChatReplyHooks {
   }) compress;
   final List<Map<String, Object>> Function(String conversationId, int count)
       buildHistory;
+  final List<Map<String, Object>> Function(String conversationId, int count)?
+      buildGeneralAgentHistory;
 
   const ChatReplyHooks({
     required this.setLastError,
@@ -27,6 +29,7 @@ class ChatReplyHooks {
     required this.setSystemTokens,
     required this.compress,
     required this.buildHistory,
+    this.buildGeneralAgentHistory,
   });
 }
 
@@ -44,6 +47,7 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
   required String userNickname,
   bool replyToUser = false,
   bool roleplayMode = false,
+  bool isGeneralAgent = false,
   String roleplayProgressionStyle = 'free',
   List<Map<String, Object>>? historyMessages,
   int contextCount = 10,
@@ -58,29 +62,34 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
   String extraSystemContext = '',
 }) async {
   final now = DateTime.now();
-  final prompt = PromptBuilder.buildSystemPrompt(
-    baseSystemPrompt: characterSystemPrompt,
-    characterName: characterName,
-    userNickname: userNickname,
-    userRelationship: userRelationship,
-    currentTime: now,
-    replyToUser: replyToUser,
-    activeStart: roleplayMode ? '' : activeStart,
-    activeEnd: roleplayMode ? '' : activeEnd,
-    memoryPoints: memoryPoints,
-    roleplayProgressionStyle: roleplayProgressionStyle,
-    extraContext: roleplayMode ? '' : extraSystemContext,
-    roleplayMode: roleplayMode,
-  );
-  final outputInstruction = PromptBuilder.buildOutputInstruction(
-    characterName: characterName,
-    replyToUser: replyToUser,
-    currentTime: roleplayMode ? null : now,
-    roleplayMode: roleplayMode,
-    includeRoleplayChoices: false,
-  );
+  final prompt = isGeneralAgent
+      ? characterSystemPrompt
+      : PromptBuilder.buildSystemPrompt(
+          baseSystemPrompt: characterSystemPrompt,
+          characterName: characterName,
+          userNickname: userNickname,
+          userRelationship: userRelationship,
+          currentTime: now,
+          replyToUser: replyToUser,
+          activeStart: roleplayMode ? '' : activeStart,
+          activeEnd: roleplayMode ? '' : activeEnd,
+          memoryPoints: memoryPoints,
+          roleplayProgressionStyle: roleplayProgressionStyle,
+          extraContext: roleplayMode ? '' : extraSystemContext,
+          roleplayMode: roleplayMode,
+        );
+  final outputInstruction = isGeneralAgent
+      ? ''
+      : PromptBuilder.buildOutputInstruction(
+          characterName: characterName,
+          replyToUser: replyToUser,
+          currentTime: roleplayMode ? null : now,
+          roleplayMode: roleplayMode,
+          includeRoleplayChoices: false,
+        );
   final fixedMessages = <Map<String, Object>>[
-    {'role': 'system', 'content': prompt},
+    if (!isGeneralAgent || prompt.trim().isNotEmpty)
+      {'role': 'system', 'content': prompt},
     if (outputInstruction.trim().isNotEmpty)
       {'role': 'user', 'content': outputInstruction.trim()},
   ];
@@ -103,7 +112,8 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
       }
       // Visual token cost depends on image dimensions and provider processing.
       // This fixed reserve avoids treating base64 bytes as visual tokens.
-      imageTokens = 4096;
+      imageTokens =
+          4096 + (isGeneralAgent ? ChatTokenEstimator.perMessageJsonTokens : 0);
     }
     final fixedBudget = ChatTokenEstimator.requestBudget(
       model: model,
@@ -115,7 +125,8 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
     fixedBudget.ensureFits();
     // Explicit history is a caller-owned projection and cannot be rebuilt from
     // stored messages after compression.
-    if (historyMessages == null &&
+    if (!isGeneralAgent &&
+        historyMessages == null &&
         enableCompression &&
         compressModel != null &&
         model.contextLength > 0) {
@@ -129,14 +140,20 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
         contextCount: contextCount,
       );
     }
-    final history =
-        historyMessages ?? hooks.buildHistory(conversationId, contextCount);
+    final history = historyMessages ??
+        (isGeneralAgent
+            ? hooks.buildGeneralAgentHistory
+                    ?.call(conversationId, contextCount) ??
+                hooks.buildHistory(conversationId, contextCount)
+            : hooks.buildHistory(conversationId, contextCount));
     ChatTokenEstimator.requestBudget(
       model: model,
       messages: [
-        fixedMessages.first,
+        if (!isGeneralAgent || prompt.trim().isNotEmpty)
+          {'role': 'system', 'content': prompt},
         ...history,
-        ...fixedMessages.skip(1),
+        if (outputInstruction.trim().isNotEmpty)
+          {'role': 'user', 'content': outputInstruction.trim()},
       ],
       requestedOutputTokens: ChatTokenEstimator.proactiveReplyOutputTokens,
       contextLength: model.contextLength,
@@ -150,6 +167,7 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
         imagePath: imagePath,
         outputInstruction: outputInstruction,
         roleplayMode: roleplayMode,
+        isGeneralAgent: isGeneralAgent,
         onUsage: recordUsage,
       );
     }
@@ -159,6 +177,7 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
       historyMessages: history,
       outputInstruction: outputInstruction,
       roleplayMode: roleplayMode,
+      isGeneralAgent: isGeneralAgent,
       onUsage: recordUsage,
     );
   } on LLMException catch (e) {

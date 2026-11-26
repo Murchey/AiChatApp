@@ -24,6 +24,16 @@ class ChatPlotSuggestion {
     required VoidCallback? onNeedModel,
   }) async {
     final chatSettings = context.read<ChatSettingsProvider>();
+    final chatProvider = context.read<ChatProvider>();
+    final conversation = chatProvider.conversations
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    final character = conversation == null
+        ? null
+        : context
+            .read<CharacterProvider>()
+            .getCharacterById(conversation.characterId);
+    if (character?.isGeneralAgent == true) return;
     final model =
         context.read<ApiProvider>().getModelById(chatSettings.selectedModelId);
     if (model == null) {
@@ -74,15 +84,6 @@ class ChatPlotSuggestion {
     controller.dispose();
     if (supplement == null || !context.mounted) return;
 
-    final chatProvider = context.read<ChatProvider>();
-    final conversation = chatProvider.conversations
-        .where((c) => c.id == conversationId)
-        .firstOrNull;
-    final character = conversation != null
-        ? context
-            .read<CharacterProvider>()
-            .getCharacterById(conversation.characterId)
-        : null;
     final isRoleplayMode = chatSettings.isRoleplayMode;
     final characterName = isRoleplayMode
         ? (character?.name.trim().isNotEmpty == true

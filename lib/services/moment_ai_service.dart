@@ -129,6 +129,11 @@ class MomentAiService {
     String momentOwnerId = CharacterProvider.selfCharacterId,
   }) async {
     try {
+      final participants = characters.where((c) => !c.isGeneralAgent).toList();
+      if (participants.isEmpty) {
+        DevLogService.instance.log('朋友圈 AI 互动：展示范围内没有可见角色，跳过');
+        return;
+      }
       final model = apiProvider.getModelById(apiProvider.momentModelId);
       if (model == null) {
         const msg = '请先在「API 设置」中配置「朋友圈互动」模型';
@@ -136,13 +141,9 @@ class MomentAiService {
         showAppToast(msg);
         return;
       }
-      if (characters.isEmpty) {
-        DevLogService.instance.log('朋友圈 AI 互动：展示范围内没有可见角色，跳过');
-        return;
-      }
 
       // 写入断点：记录待互动的剩余角色（应用被杀后下次启动可精确续跑）
-      var pendingIds = characters.map((c) => c.id).toList();
+      var pendingIds = participants.map((c) => c.id).toList();
       var totalFailures = initialFailures;
       await _saveBreakpoint(
         moment: moment,
@@ -153,10 +154,10 @@ class MomentAiService {
       );
 
       DevLogService.instance.log(
-          '开始朋友圈 AI 互动：共 ${characters.length} 个角色可见（模型：${model.displayName}）');
+          '开始朋友圈 AI 互动：共 ${participants.length} 个角色可见（模型：${model.displayName}）');
       String? lastError;
 
-      for (final character in characters) {
+      for (final character in participants) {
         if (totalFailures >= maxFailures) break;
         var success = false;
         while (!success && totalFailures < maxFailures) {
@@ -296,7 +297,7 @@ class MomentAiService {
     final remaining = <Character>[];
     for (final id in bp.pendingCharacterIds) {
       final c = characterProvider.getCharacterById(id);
-      if (c != null) remaining.add(c);
+      if (c != null && !c.isGeneralAgent) remaining.add(c);
     }
     if (remaining.isEmpty) {
       DevLogService.instance.log('朋友圈互动断点：剩余角色已不存在，清除断点');
@@ -692,6 +693,7 @@ class MomentAiService {
     String replyToName = '',
     String repliedComment = '',
   }) async {
+    if (character.isGeneralAgent) return;
     final replyKey = _replyKey(character.id, moment.id);
     if (_replyingMomentIds.contains(replyKey)) {
       DevLogService.instance.log('「${character.displayName}」评论回复进行中，跳过重复触发');
