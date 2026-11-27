@@ -1,5 +1,17 @@
 part of 'llm_service.dart';
 
+/// Whether a projected user message contains text or a visual attachment.
+bool hasUsableUserMessage(Map<String, Object> message) {
+  if (message['role'] != 'user') return false;
+  final content = message['content'];
+  if (LLMService._contentToPlainText(content).trim().isNotEmpty) return true;
+  return content is List &&
+      content.any((part) =>
+          part is Map &&
+          part['type'] == 'image_url' &&
+          LLMService._imagePartUrl(part).trim().isNotEmpty);
+}
+
   Future<ProactiveResult> generateMessages({
     required ApiModel model,
     required String systemPrompt,
@@ -9,16 +21,20 @@ part of 'llm_service.dart';
     bool isGeneralAgent = false,
     UsageCallback? onUsage,
   }) async {
+    final messages = [
+      if (!isGeneralAgent || systemPrompt.trim().isNotEmpty)
+        {'role': 'system', 'content': systemPrompt},
+      ...historyMessages,
+      if (!isGeneralAgent && outputInstruction.trim().isNotEmpty)
+        {'role': 'user', 'content': outputInstruction.trim()},
+    ];
+    if (!messages.any(hasUsableUserMessage)) {
+      throw const LLMException('没有可回复的用户消息');
+    }
     final completion = await LLMService._fetchWithKimiFallback(
       model: model,
       onUsage: onUsage,
-      messages: [
-        if (!isGeneralAgent || systemPrompt.trim().isNotEmpty)
-          {'role': 'system', 'content': systemPrompt},
-        ...historyMessages,
-        if (!isGeneralAgent && outputInstruction.trim().isNotEmpty)
-          {'role': 'user', 'content': outputInstruction.trim()},
-      ],
+      messages: messages,
       maxTokens: 1024,
     );
     final raw = completion.content;

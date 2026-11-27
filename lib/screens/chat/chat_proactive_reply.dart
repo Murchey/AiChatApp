@@ -22,7 +22,8 @@ class ChatProactiveReply {
   ChatProactiveReply._();
 
   /// Resolves the visual input for a reply after the screen may have been recreated.
-  /// A newer user text message deliberately clears any older image path.
+  /// Resolve media from the unanswered user turn after the latest assistant
+  /// reply. Text messages in the same turn do not discard an earlier image.
   static ({String? imagePath, String? stickerLabel}) resolveReplyImage({
     required List<Message> messages,
     required bool replyToUser,
@@ -36,22 +37,26 @@ class ChatProactiveReply {
       );
     }
 
-    Message? latestUserMessage;
-    for (final message in messages.reversed) {
-      if (message.isFromUser) {
-        latestUserMessage = message;
-        break;
+    final lastAssistantIndex = messages.lastIndexWhere(
+      (message) =>
+          !message.isFromUser &&
+          message.type != MessageType.system &&
+          !message.isCompressionSummary,
+    );
+    Message? media;
+    for (final message in messages.skip(lastAssistantIndex + 1)) {
+      if (message.isFromUser &&
+          (message.type == MessageType.image ||
+              message.type == MessageType.sticker)) {
+        // Keep the latest attachment while allowing later text to add context.
+        media = message;
       }
     }
-    final latest = latestUserMessage;
-    if (latest == null) {
-      return (imagePath: null, stickerLabel: null);
+    if (media?.type == MessageType.image) {
+      return (imagePath: media!.content, stickerLabel: null);
     }
-    if (latest.type == MessageType.image) {
-      return (imagePath: latest.content, stickerLabel: null);
-    }
-    if (latest.type == MessageType.sticker) {
-      return (imagePath: latest.content, stickerLabel: latest.stickerLabel);
+    if (media?.type == MessageType.sticker) {
+      return (imagePath: media!.content, stickerLabel: media.stickerLabel);
     }
     return (imagePath: null, stickerLabel: null);
   }

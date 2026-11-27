@@ -134,7 +134,7 @@ void main() {
     expect(harness.appended, isEmpty);
     expect(harness.replaced, isEmpty);
     expect(harness.removed, isEmpty);
-    expect(harness.errors.single, contains('聊天上下文超限'));
+    expect(harness.errors, [null, contains('聊天上下文超限')]);
     expect(harness.clearReplyingCalls, 1);
     expect(harness.history, hasLength(1));
     expect(harness.history.single.id, 'old');
@@ -152,7 +152,7 @@ void main() {
     expect(result, isEmpty);
     expect(requests, hasLength(1));
     expect(requests.single['stream'], isTrue);
-    expect(harness.errors.single, contains('server failed'));
+    expect(harness.errors, [null, contains('server failed')]);
     expect(harness.appended, hasLength(1));
     expect(harness.removed, [harness.appended.single.id]);
     expect(harness.replaced.first.content, 'reply');
@@ -177,7 +177,7 @@ void main() {
     expect(result, ['reply']);
     expect(requests, hasLength(1));
     expect(requests.single['stream'], isTrue);
-    expect(harness.errors, isEmpty);
+    expect(harness.errors, [null]);
     expect(harness.replaced.last.content, 'reply');
     expect(harness.appended, hasLength(1));
     expect(harness.removed, isEmpty);

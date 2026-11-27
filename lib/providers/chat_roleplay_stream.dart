@@ -67,6 +67,7 @@ Future<List<String>> runRoleplayStreamWithHooks({
   required String progressionStyle,
   required bool includeChoices,
 }) async {
+  hooks.setLastError(null);
   final prompt = PromptBuilder.buildSystemPrompt(
     baseSystemPrompt: characterSystemPrompt,
     characterName: characterName,
@@ -136,7 +137,8 @@ Future<List<String>> runRoleplayStreamWithHooks({
       messages: requestMessages,
       onUsage: (usage) async {
         await TokenUsageProvider.instance.addUsage(
-          conversationId, usage,
+          conversationId,
+          usage,
           label: characterName,
           avatar: hooks.conversationAvatar(conversationId),
         );

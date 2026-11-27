@@ -130,6 +130,34 @@ void main() {
     );
   });
 
+  testWidgets('加号在 PageView 标签滑动时固定并淡出', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider();
+    await settings.init();
+    await settings.setAutoCheckUpdate(false);
+    final chat = ChatProvider();
+    await _pumpHome(tester, settings, chat);
+
+    final button = find.byKey(const Key('home-create-button'));
+    expect(button, findsOneWidget);
+    var opacity = tester
+        .widget<Opacity>(
+          find.ancestor(of: button, matching: find.byType(Opacity)).first,
+        )
+        .opacity;
+    expect(opacity, 1);
+
+    await tester.drag(find.byType(PageView), const Offset(-700, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+    opacity = tester
+        .widget<Opacity>(
+          find.ancestor(of: button, matching: find.byType(Opacity)).first,
+        )
+        .opacity;
+    expect(opacity, lessThan(0.01));
+  });
+
   testWidgets('加号菜单提供创建群聊和一般智能体', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final settings = SettingsProvider();

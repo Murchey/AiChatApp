@@ -391,7 +391,14 @@ class _HomeScreenState extends State<HomeScreen>
         if (navigationStyle == HomeNavigationStyle.bottomPanel) {
           return Column(
             children: [
-              Expanded(child: pageView),
+              Expanded(
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: pageView),
+                    _buildPersistentCreateButton(),
+                  ],
+                ),
+              ),
               _buildBottomPanel(
                 totalUnread: totalUnread,
                 momentsUnread: momentsUnread,
@@ -405,6 +412,7 @@ class _HomeScreenState extends State<HomeScreen>
             // 页面铺满全高，悬浮导航直接覆盖在真实内容上方；各滚动列表
             // 自己预留末尾安全空间，保证最后一项仍能滚到导航上方。
             Positioned.fill(child: pageView),
+            _buildPersistentCreateButton(),
             Positioned(
               left: UiSpec.floatingHorizontal,
               right: UiSpec.floatingHorizontal,
@@ -417,6 +425,38 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         );
       },
+    );
+  }
+
+  Widget _buildPersistentCreateButton() {
+    final padding = MediaQuery.paddingOf(context);
+    return Positioned(
+      top: padding.top,
+      right: padding.right + 16,
+      child: AnimatedBuilder(
+        animation: _pageController,
+        builder: (context, child) {
+          final page = _pageController.hasClients
+              ? (_pageController.page ?? _currentTab.toDouble())
+              : _currentTab.toDouble();
+          final opacity = (1 - page).clamp(0.0, 1.0);
+          return IgnorePointer(
+            ignoring: opacity < 0.99,
+            child: Opacity(opacity: opacity, child: child),
+          );
+        },
+        child: SizedBox(
+          key: _createButtonKey,
+          width: 44,
+          height: 44,
+          child: CupertinoButton(
+            key: const ValueKey('home-create-button'),
+            padding: EdgeInsets.zero,
+            onPressed: _showCreateMenu,
+            child: const Icon(CupertinoIcons.add),
+          ),
+        ),
+      ),
     );
   }
 
@@ -796,7 +836,7 @@ class _HomeScreenState extends State<HomeScreen>
                     ? CupertinoColors.transparent
                     : null,
             middle: const Text('AiChat'),
-            // 右上角：搜索 + 创建菜单
+            // 右上角搜索；创建按钮固定在 HomeScreen 根层，避免随 PageView 子页滑动
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -811,13 +851,7 @@ class _HomeScreenState extends State<HomeScreen>
                   },
                   child: const Icon(CupertinoIcons.search),
                 ),
-                const SizedBox(width: 8),
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  key: _createButtonKey,
-                  onPressed: _showCreateMenu,
-                  child: const Icon(CupertinoIcons.add),
-                ),
+                const SizedBox(width: 52),
               ],
             ),
           ),
@@ -991,20 +1025,23 @@ class _HomeScreenState extends State<HomeScreen>
     _dismissCreateMenu();
     final overlay = Overlay.of(context);
     final overlayBox = overlay.context.findRenderObject() as RenderBox?;
-    final buttonBox = _createButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final buttonBox =
+        _createButtonKey.currentContext?.findRenderObject() as RenderBox?;
     if (overlayBox == null || buttonBox == null) return;
     final anchor = buttonBox.localToGlobal(
-      Offset(buttonBox.size.width, buttonBox.size.height), ancestor: overlayBox,
+      Offset(buttonBox.size.width, buttonBox.size.height),
+      ancestor: overlayBox,
     );
     const panelWidth = 220.0;
     final left = (anchor.dx - panelWidth).clamp(8.0,
         (overlayBox.size.width - panelWidth - 8).clamp(8.0, double.infinity));
-    final top = (anchor.dy + 6).clamp(8.0,
-        (overlayBox.size.height - 104).clamp(8.0, double.infinity));
+    final top = (anchor.dy + 6)
+        .clamp(8.0, (overlayBox.size.height - 104).clamp(8.0, double.infinity));
     void choose(VoidCallback action) {
       _dismissCreateMenu();
       action();
     }
+
     _createMenuEntry = OverlayEntry(
       builder: (_) => Stack(
         children: [
@@ -1023,11 +1060,13 @@ class _HomeScreenState extends State<HomeScreen>
               decoration: BoxDecoration(
                 color: context.listBgColor,
                 borderRadius: BorderRadius.circular(10),
-                boxShadow: [BoxShadow(
-                  color: CupertinoColors.black.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                )],
+                boxShadow: [
+                  BoxShadow(
+                    color: CupertinoColors.black.withValues(alpha: 0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  )
+                ],
               ),
               clipBehavior: Clip.antiAlias,
               child: Column(
@@ -1043,9 +1082,10 @@ class _HomeScreenState extends State<HomeScreen>
                     icon: CupertinoIcons.chat_bubble,
                     label: '创建一般智能体',
                     onTap: () => choose(() => Navigator.push(
-                      context,
-                      CupertinoPageRoute(builder: (_) => const CreateGeneralAgentScreen()),
-                    )),
+                          context,
+                          CupertinoPageRoute(
+                              builder: (_) => const CreateGeneralAgentScreen()),
+                        )),
                   ),
                 ],
               ),

@@ -949,7 +949,9 @@ class ChatProvider extends ChangeNotifier {
               systemPromptTokens: systemPromptTokens,
               contextCount: contextCount,
               force: force,
-            )).whenComplete(() => _runningCompressions.remove(conversationId));
+            )).whenComplete(() {
+      _runningCompressions.remove(conversationId);
+    });
     _runningCompressions[conversationId] = future;
     return future;
   }
@@ -1072,14 +1074,33 @@ class ChatProvider extends ChangeNotifier {
     final entries = <Map<String, String>>[];
     for (var i = 0; i < messages.length; i++) {
       final message = messages[i];
-      if (message.isCompressionSummary ||
-          message.type != MessageType.text ||
-          message.content.trim().isEmpty) {
+      if (message.isCompressionSummary || message.type == MessageType.system) {
         continue;
       }
+      if (message.isForwardCard) {
+        for (final item in message.forwardedItems) {
+          if (item.type == 'text' && item.content.trim().isNotEmpty) {
+            entries.add({
+              'role': message.isFromUser ? 'user' : 'assistant',
+              'content': item.content,
+            });
+          }
+        }
+        continue;
+      }
+      final content = switch (message.type) {
+        MessageType.text || MessageType.narration => message.content,
+        MessageType.sticker => message.stickerLabel?.trim().isNotEmpty == true
+            ? '[表情] ${message.stickerLabel!.trim()}'
+            : '[表情]',
+        MessageType.image => '[图片]',
+        MessageType.file => '[文件]',
+        MessageType.system => '',
+      };
+      if (content.trim().isEmpty) continue;
       entries.add({
         'role': message.isFromUser ? 'user' : 'assistant',
-        'content': message.content
+        'content': content,
       });
     }
     final start = contextCount > 0 && entries.length > contextCount

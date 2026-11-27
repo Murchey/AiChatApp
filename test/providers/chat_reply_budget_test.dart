@@ -278,7 +278,7 @@ void main() {
   });
 
   test(
-      'provider general history omits local protocols and restores original text',
+      'provider general history keeps user messages and omits generated summaries',
       () async {
     SharedPreferences.setMockInitialValues({});
     final chat = ChatProvider();
@@ -325,14 +325,169 @@ void main() {
       isGeneralAgent: true,
       enableCompression: true,
       compressModel: model(),
-      contextCount: 2,
+      contextCount: 5,
     );
     expect(result.messages, ['["reply"]']);
     expect(requests.single['messages'], [
       {'role': 'system', 'content': 'Custom instruction'},
       {'role': 'assistant', 'content': 'original answer'},
+      {'role': 'user', 'content': 'Built-in narration'},
+      {'role': 'user', 'content': '[表情]'},
       {'role': 'user', 'content': 'actual question'},
     ]);
+  });
+
+  test('ordinary and general provider text requests retain user input',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    for (final general in [false, true]) {
+      final chat = ChatProvider();
+      final conversation = chat.getOrCreateConversation(
+          characterId: 'text-$general', characterName: 'Assistant');
+      chat.getMessages(conversation.id).add(Message(
+            id: 'question',
+            conversationId: conversation.id,
+            content: '请计算 2 + 3',
+            sender: MessageSender.user,
+          ));
+      final result = await chat.generateProactiveMessages(
+        conversationId: conversation.id,
+        model: model(),
+        characterName: 'Assistant',
+        characterSystemPrompt: '',
+        userRelationship: '',
+        userNickname: 'User',
+        replyToUser: true,
+        isGeneralAgent: general,
+      );
+      expect(result.messages, general ? ['["reply"]'] : ['reply']);
+      final messages = requests.last['messages'] as List;
+      expect(
+          messages.any((entry) =>
+              entry['role'] == 'user' && entry['content'] == '请计算 2 + 3'),
+          isTrue);
+      if (general) {
+        expect(messages.any((entry) => entry['role'] == 'system'), isFalse);
+      }
+      chat.dispose();
+    }
+  });
+
+  test('ordinary provider with compression enabled completes without a summary',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final chat = ChatProvider();
+    addTearDown(chat.dispose);
+    final conversation = chat.getOrCreateConversation(
+        characterId: 'ordinary-compression', characterName: 'Character');
+    chat.getMessages(conversation.id).add(Message(
+          id: 'question',
+          conversationId: conversation.id,
+          content: 'Hello',
+          sender: MessageSender.user,
+        ));
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final result = await chat
+          .generateProactiveMessages(
+            conversationId: conversation.id,
+            model: model(),
+            characterName: 'Character',
+            characterSystemPrompt: '',
+            userRelationship: '',
+            userNickname: '',
+            replyToUser: true,
+            enableCompression: true,
+            compressModel: model(),
+          )
+          .timeout(const Duration(seconds: 3));
+      expect(result.messages, ['reply']);
+    }
+    expect(requests, hasLength(2));
+  });
+
+  test('general request keeps forwarded text and sticker label', () async {
+    SharedPreferences.setMockInitialValues({});
+    final chat = ChatProvider();
+    addTearDown(chat.dispose);
+    final conversation = chat.getOrCreateConversation(
+        characterId: 'forward', characterName: 'Assistant');
+    chat.getMessages(conversation.id).addAll([
+      Message(
+          id: 'forward',
+          conversationId: conversation.id,
+          content: '[聊天记录]',
+          sender: MessageSender.user,
+          forwardedItems: [
+            ForwardItem(
+                senderName: 'User',
+                isUser: true,
+                content: '请翻译这段转发文字',
+                createdAt: DateTime(2026))
+          ]),
+      Message(
+          id: 'sticker',
+          conversationId: conversation.id,
+          content: '/private/sticker.webp',
+          type: MessageType.sticker,
+          stickerLabel: '开心',
+          sender: MessageSender.user),
+    ]);
+    await chat.generateProactiveMessages(
+      conversationId: conversation.id,
+      model: model(),
+      characterName: 'Assistant',
+      characterSystemPrompt: '',
+      userRelationship: '',
+      userNickname: '',
+      isGeneralAgent: true,
+    );
+    expect(requests.single['messages'], [
+      {'role': 'user', 'content': '请翻译这段转发文字'},
+      {'role': 'user', 'content': '[表情] 开心'},
+    ]);
+  });
+
+  test('general request rejects empty, assistant-only and whitespace input',
+      () async {
+    for (final history in <List<Map<String, Object>>>[
+      [],
+      [
+        {'role': 'assistant', 'content': 'old reply'}
+      ],
+      [
+        {'role': 'system', 'content': 'instruction'}
+      ],
+      [
+        {'role': 'user', 'content': '   '}
+      ],
+    ]) {
+      final harness = ReplyHarness();
+      final result = await generateProactiveMessagesWithHooks(
+        hooks: harness.hooks,
+        conversationId: 'empty',
+        model: model(),
+        characterName: 'Assistant',
+        characterSystemPrompt: '',
+        userRelationship: '',
+        userNickname: '',
+        isGeneralAgent: true,
+        historyMessages: history,
+      );
+      expect(result.messages, isEmpty);
+      expect(harness.error, '没有可回复的用户消息');
+    }
+    expect(requests, isEmpty);
+  });
+
+  test('successful retry clears the previous reply error', () async {
+    final harness = ReplyHarness();
+    harness.error = '网络连接失败';
+    harness.history = [
+      {'role': 'user', 'content': 'Hello'}
+    ];
+    final result = await harness.generate(model());
+    expect(result.messages, ['reply']);
+    expect(harness.error, isNull);
   });
 
   test('general runner keeps whitespace and sticker markers as ordinary text',

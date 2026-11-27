@@ -61,6 +61,7 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
   List<String> memoryPoints = const [],
   String extraSystemContext = '',
 }) async {
+  hooks.setLastError(null);
   final now = DateTime.now();
   final prompt = isGeneralAgent
       ? characterSystemPrompt
@@ -146,6 +147,10 @@ Future<ProactiveResult> generateProactiveMessagesWithHooks({
                     ?.call(conversationId, contextCount) ??
                 hooks.buildHistory(conversationId, contextCount)
             : hooks.buildHistory(conversationId, contextCount));
+    if (isGeneralAgent && !history.any(hasUsableUserMessage) && !hasImage) {
+      hooks.setLastError('没有可回复的用户消息');
+      return ProactiveResult([], recordedUsage);
+    }
     ChatTokenEstimator.requestBudget(
       model: model,
       messages: [
