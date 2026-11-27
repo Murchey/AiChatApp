@@ -73,8 +73,9 @@ class Character {
     this.moments = const [],
   });
 
-  /// 显示名称：备注优先，其次昵称（类似微信联系人）
-  String get displayName => remark.trim().isNotEmpty ? remark : name;
+  /// 一般智能体显示名称；角色优先显示备注，其次显示昵称。
+  String get displayName =>
+      !isGeneralAgent && remark.trim().isNotEmpty ? remark : name;
 
   factory Character.fromJson(Map<String, dynamic> json) {
     return Character(

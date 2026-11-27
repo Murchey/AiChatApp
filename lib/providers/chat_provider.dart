@@ -1033,7 +1033,14 @@ class ChatProvider extends ChangeNotifier {
 
   /// 获取某会话当前上下文 token 用量（发送输入预算，用于「聊天设置」展示与压缩进度）。
   /// 有记录时优先返回；无记录时用本地分词估算并缓存。
-  int getContextTokens(String conversationId, {int contextCount = 0}) {
+  int getContextTokens(String conversationId,
+      {int contextCount = 0, bool isGeneralAgent = false}) {
+    if (isGeneralAgent) {
+      return ChatTokenEstimator.estimateRequestBudget(
+        _buildGeneralAgentHistory(conversationId, contextCount),
+        systemTokens: _systemTokens[conversationId] ?? 0,
+      );
+    }
     final tracked = _contextTokens[conversationId];
     // 有真实/最近一次请求记录时仍需在设置页按当前 contextCount 重算，
     // 避免重启后或切换上下文条数后沿用旧口径。

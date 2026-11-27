@@ -651,12 +651,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         .where((c) => c.id == widget.conversationId)
         .firstOrNull;
     if (conversation == null) return;
+    final character = context
+        .read<CharacterProvider>()
+        .getCharacterById(conversation.characterId);
     Navigator.push(
       context,
       CupertinoPageRoute(
-        builder: (_) => CharacterDetailScreen(
-          characterId: conversation.characterId,
-        ),
+        builder: (_) => character?.isGeneralAgent == true
+            ? ChatDetailScreen(
+                conversationId: conversation.id,
+                characterName: character!.name,
+              )
+            : CharacterDetailScreen(characterId: conversation.characterId),
       ),
     );
   }

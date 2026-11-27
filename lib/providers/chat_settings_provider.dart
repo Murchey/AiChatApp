@@ -136,10 +136,12 @@ class ChatSettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 设置上下文条数；传 0 表示无限制，此时自动开启压缩会话
-  Future<void> setContextCount(int count) async {
+  /// 设置上下文条数；0 表示无限制，默认同时开启角色会话压缩。
+  /// 一般智能体可关闭自动开启压缩，因为它不使用角色摘要。
+  Future<void> setContextCount(int count,
+      {bool enableCompressionWhenUnlimited = true}) async {
     _contextCount = count < 0 ? 0 : count;
-    if (_contextCount == 0) {
+    if (_contextCount == 0 && enableCompressionWhenUnlimited) {
       // 无限制上下文时自动开启压缩会话（到达 70% 阈值自动压缩）
       _enableCompression = true;
     }

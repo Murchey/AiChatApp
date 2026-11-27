@@ -13,6 +13,7 @@ import '../../providers/chat_provider.dart';
 import '../../providers/group_chat_provider.dart';
 import '../../models/group_chat.dart';
 import '../../screens/character_detail_screen.dart';
+import '../../screens/chat_detail_screen.dart';
 import '../../screens/create_general_agent_screen.dart';
 import '../../screens/create_group_screen.dart';
 import '../../screens/discover_screen.dart';
@@ -238,10 +239,12 @@ class _DesktopShellState extends State<DesktopShell> {
                         padding: EdgeInsets.zero,
                         minimumSize: const Size(32, 32),
                         onPressed: () {
-                          final box = buttonContext.findRenderObject() as RenderBox;
+                          final box =
+                              buttonContext.findRenderObject() as RenderBox;
                           showDesktopContextMenu(
                             context,
-                            globalPos: box.localToGlobal(Offset(0, box.size.height)),
+                            globalPos:
+                                box.localToGlobal(Offset(0, box.size.height)),
                             items: [
                               DesktopMenuItem(
                                 label: '创建群聊',
@@ -259,14 +262,16 @@ class _DesktopShellState extends State<DesktopShell> {
                                 onTap: () => Navigator.push(
                                   context,
                                   CupertinoPageRoute(
-                                    builder: (_) => const CreateGeneralAgentScreen(),
+                                    builder: (_) =>
+                                        const CreateGeneralAgentScreen(),
                                   ),
                                 ),
                               ),
                             ],
                           );
                         },
-                        child: Icon(CupertinoIcons.add, size: 20, color: p.textPrimary),
+                        child: Icon(CupertinoIcons.add,
+                            size: 20, color: p.textPrimary),
                       ),
                     ),
                   ),
@@ -814,6 +819,23 @@ class _DesktopShellState extends State<DesktopShell> {
       }
     }
     if (_rail == 1 && _selectedCharacterId != null) {
+      final character = context
+          .watch<CharacterProvider>()
+          .getCharacterById(_selectedCharacterId!);
+      if (character?.isGeneralAgent == true) {
+        final conversation = context
+            .watch<ChatProvider>()
+            .conversations
+            .where((item) => item.characterId == _selectedCharacterId)
+            .firstOrNull;
+        return ChatDetailScreen(
+          key: ValueKey(_selectedCharacterId),
+          characterId: _selectedCharacterId,
+          conversationId: conversation?.id ?? '',
+          characterName: character!.name,
+          showChatManage: conversation != null,
+        );
+      }
       return CharacterDetailScreen(
         key: ValueKey(_selectedCharacterId),
         characterId: _selectedCharacterId!,

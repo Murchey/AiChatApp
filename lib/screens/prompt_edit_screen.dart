@@ -142,7 +142,7 @@ class _PromptEditScreenState extends State<PromptEditScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    '修改后自动保存；新对话将使用新的提示词，已进行的对话不受影响。',
+                    '修改后自动保存；后续回复将使用新提示词，已有聊天记录保持不变。',
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.5,

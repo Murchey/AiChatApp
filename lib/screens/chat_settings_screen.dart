@@ -46,18 +46,21 @@ class ChatSettingsScreen extends StatelessWidget {
     BuildContext context,
     ChatSettingsProvider settings,
     ApiProvider api,
-    ChatProvider chat,
-  ) {
+    ChatProvider chat, {
+    required bool isGeneralAgent,
+  }) {
     // 使用当前设置的上下文条数重算展示值，避免沿用上次请求或全量上下文缓存。
     final tokens = chat.getContextTokens(
       conversationId!,
       contextCount: settings.contextCount,
+      isGeneralAgent: isGeneralAgent,
     );
     final model = api.getModelById(settings.selectedModelId);
     final contextLength = model?.contextLength ?? 0;
     final usage = contextLength > 0 ? (tokens / contextLength) : 0.0;
     final threshold = settings.compressThreshold;
-    final overThreshold = contextLength > 0 && usage >= threshold;
+    final overThreshold =
+        !isGeneralAgent && contextLength > 0 && usage >= threshold;
     // 升级迁移提示：本会话从未触发过 AI 回复时无系统提示词记录，
     // 统计暂时不含系统提示词，触发一次回复后自动校正
     final missingSystem = !chat.hasSystemTokensRecord(conversationId!);
@@ -137,7 +140,9 @@ class ChatSettingsScreen extends StatelessWidget {
                             ),
                           ),
                         // 压缩阈值刻度线
-                        if (settings.enableCompression && contextLength > 0)
+                        if (!isGeneralAgent &&
+                            settings.enableCompression &&
+                            contextLength > 0)
                           Positioned(
                             left: (width * threshold - 1).clamp(0.0, width - 2),
                             top: -2,
@@ -178,43 +183,45 @@ class ChatSettingsScreen extends StatelessWidget {
                   ),
                 ),
               ],
-              const SizedBox(height: 10),
-              // 手动压缩对话按钮
-              SizedBox(
-                width: double.infinity,
-                child: CupertinoButton(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  borderRadius: BorderRadius.circular(8),
-                  color: context.accentColor.withValues(alpha: 0.12),
-                  onPressed: () =>
-                      _handleManualCompress(context, settings, api, chat),
-                  child: Text(
-                    '压缩对话',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: context.accentColor,
+              if (!isGeneralAgent) ...[
+                const SizedBox(height: 10),
+                // 手动压缩对话按钮
+                SizedBox(
+                  width: double.infinity,
+                  child: CupertinoButton(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    borderRadius: BorderRadius.circular(8),
+                    color: context.accentColor.withValues(alpha: 0.12),
+                    onPressed: () =>
+                        _handleManualCompress(context, settings, api, chat),
+                    child: Text(
+                      '压缩对话',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: context.accentColor,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '立即压缩更早的历史消息为一段摘要，保留最近 20 条',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: context.textSecondaryColor,
-                ),
-              ),
-              if (overThreshold && settings.enableCompression) ...[
                 const SizedBox(height: 4),
                 Text(
-                  '已达压缩阈值（${(threshold * 100).round()}%），下次发送将自动压缩更早的历史消息',
-                  style: const TextStyle(
+                  '立即压缩更早的历史消息为一段摘要，保留最近 20 条',
+                  style: TextStyle(
                     fontSize: 12,
-                    color: CupertinoColors.systemOrange,
+                    color: context.textSecondaryColor,
                   ),
                 ),
+                if (overThreshold && settings.enableCompression) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '已达压缩阈值（${(threshold * 100).round()}%），下次发送将自动压缩更早的历史消息',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: CupertinoColors.systemOrange,
+                    ),
+                  ),
+                ],
               ],
             ],
           ),
@@ -225,7 +232,8 @@ class ChatSettingsScreen extends StatelessWidget {
 
   /// 弹出上下文条数编辑弹窗（点击显示小窗触发）
   void _showEditContextCount(
-      BuildContext context, ChatSettingsProvider settings) {
+      BuildContext context, ChatSettingsProvider settings,
+      {required bool isGeneralAgent}) {
     final controller = TextEditingController(
       text: settings.isUnlimitedContext ? '' : '${settings.contextCount}',
     );
@@ -238,7 +246,9 @@ class ChatSettingsScreen extends StatelessWidget {
           children: [
             const SizedBox(height: 4),
             Text(
-              '输入 1~$kMaxContextCount 条，输入 0 表示无限制（将自动开启压缩会话）',
+              isGeneralAgent
+                  ? '输入 1~$kMaxContextCount 条，输入 0 表示无限制'
+                  : '输入 1~$kMaxContextCount 条，输入 0 表示无限制（将自动开启压缩会话）',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
@@ -268,6 +278,7 @@ class ChatSettingsScreen extends StatelessWidget {
               if (n != null) {
                 settings.setContextCount(
                   n <= 0 ? 0 : (n > kMaxContextCount ? kMaxContextCount : n),
+                  enableCompressionWhenUnlimited: !isGeneralAgent,
                 );
               }
               Navigator.pop(ctx);
@@ -350,9 +361,19 @@ class ChatSettingsScreen extends StatelessWidget {
       child: ListView(
         children: [
           const SizedBox(height: 12),
+          if (isGeneralAgent)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: Text(
+                '上下文条数、模型和思考强度等设置在会话间共享，修改后将影响其他会话。',
+                style:
+                    TextStyle(fontSize: 12, color: context.textSecondaryColor),
+              ),
+            ),
           // 当前会话的上下文使用情况
           if (conversationId != null)
-            _buildContextUsageSection(context, settings, api, chat),
+            _buildContextUsageSection(context, settings, api, chat,
+                isGeneralAgent: isGeneralAgent),
           if (conversationId != null) const SizedBox(height: 12),
           // 上下文条数
           CupertinoListSection.insetGrouped(
@@ -380,7 +401,8 @@ class ChatSettingsScreen extends StatelessWidget {
                         ),
                         // 显示小窗：点击可精确输入条数
                         GestureDetector(
-                          onTap: () => _showEditContextCount(context, settings),
+                          onTap: () => _showEditContextCount(context, settings,
+                              isGeneralAgent: isGeneralAgent),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
@@ -419,6 +441,7 @@ class ChatSettingsScreen extends StatelessWidget {
                           final rounded = value.round();
                           settings.setContextCount(
                             rounded >= kUnlimitedSliderValue ? 0 : rounded,
+                            enableCompressionWhenUnlimited: !isGeneralAgent,
                           );
                         },
                       ),
@@ -642,94 +665,96 @@ class ChatSettingsScreen extends StatelessWidget {
               ),
             ],
           ),
-          // 压缩会话
-          CupertinoListSection.insetGrouped(
-            backgroundColor: context.scaffoldColor,
-            decoration: BoxDecoration(
-              color: context.listBgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            header: const Text('压缩会话'),
-            children: [
-              CupertinoListTile(
-                title: const Text('自动压缩历史消息'),
-                trailing: CupertinoSwitch(
-                  value: settings.enableCompression,
-                  onChanged: (v) => settings.setEnableCompression(v),
-                ),
+          // 压缩会话仅适用于角色对话。
+          if (!isGeneralAgent)
+            CupertinoListSection.insetGrouped(
+              backgroundColor: context.scaffoldColor,
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(10),
               ),
-              // 压缩触发阈值（可手动调整）
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '压缩触发阈值',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: context.textPrimaryColor,
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: context.accentColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '${(settings.compressThreshold * 100).round()}%',
+              header: const Text('压缩会话'),
+              children: [
+                CupertinoListTile(
+                  title: const Text('自动压缩历史消息'),
+                  trailing: CupertinoSwitch(
+                    value: settings.enableCompression,
+                    onChanged: (v) => settings.setEnableCompression(v),
+                  ),
+                ),
+                // 压缩触发阈值（可手动调整）
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '压缩触发阈值',
                             style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: context.accentColor,
+                              fontSize: 16,
+                              color: context.textPrimaryColor,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      width: double.infinity,
-                      child: CupertinoSlider(
-                        value: settings.compressThreshold,
-                        min: 0.3,
-                        max: 0.9,
-                        divisions: 12,
-                        activeColor: context.accentColor,
-                        onChanged: (v) => settings.setCompressThreshold(v),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  context.accentColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${(settings.compressThreshold * 100).round()}%',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: context.accentColor,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '30%',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: context.textSecondaryColor,
-                          ),
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        width: double.infinity,
+                        child: CupertinoSlider(
+                          value: settings.compressThreshold,
+                          min: 0.3,
+                          max: 0.9,
+                          divisions: 12,
+                          activeColor: context.accentColor,
+                          onChanged: (v) => settings.setCompressThreshold(v),
                         ),
-                        Text(
-                          '90%',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: context.textSecondaryColor,
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '30%',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.textSecondaryColor,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                          Text(
+                            '90%',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.textSecondaryColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           // 记忆点自动托管
           if (!isGeneralAgent)
             CupertinoListSection.insetGrouped(
@@ -760,18 +785,19 @@ class ChatSettingsScreen extends StatelessWidget {
                 ),
               ],
             ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              '上下文设为【无限制】时将自动开启压缩会话；压缩使用的模型可在「API 设置 → 会话压缩」中单独指定。',
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.5,
-                color: context.textSecondaryColor,
+          if (!isGeneralAgent) const SizedBox(height: 12),
+          if (!isGeneralAgent)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '上下文设为【无限制】时将自动开启压缩会话；压缩使用的模型可在「API 设置 → 会话压缩」中单独指定。',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.5,
+                  color: context.textSecondaryColor,
+                ),
               ),
             ),
-          ),
           // 使用的模型
           CupertinoListSection.insetGrouped(
             backgroundColor: context.scaffoldColor,
@@ -847,8 +873,8 @@ class ChatSettingsScreen extends StatelessWidget {
             ),
             header: const Text('模型思考强度'),
             children: [
-              CupertinoListTile(
-                title: const Text('思考强度'),
+              const CupertinoListTile(
+                title: Text('思考强度'),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),

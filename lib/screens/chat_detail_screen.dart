@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../widgets/character_avatar.dart';
 import '../widgets/chat/chat_detail_manage_section.dart';
 import '../widgets/chat/chat_detail_character_card.dart';
 import '../widgets/chat/chat_detail_auto_sections.dart';
@@ -105,7 +106,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
     final updated = charProvider.getCharacterById(characterId);
     if (updated != null) {
-      chatProvider.updateCharacterDisplayName(characterId, updated.displayName);
+      chatProvider.updateCharacterDisplayName(
+        characterId,
+        updated.isGeneralAgent ? updated.name : updated.displayName,
+      );
     }
   }
 
@@ -345,7 +349,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text('头像已更新'),
-        content: const Text('新的角色头像已保存'),
+        content: const Text('新头像已保存'),
         actions: [
           CupertinoDialogAction(
             isDefaultAction: true,
@@ -611,7 +615,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       CupertinoPageRoute(
         builder: (_) => PromptEditScreen(
           characterId: _characterId,
-          characterName: widget.characterName,
+          characterName: context
+                  .read<CharacterProvider>()
+                  .getCharacterById(_characterId)
+                  ?.name ??
+              widget.characterName,
         ),
       ),
     );
@@ -653,6 +661,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final avatar = character?.avatar ?? conversation?.characterAvatar ?? '';
     final displayName = character?.displayName ?? widget.characterName;
 
+    if (character != null && character.isGeneralAgent) {
+      return _buildAgentDetail(character, conversation, avatar);
+    }
+
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(middle: Text(displayName)),
       child: ListView(
@@ -685,7 +697,165 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  // ── 上半部分：角色卡 ──
+  Widget _buildAgentDetail(
+    Character character,
+    Conversation? conversation,
+    String avatar,
+  ) {
+    return CupertinoPageScaffold(
+      navigationBar: const CupertinoNavigationBar(middle: Text('智能体详情')),
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                children: [
+                  CupertinoListTile(
+                    key: const ValueKey('agent-avatar'),
+                    title: Text('头像',
+                        style: TextStyle(color: context.textPrimaryColor)),
+                    additionalInfo: CharacterAvatar(base64: avatar, size: 48),
+                    trailing: const CupertinoListTileChevron(),
+                    onTap: _showAvatarSourceSheet,
+                  ),
+                  const ChatSectionSeparator(),
+                  ChatInfoTile(
+                    icon: CupertinoIcons.pencil,
+                    label: '名称',
+                    value: character.name,
+                    placeholder: '智能体名称',
+                    onTap: () => showEditFieldDialog(
+                      context,
+                      title: '智能体名称',
+                      initial: character.name,
+                      hint: '输入智能体名称',
+                      maxLength: 50,
+                      onSave: (value) {
+                        if (value.isNotEmpty) _saveField(name: value);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: context.listBgColor,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: CupertinoListTile(
+                leading: Icon(CupertinoIcons.doc_text,
+                    color: context.textSecondaryColor),
+                title: Text('用户提示词',
+                    style: TextStyle(color: context.textPrimaryColor)),
+                subtitle: Text(
+                  character.systemPrompt.isEmpty
+                      ? '可留空，点击编辑'
+                      : character.systemPrompt,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: context.textSecondaryColor),
+                ),
+                trailing: const CupertinoListTileChevron(),
+                onTap: _togglePrompt,
+              ),
+            ),
+            if (widget.showChatManage && conversation != null) ...[
+              const SizedBox(height: 24),
+              _buildAgentManageSection(conversation),
+            ],
+            const SizedBox(height: 24),
+            _buildChatSettingsEntry(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAgentManageSection(Conversation conversation) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: context.listBgColor,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          CupertinoListTile(
+            leading: Icon(CupertinoIcons.speaker_3_fill,
+                color: context.textSecondaryColor),
+            title:
+                Text('自动朗读', style: TextStyle(color: context.textPrimaryColor)),
+            trailing: CupertinoSwitch(
+              value: conversation.autoRead,
+              onChanged: (value) => context
+                  .read<ChatProvider>()
+                  .setConversationAutoRead(conversation.id, value),
+            ),
+          ),
+          const ChatSectionSeparator(),
+          CupertinoListTile(
+            leading: Icon(CupertinoIcons.play_circle,
+                color: context.textSecondaryColor),
+            title: Text('连续播放回复',
+                style: TextStyle(color: context.textPrimaryColor)),
+            trailing: CupertinoSwitch(
+              value: conversation.continuousRead,
+              onChanged: (value) => context
+                  .read<ChatProvider>()
+                  .setConversationContinuousRead(conversation.id, value),
+            ),
+          ),
+          const ChatSectionSeparator(),
+          CupertinoListTile(
+            leading: Icon(CupertinoIcons.speaker_1,
+                color: context.textSecondaryColor),
+            title: Text('显示小喇叭图标',
+                style: TextStyle(color: context.textPrimaryColor)),
+            trailing: CupertinoSwitch(
+              value: conversation.showSpeakerIcon,
+              onChanged: (value) => context
+                  .read<ChatProvider>()
+                  .setConversationShowSpeakerIcon(conversation.id, value),
+            ),
+          ),
+          const ChatSectionSeparator(),
+          CupertinoListTile(
+            leading:
+                Icon(CupertinoIcons.photo, color: context.textSecondaryColor),
+            title:
+                Text('聊天背景', style: TextStyle(color: context.textPrimaryColor)),
+            trailing: const CupertinoListTileChevron(),
+            onTap: _showChatBackgroundDrawer,
+          ),
+          const ChatSectionSeparator(),
+          CupertinoListTile(
+            leading: Icon(CupertinoIcons.clear_circled,
+                color: context.textSecondaryColor),
+            title: Text('清空上下文',
+                style: TextStyle(color: context.textPrimaryColor)),
+            onTap: _clearContext,
+          ),
+          const ChatSectionSeparator(),
+          CupertinoListTile(
+            leading: const Icon(CupertinoIcons.trash,
+                color: CupertinoColors.systemRed),
+            title: const Text('删除聊天',
+                style: TextStyle(color: CupertinoColors.systemRed)),
+            onTap: _deleteChat,
+          ),
+        ],
+      ),
+    );
+  }
 
   /// 进入通讯录角色空间页（角色详情：背景图 + 朋友圈）
   void _openCharacterSpace() {
@@ -1045,6 +1215,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   /// 资料卡底部「聊天设置」入口：模型 / 上下文条数 / 压缩等全局聊天配置。
   Widget _buildChatSettingsEntry() {
+    final isGeneralAgent = context
+            .read<CharacterProvider>()
+            .getCharacterById(_characterId)
+            ?.isGeneralAgent ??
+        false;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -1059,7 +1234,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           style: TextStyle(color: context.textPrimaryColor),
         ),
         subtitle: Text(
-          '模型、上下文条数、自动压缩等聊天相关配置',
+          isGeneralAgent ? '模型、上下文条数、思考等聊天配置' : '模型、上下文条数、自动压缩等聊天相关配置',
           style: TextStyle(
             fontSize: 12,
             color: context.textSecondaryColor,
