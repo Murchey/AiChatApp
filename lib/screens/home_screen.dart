@@ -827,6 +827,8 @@ class _HomeScreenState extends State<HomeScreen>
                   ? CupertinoColors.transparent
                   : null,
           navigationBar: CupertinoNavigationBar(
+            // Keep the bar in the same route layer as the fixed create button.
+            transitionBetweenRoutes: false,
             automaticBackgroundVisibility:
                 AppThemeStore.instance.active?.headers['home'] == null,
             enableBackgroundFilterBlur:

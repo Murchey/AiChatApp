@@ -15,6 +15,7 @@ import 'package:ai_chat/providers/sticker_provider.dart';
 import 'package:ai_chat/providers/token_usage_provider.dart';
 import 'package:ai_chat/providers/workshop_provider.dart';
 import 'package:ai_chat/screens/home_screen.dart';
+import 'package:ai_chat/screens/chat_search_screen.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -156,6 +157,52 @@ void main() {
         )
         .opacity;
     expect(opacity, lessThan(0.01));
+  });
+
+  testWidgets('搜索返回时首页导航栏与加号保持同一转场层', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider();
+    await settings.init();
+    await settings.setAutoCheckUpdate(false);
+    await _pumpHome(tester, settings, ChatProvider());
+
+    final title = find.text('AiChat');
+    final navigationBar = tester.widget<CupertinoNavigationBar>(
+      find
+          .ancestor(of: title, matching: find.byType(CupertinoNavigationBar))
+          .first,
+    );
+    expect(navigationBar.transitionBetweenRoutes, isFalse);
+    expect(find.ancestor(of: title, matching: find.byType(Hero)), findsNothing);
+
+    final button =
+        find.byKey(const ValueKey('home-create-button'), skipOffstage: false);
+    final buttonElement = tester.element(button);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await tester.tap(find.byIcon(CupertinoIcons.search));
+      await tester.pumpAndSettle();
+      expect(find.byType(ChatSearchScreen), findsOneWidget);
+      Navigator.of(tester.element(find.byType(ChatSearchScreen))).pop();
+      await tester.pump();
+      for (var frame = 0; frame < 24; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.element(button), same(buttonElement));
+        final opacity = tester.widget<Opacity>(find
+            .ancestor(
+              of: button,
+              matching: find.byType(Opacity),
+            )
+            .first);
+        expect(opacity.opacity, 1);
+        expect(tester.takeException(), isNull);
+      }
+      await tester.pumpAndSettle();
+      expect(button.hitTestable(), findsOneWidget);
+    }
+    await tester.tap(button);
+    await tester.pump();
+    expect(find.text('创建群聊'), findsOneWidget);
+    expect(find.text('创建一般智能体'), findsOneWidget);
   });
 
   testWidgets('加号菜单提供创建群聊和一般智能体', (tester) async {
